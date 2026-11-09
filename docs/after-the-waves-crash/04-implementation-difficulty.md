@@ -70,7 +70,7 @@ These were checked against `node_modules/pixi.js` and the Unity project. Items 1
 | **Font**: `JosefinSlab-Regular.ttf` (110 KB, 53 KB gzip, OFL). Drop the 544 KB TMP SDF asset. | S | 0.25–0.5 | A woff2 subset (15–30 KB) needs fonttools, which isn't installed. The TTF is fine for a first version. |
 | **Audio transcode**: ffmpeg (installed) to mono AAC `.m4a`, encoding each loop as `[tail guard | loop | head guard]` so loops stay seamless however a decoder trims padding. Commit the outputs and the script. | S | 0.5 | Safari's AAC trimming is unverified; the guard bands cover it |
 | **Layout and scaling**: two orientations, safe areas through CSS variables, sharp-bilinear render texture (k=2 → 1000², about 4 MB), UI layer at full DPR, `visualViewport` and resize coalescing | L | 3–4 + device iteration | iOS URL-bar and rotation resize bursts; WebGL context loss after iOS backgrounding (not in the KB yet) |
-| **Audio engine**: unlock, overlays scheduled at `start + n·9.6 s`, BGM02 one-shot, SFX channel(s), mute + persistence, suspend/resume with re-anchoring, `interrupted` handling, bfcache | M–L | 2.5–4 | `OverlayPhase04` (7.176 s) drifts against 9.6 s by design; all of the iOS behaviour |
+| **Audio engine**: unlock, overlays scheduled at `start + n·9.6 s` (`OverlayPhase04` restarted on each bar), BGM02 one-shot, world and UI SFX channels, mute + persistence, suspend/resume with re-anchoring, `interrupted` handling, bfcache | M–L | 2.5–4 | All of the iOS behaviour |
 | **Lifecycle**: start gate with load progress, pause overlay, soft restart that keeps textures, buffers and the audio context | M | 1.5–2.5 | A stray `setTimeout` breaks pause; leaks on restart |
 | **Effects**: lightning (5 sprites, playfield x), flash with the reduced-motion cap, vignette and pulse, parallax, pooled rain, frame-rate cap per correction 3 | M | 1.5–2 | 120 Hz cadence; rain on low-end Android |
 | **Page protections and Netlify**: `viewport-fit=cover`, CSS gesture rules, `contextmenu`; `[[headers]]` with immutable cache on `/assets/*`; assets imported with `?url` so Vite hashes them | S | 0.5–1 | iOS callout suppression is never guaranteed. The `.m4a`/`.ttf` content type on Netlify is unverified. |
@@ -125,12 +125,17 @@ Gameplay and platform tracks interleave. Each milestone ends with a Netlify bran
 | Layout screenshots in both orientations (safe areas faked with CSS variables) | Real safe areas, URL-bar behaviour, landscape band width, thumb reach and occlusion |
 | Reduced motion, visibility/freeze, decode lengths, timeline ordering, replay leaving no timers | 120 Hz cadence, 3× sharpness, rain on low-end Android, WebGL context loss |
 
-## Owner questions raised here
+## Owner questions
+
+Open:
 
 1. **Test tooling:** add `@playwright/test`, or use plain Node scripts with the global Playwright? Pure-logic tests can run on `node --test` with no dependency, but cross-file `.ts` imports need `allowImportingTsExtensions`.
 2. **Node-tap assist:** the nodes sit on the playfield, out of thumb reach in portrait. Drop it, or redefine it?
-3. **Hold assists:** 02 (tap to start/stop) and 03 (Latch) overlap. Merge them into one, and define "heading half of the zone" for landscape.
-4. **Steady haul:** auto-haul *or* a doubled window. Pick one.
-5. **Many window expiry:** after the window expires, does the next one start at the next counted move (suggested) or immediately?
-6. **Sequence timeout after a wrong input:** keep the original (a wrong key doesn't reset the timer) or reset it?
-7. **Overlay drift:** keep `OverlayPhase04`'s drift against BGM01 as the original had it, or align it?
+
+Resolved:
+
+3. **Hold assists:** merged into one Latch, triggered from the compass pad or the keyboard (see 03).
+4. **Steady haul:** the window doubles, to 6 s.
+5. **Many window expiry:** the next window starts at the next counted movement.
+6. **Sequence timeout after a wrong input:** kept as in the original. A wrong input doesn't restart the timer.
+7. **Overlay drift:** aligned. `OverlayPhase04` restarts on every 9.6 s bar (see 02).

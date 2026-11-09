@@ -37,13 +37,13 @@ Use one on-screen cross of 4 buttons (↑ ↓ ← →) for all three challenge t
 
 | Challenge | Mobile rule | Alternatives considered and rejected |
 |---|---|---|
-| **Sequence** ("... follow ...") | Tap the shown directions in order. A wrong tap resets; so does 1 s without a tap. | Swipes anywhere: diagonals are ambiguous, and they clash with back gestures. Screen-quadrant taps: too easy to trigger by accident. |
+| **Sequence** ("... follow ...") | Tap the shown directions in order. A wrong tap resets; so does 1 s without a tap. As in the original, a wrong tap does not restart the 1 s timer (decided by the owner). | Swipes anywhere: diagonals are ambiguous, and they clash with back gestures. Screen-quadrant taps: too easy to trigger by accident. |
 | **Hold** ("... hold strong ...") | Press and hold the matching pad button for 3 s, while a radial ring fills. The pointer is tracked by `pointerId`; sliding off the button is tolerated. Progress ends only on `pointerup`, `pointerupoutside` or `pointercancel`. | Hold anywhere: loses the heading. Swipe-and-hold: gesture conflicts and complex to recognise. |
 | **Many** ("... be fast ...") | Tap the matching button 10× within 3 s, with a pip meter. | Tap anywhere: loses the heading. Swipe "rowing" or shaking: tiring, and shaking needs an iOS motion permission. |
 
 `pointercancel`: Pixi 8.20.1 does **not** forward it to display objects (see 04, correction 1). A DOM listener on `app.canvas` is **mandatory**. Also release every tracked pointer on `blur` and `visibilitychange`. The keyboard fallback ignores `KeyboardEvent.repeat`.
 
-**Optional accessibility mode** (owner decision): Hold becomes tap-to-start / tap-to-stop.
+**Accessibility mode:** Hold becomes tap-to-start / tap-to-stop. This is merged with 03's Latch into one assist (decided by the owner).
 
 **Haptics:** `navigator.vibrate` works on Android Chrome but not on iOS Safari. Treat it as a progressive enhancement only.
 
@@ -104,8 +104,10 @@ Use one on-screen cross of 4 buttons (↑ ↓ ← →) for all three challenge t
 - **Plain Web Audio:** decode everything into `AudioBuffer`s. `BGM01` loops for the whole game.
 - **Unlock** with `ctx.resume()` on the first tap's `pointerup`, with a `touchend` fallback. On touch, `pointerdown` doesn't count as a user gesture.
 - **Overlay switching:** schedule each change at the current clip's next loop boundary (`start(t)` / `stop(t)` with a gain ramp to 0.9) instead of polling. This also removes the "PlayOverlay every frame" quirk.
-  - `OverlayPhase04` is 7.18 s, not 9.6 s, so it drifts against `BGM01`. It's unknown whether the original drifted the same way.
-- **SFX:** one channel, so a new SFX stops the previous one. Pitch 0.95–1.05 maps to `playbackRate`.
+  - **Align it (decided by the owner).** `OverlayPhase04` is 7.176 s, not 9.6 s. Restart it on every 9.6 s `BGM01` boundary, so it rests for about 2.4 s each bar instead of drifting. Check this by ear: if the rest sounds wrong, the alternative is to loop it inside the bar.
+- **SFX:** two channels (decided by the owner).
+  - The **world** channel keeps the original behaviour for thunder and the kraken: a new SFX stops the previous one. Pitch 0.95–1.05 maps to `playbackRate`.
+  - A separate **UI** channel plays the gesture ticks and the creak loop.
 - **Mute button:** in a safe-area corner. It drives a master `GainNode`, and its state is stored in `localStorage` (wrapped in try/catch).
 - **Background tab:** `visibilitychange` hidden → `ctx.suspend()`. On return, show the "Tap to continue" overlay.
   - Treat any state other than `running` as "needs a tap". This includes iOS's non-standard `interrupted` state.
