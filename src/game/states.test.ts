@@ -31,7 +31,7 @@ const setup = (loaded: Promise<unknown>) => {
 };
 
 describe("gate", () => {
-  it("waits for the assets, then requests title on the next frame", async() => {
+  it("waits for the assets, then requests title on the next frame", async () => {
     const load = deferred();
     const { machine } = setup(load.promise);
 
@@ -47,7 +47,7 @@ describe("gate", () => {
     assert.equal(machine.current, "title");
   });
 
-  it("waits while the clock is paused", async() => {
+  it("waits while the clock is paused", async () => {
     const { clock, machine } = setup(Promise.resolve());
 
     await settle();
@@ -60,7 +60,7 @@ describe("gate", () => {
     assert.equal(machine.current, "title");
   });
 
-  it("stays on gate when loading fails", async() => {
+  it("stays on gate when loading fails", async () => {
     const { machine } = setup(Promise.reject(new Error("load failed")));
 
     await settle();
@@ -68,7 +68,7 @@ describe("gate", () => {
     assert.equal(machine.current, "gate");
   });
 
-  it("moves on once when re-entered while loading", async() => {
+  it("moves on once when re-entered while loading", async () => {
     const load = deferred();
     const { machine } = setup(load.promise);
 
@@ -83,7 +83,7 @@ describe("gate", () => {
     assert.equal(machine.current, "title");
   });
 
-  it("moves on at once when re-entered after loading", async() => {
+  it("moves on at once when re-entered after loading", async () => {
     const { machine } = setup(Promise.resolve());
 
     await settle();
@@ -93,7 +93,7 @@ describe("gate", () => {
     assert.equal(machine.current, "title");
   });
 
-  it("requests nothing once it was left before loading finished", async() => {
+  it("requests nothing once it was left before loading finished", async () => {
     const load = deferred();
     const { machine } = setup(load.promise);
 
@@ -104,7 +104,7 @@ describe("gate", () => {
     assert.equal(machine.current, "story");
   });
 
-  it("swallows a rejection that arrives after it was left", async() => {
+  it("swallows a rejection that arrives after it was left", async () => {
     const load = deferred();
     const { machine } = setup(load.promise);
     const unhandled: unknown[] = [];

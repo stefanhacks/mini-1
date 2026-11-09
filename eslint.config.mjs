@@ -45,7 +45,7 @@ export default tseslint.config(
       "no-trailing-spaces": "error",
       "no-whitespace-before-property": "error",
       "space-before-blocks": ["error", "always"],
-      "space-before-function-paren": ["error", "never"],
+      "space-before-function-paren": ["error", { anonymous: "never", named: "never", asyncArrow: "always" }],
       "space-in-parens": ["error", "never"],
       "space-infix-ops": "error",
 

@@ -11,7 +11,7 @@ const MAX_RESOLUTION = 2;
 const UI_FONT = "Josefin Slab";
 
 // Pixel art: every sprite texture samples nearest. `data` becomes the TextureSource options.
-const loadSprites = async() => {
+const loadSprites = async () => {
   const assets = Object.entries(SPRITES).map(([alias, { url }]): UnresolvedAsset => ({
     alias,
     src: url,
@@ -22,7 +22,7 @@ const loadSprites = async() => {
 };
 
 // Without `family`, loadWebFont would name the font after its hashed file name.
-const loadFont = async() => {
+const loadFont = async () => {
   await Assets.load({ src: FONTS[UI_FONT], data: { family: UI_FONT } });
 };
 
