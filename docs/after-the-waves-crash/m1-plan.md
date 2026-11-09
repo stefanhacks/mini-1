@@ -114,8 +114,21 @@ Inputs: screen size in CSS px, the safe-area insets, and the device pixel ratio.
 - `npm run check`, `npm test` and `npm run e2e` pass.
 - The branch preview on a real phone, in both orientations: the square is inside the safe area, the art is pixel-sharp with no dropped rows (the logo's "THE" is readable), there's no page scroll, bounce or callout, and the `?debug` zones sit where expected.
 
-## Owner questions
+## Owner decisions
 
-1. **Minimum control sizes:** zone 30% / 200 px in portrait, bands 200 px in landscape. OK as starting values?
-2. **DPR cap:** raise it from 2 to 3?
-3. **`@playwright/test` pinned to 1.63:** OK? (This was decided in principle in 4.1; the pin is new.)
+All approved:
+
+1. **Minimum control sizes:** portrait zone at least 30% of the safe height and at least 200 CSS px; landscape bands at least 200 CSS px each.
+2. **DPR cap:** 3.
+3. **`@playwright/test`:** pinned to 1.63.
+
+## How the work runs
+
+Same pattern as M0: builders write, reviewers only read and report, Claude commits after each step.
+
+| Wave | Agents | Work |
+|---|---|---|
+| 1, build | **Elf Ranger: Layout Rule**, **Dwarf Smith: Page Shell** | Deliverable 2 (pure layout and its tests), in parallel with deliverable 1 plus the `@playwright/test` setup. |
+| 1, review | **Orc Oracle: Layout Review**, **Gnome Tinker: Shell Review** | Layout maths across devices; page shell, CSS and e2e setup. |
+| 2, build | **Human Artificer: Render Texture** | Deliverables 3–5 and the browser tests. |
+| 2, review | **Lizard Warden: Runtime Review**, **Goblin Scribe: Code Review** | Runtime in Chromium across device presets; code against the plan and Pixi 8.20.1. |
