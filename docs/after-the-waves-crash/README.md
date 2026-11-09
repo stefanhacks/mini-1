@@ -8,6 +8,8 @@ A knowledge base for porting [After the Waves Crash](https://github.com/stefanha
 | [02-mobile-alternatives.md](02-mobile-alternatives.md) | A literal mobile port: compass pad input, layout and scaling, text, audio, lifecycle, effects. |
 | [03-new-mechanics.md](03-new-mechanics.md) | Touch-native replacements for the challenges (Chart the Course, Brace the Helm, Haul the Line), alternatives considered, owner decisions. |
 | [04-implementation-difficulty.md](04-implementation-difficulty.md) | Effort estimates, corrections found against Pixi 8.20.1, build weight, milestones, device-testing plan, owner questions. |
+| [m0-plan.md](m0-plan.md) | M0 foundations plan (done), with review carry-overs for later milestones. |
+| [m1-plan.md](m1-plan.md) | M1 display skeleton plan, revised against the M0 code and Pixi 8.20.1. |
 
 ## How it was produced
 
