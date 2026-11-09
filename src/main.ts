@@ -3,11 +3,12 @@ import { Application, Assets, type Texture, type UnresolvedAsset } from "pixi.js
 import { FONTS, SPRITES, type SpriteKey } from "./assets/manifest.ts";
 import { GameClock } from "./core/clock.ts";
 import { createLayers, fitLayers } from "./core/layers.ts";
+import { computeLayout, ZERO_INSETS } from "./core/layout.ts";
 import { StateMachine } from "./core/state-machine.ts";
+import { blockContextMenu, getGameElement, onVisualViewportResize, readResolution } from "./core/viewport.ts";
 import { buildPlaceholderScene } from "./game/placeholder.ts";
 import { createGameStates, type GameStateId } from "./game/states.ts";
 
-const MAX_RESOLUTION = 2;
 const UI_FONT = "Josefin Slab";
 
 // Pixel art: every sprite texture samples nearest. `data` becomes the TextureSource options.
@@ -26,21 +27,26 @@ const loadFont = async () => {
   await Assets.load({ src: FONTS[UI_FONT], data: { family: UI_FONT } });
 };
 
+const gameElement = getGameElement();
 const app = new Application();
 
 await app.init({
-  resizeTo: window,
+  resizeTo: gameElement,
   background: "#000000",
-  resolution: Math.min(window.devicePixelRatio, MAX_RESOLUTION),
+  resolution: readResolution(),
   autoDensity: true,
 });
 
-document.body.appendChild(app.canvas);
+gameElement.appendChild(app.canvas);
+blockContextMenu(gameElement);
+onVisualViewportResize(() => app.queueResize());
 
 const layers = createLayers(app.stage);
 
+// Temporary wiring until wave 2 reads the safe-area probe: no insets yet. Snaps to the canvas resolution, which is the
+// real device pixel grid (the DPR capped at MAX_RESOLUTION).
 const resize = (width: number, height: number) => {
-  fitLayers(layers, width, height);
+  fitLayers(layers, computeLayout({ width, height, insets: ZERO_INSETS, dpr: app.renderer.resolution }));
 };
 
 app.renderer.on("resize", resize);

@@ -1,7 +1,7 @@
 // The stage tree every scene draws into. Layout math (PLAYFIELD_SIZE, the fit, the control zone) lives in layout.ts,
 // which has no Pixi import: import it from there, so logic that uses it stays testable under node.
 import { Container } from "pixi.js";
-import { fitPlayfield } from "./layout.ts";
+import type { Layout } from "./layout.ts";
 
 /**
  * - `playfield`: the PLAYFIELD_SIZE square of pixel art, in art pixels. M1 renders it into a render texture; until
@@ -33,10 +33,8 @@ export const createLayers = (root: Container): Layers => {
   return { playfield, world, fx, top, ui };
 };
 
-/** Fits the playfield to a `width`×`height` screen. Temporary until M1's render texture. */
-export const fitLayers = (layers: Layers, width: number, height: number) => {
-  const fit = fitPlayfield(width, height);
-
-  layers.playfield.scale.set(fit.scale);
-  layers.playfield.position.set(fit.x, fit.y);
+/** Places the playfield on the layout's square. Temporary until M1's render texture. */
+export const fitLayers = (layers: Layers, layout: Layout) => {
+  layers.playfield.scale.set(layout.scale);
+  layers.playfield.position.set(layout.square.x, layout.square.y);
 };
