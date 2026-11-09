@@ -49,8 +49,13 @@ export class StateMachine<Id extends string> {
     return this.active?.id;
   }
 
-  /** Asks for a transition. The first request starts the machine. */
+  /** Asks for a transition. The first request starts the machine. Throws, changing nothing, if `id` is unknown. */
   request(id: Id): void {
+    // Ids are typed, but a cast or a stale string could still name a missing state.
+    if (!Object.prototype.hasOwnProperty.call(this.states, id)) {
+      throw new Error(`StateMachine.request(): unknown state "${id}"`);
+    }
+
     if (this.exiting) {
       return;
     }

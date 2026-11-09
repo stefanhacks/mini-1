@@ -1,5 +1,5 @@
 import "./style.css";
-import { Application, Assets, Text, type Texture, type UnresolvedAsset } from "pixi.js";
+import { Application, Assets, type Texture, type UnresolvedAsset } from "pixi.js";
 import { FONTS, SPRITES, type SpriteKey } from "./assets/manifest.ts";
 import { GameClock } from "./core/clock.ts";
 import { createLayers, fitLayers } from "./core/layers.ts";
@@ -9,7 +9,6 @@ import { createGameStates, type GameStateId } from "./game/states.ts";
 
 const MAX_RESOLUTION = 2;
 const UI_FONT = "Josefin Slab";
-const UI_MARGIN = 12;
 
 // Pixel art: every sprite texture samples nearest. `data` becomes the TextureSource options.
 const loadSprites = async() => {
@@ -39,6 +38,15 @@ await app.init({
 document.body.appendChild(app.canvas);
 
 const layers = createLayers(app.stage);
+
+const resize = (width: number, height: number) => {
+  fitLayers(layers, width, height);
+};
+
+app.renderer.on("resize", resize);
+
+resize(app.screen.width, app.screen.height);
+
 const clock = new GameClock();
 const assetsLoaded = Promise.all([loadSprites(), loadFont()]);
 const machine = new StateMachine<GameStateId>(clock, createGameStates({ loaded: assetsLoaded }));
@@ -69,19 +77,3 @@ machine.request("gate");
 const [textures] = await assetsLoaded;
 
 buildPlaceholderScene(layers, textures);
-
-const label = new Text({
-  text: "M0",
-  style: { fontFamily: UI_FONT, fontSize: 16, fill: "#ffffff" },
-});
-
-label.position.set(UI_MARGIN, UI_MARGIN);
-layers.ui.addChild(label);
-
-const resize = (width: number, height: number) => {
-  fitLayers(layers, width, height);
-};
-
-app.renderer.on("resize", resize);
-
-resize(app.screen.width, app.screen.height);

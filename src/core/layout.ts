@@ -20,14 +20,17 @@ export interface Fit {
   readonly y: number;
 }
 
-/** Contain-fits the playfield square into a `width`×`height` screen and centres it. */
+/**
+ * Contain-fits the playfield square into a `width`×`height` screen and centres it. The offsets are floored to whole
+ * CSS px, so the square never starts on a half pixel.
+ */
 export const fitPlayfield = (width: number, height: number): Fit => {
   const side = Math.max(0, Math.min(width, height));
 
   return {
     scale: side / PLAYFIELD_SIZE,
-    x: (width - side) / 2,
-    y: (height - side) / 2,
+    x: Math.floor((width - side) / 2),
+    y: Math.floor((height - side) / 2),
   };
 };
 
@@ -41,7 +44,7 @@ export const fitPlayfield = (width: number, height: number): Fit => {
  *
  * Safe-area insets and edge exclusion are not applied yet.
  */
-export const controlZoneRect = (width: number, height: number): readonly Rect[] => {
+export const controlZoneRects = (width: number, height: number): readonly Rect[] => {
   if (width <= height) {
     const zoneHeight = height * PORTRAIT_ZONE_SHARE;
 

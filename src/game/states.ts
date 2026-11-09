@@ -13,20 +13,27 @@ export interface GameStateDeps {
 
 /**
  * Start gate, replacing the original 5 s load screen. Later (M3): load progress, the flashing-lights warning and
- * "Tap to begin", whose tap also unlocks audio. For now it moves to Title as soon as the assets are loaded.
+ * "Tap to begin", whose tap also unlocks audio. For now it moves to Title on the first frame after the assets load.
+ *
+ * Loading only sets a flag; the request happens in `update`, so every transition runs on a frame (inside main's
+ * ticker guard) and waits while the clock is paused. The flag outlives Gate, so re-entering it after the load moves
+ * on at once.
  */
-const gate = ({ loaded }: GameStateDeps): GameState => ({
-  enter: (scope, machine) => {
-    const toTitle = () => {
-      // A disposed scope means Gate was left (or asked to leave) before loading finished.
-      if (!scope.disposed) {
+const gate = ({ loaded }: GameStateDeps): GameState => {
+  let ready = false;
+
+  void loaded.then(() => {
+    ready = true;
+  }, () => undefined);
+
+  return {
+    update: (_deltaMS, machine) => {
+      if (ready) {
         machine.request("title");
       }
-    };
-
-    void loaded.then(toTitle, () => undefined);
-  },
-});
+    },
+  };
+};
 
 /** Title: timed lightning, the logo revealed at the flash peak, then "Tap to begin" and ambient thunder (M2/M4). */
 const title: GameState = {};

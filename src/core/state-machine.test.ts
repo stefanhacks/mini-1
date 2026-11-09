@@ -362,6 +362,19 @@ describe("StateMachine", () => {
     assert.deepEqual(log, ["enter a", "exit a", "enter c"]);
   });
 
+  it("throws on an unknown state id without leaving the current state", () => {
+    const { log, machine } = setup();
+
+    machine.request("a");
+    assert.throws(() => machine.request("missing" as Id), /unknown state "missing"/);
+    assert.throws(() => machine.request("toString" as Id), /unknown state "toString"/);
+
+    machine.update(16);
+
+    assert.equal(machine.current, "a");
+    assert.deepEqual(log, ["enter a", "update a"]);
+  });
+
   it("stays usable after a state's update throws", () => {
     const { log, machine } = setup({
       a: {
