@@ -7,9 +7,12 @@ export type TimerCallback = () => void;
 export type TimerHandle = number;
 
 export interface TimerScope {
-  /** Calls `cb` once, `ms` of game time from now. Throws a RangeError if `ms` is negative or NaN. */
+  /**
+   * Calls `cb` once, `ms` of game time from now. Throws a RangeError if `ms` is negative or NaN.
+   * A callback that reschedules itself with `after(0, ...)` is due again within the same tick and loops forever.
+   */
   after(ms: number, cb: TimerCallback): TimerHandle;
-  /** Calls `cb` every `ms` of game time, once per elapsed period. Throws a RangeError unless `ms` > 0. */
+  /** Calls `cb` every `ms` of game time, once per elapsed period. Throws a RangeError unless 1 <= `ms` < Infinity. */
   every(ms: number, cb: TimerCallback): TimerHandle;
   /** Cancels a pending timer. Unknown, finished or foreign handles are ignored. */
   cancel(handle: TimerHandle): void;
@@ -32,6 +35,7 @@ export class GameClock {
 
   private elapsed = 0;
   private lastId = 0;
+  private ticking = false;
   // Map iteration follows insertion order, which is also id (scheduling) order.
   private readonly timers = new Map<TimerHandle, Timer>();
 
@@ -43,31 +47,24 @@ export class GameClock {
   /**
    * Advances game time by `deltaMS` and fires every timer that falls due, in chronological order (ties fire in
    * scheduling order). Timers scheduled by a callback also fire in this tick if they are due within it. If a callback
-   * pauses the clock, the tick stops at that callback's due time.
+   * pauses the clock, the tick stops at that callback's due time. Deltas that are not finite and above zero are
+   * ignored. Calling `tick` from inside a timer callback throws.
    */
   tick(deltaMS: number): void {
-    if (this.paused || !(deltaMS > 0)) {
+    if (this.ticking) {
+      throw new Error("GameClock.tick() was called from inside a timer callback");
+    }
+
+    if (this.paused || !Number.isFinite(deltaMS) || deltaMS <= 0) {
       return;
     }
 
-    const target = this.elapsed + deltaMS;
-    let timer = this.nextDue(target);
+    this.ticking = true;
 
-    while (timer !== undefined && !this.paused) {
-      this.elapsed = timer.due;
-
-      if (timer.period > 0) {
-        timer.due += timer.period;
-      } else {
-        this.timers.delete(timer.id);
-      }
-
-      timer.callback();
-      timer = this.nextDue(target);
-    }
-
-    if (!this.paused) {
-      this.elapsed = target;
+    try {
+      this.advanceTo(this.elapsed + deltaMS);
+    } finally {
+      this.ticking = false;
     }
   }
 
@@ -94,8 +91,8 @@ export class GameClock {
         return schedule(ms, 0, cb);
       },
       every: (ms, cb) => {
-        if (!(ms > 0) || !Number.isFinite(ms)) {
-          throw new RangeError(`every() needs a finite period > 0, got ${ms}`);
+        if (!(ms >= 1) || !Number.isFinite(ms)) {
+          throw new RangeError(`every() needs a finite period >= 1 ms, got ${ms}`);
         }
 
         return schedule(ms, ms, cb);
@@ -118,6 +115,27 @@ export class GameClock {
         return disposed;
       },
     };
+  }
+
+  private advanceTo(target: number): void {
+    let timer = this.nextDue(target);
+
+    while (timer !== undefined && !this.paused) {
+      this.elapsed = timer.due;
+
+      if (timer.period > 0) {
+        timer.due += timer.period;
+      } else {
+        this.timers.delete(timer.id);
+      }
+
+      timer.callback();
+      timer = this.nextDue(target);
+    }
+
+    if (!this.paused) {
+      this.elapsed = target;
+    }
   }
 
   private nextDue(limit: number): Timer | undefined {

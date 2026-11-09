@@ -15,9 +15,9 @@ const setup = (hooks: Partial<Record<Id, State<Id>>> = {}) => {
       log.push(`enter ${id}`);
       hooks[id]?.enter?.(scope, machine);
     },
-    update: (deltaMS, machine) => {
+    update: (deltaMS, machine, scope) => {
       log.push(`update ${id}`);
-      hooks[id]?.update?.(deltaMS, machine);
+      hooks[id]?.update?.(deltaMS, machine, scope);
     },
     exit: () => {
       log.push(`exit ${id}`);
@@ -54,14 +54,28 @@ describe("StateMachine", () => {
     assert.deepEqual(log, ["enter a", "exit a", "enter b"]);
   });
 
-  it("ticks the clock before updating the state with the frame delta", () => {
-    const seen: number[] = [];
-    const { clock, machine } = setup({ a: { update: (deltaMS) => seen.push(deltaMS, clock.now) } });
+  it("ticks the clock before updating the state with the frame delta and the state's scope", () => {
+    const seen: [number, number][] = [];
+    let enterScope: unknown;
+    let updateScope: unknown;
+    const { clock, machine } = setup({
+      a: {
+        enter: (scope) => {
+          enterScope = scope;
+        },
+        update: (deltaMS, _machine, scope) => {
+          seen.push([deltaMS, clock.now]);
+          updateScope = scope;
+        },
+      },
+    });
 
     machine.request("a");
     machine.update(16);
+    machine.update(10);
 
-    assert.deepEqual(seen, [16, 16]);
+    assert.deepEqual(seen, [[16, 16], [10, 26]]);
+    assert.equal(updateScope, enterScope);
   });
 
   it("defers a transition requested during update until the update finishes", () => {
@@ -120,13 +134,13 @@ describe("StateMachine", () => {
     assert.deepEqual(log, ["enter a", "exit a", "enter b", "update b", "update b"]);
   });
 
-  it("keeps the leaving state's timers running until the tick that requested the transition ends", () => {
+  it("stops the leaving state's timers as soon as it requests a transition, even later in the same tick", () => {
     const { log, machine } = setup({
       a: {
         enter: (scope, m) => {
           scope.after(10, () => m.request("b"));
           scope.after(20, () => log.push("a late"));
-          scope.after(40, () => log.push("a too late"));
+          scope.every(5, () => log.push("a every"));
         },
       },
     });
@@ -135,7 +149,44 @@ describe("StateMachine", () => {
     machine.update(30);
     machine.update(30);
 
-    assert.deepEqual(log, ["enter a", "a late", "exit a", "enter b", "update b"]);
+    assert.deepEqual(log, ["enter a", "a every", "exit a", "enter b", "update b"]);
+  });
+
+  it("does not play the title's thunder after the title asked to leave", () => {
+    const { log, machine } = setup({
+      a: {
+        enter: (scope, m) => {
+          scope.after(1000, () => m.request("b"));
+          scope.after(1010, () => log.push("thunder"));
+        },
+      },
+    });
+
+    machine.request("a");
+
+    for (let frame = 0; frame < 100; frame++) {
+      machine.update(100 / 6);
+    }
+
+    assert.equal(machine.current, "b");
+    assert.equal(log.includes("thunder"), false);
+  });
+
+  it("drops a later request from the leaving state's own timers in the same tick", () => {
+    const { log, machine } = setup({
+      a: {
+        enter: (scope, m) => {
+          scope.after(10, () => m.request("b"));
+          scope.after(20, () => m.request("c"));
+        },
+      },
+    });
+
+    machine.request("a");
+    machine.update(30);
+
+    assert.equal(machine.current, "b");
+    assert.deepEqual(log, ["enter a", "exit a", "enter b"]);
   });
 
   it("applies only the last of several requests made in one update", () => {
@@ -200,6 +251,115 @@ describe("StateMachine", () => {
     machine.update(16);
 
     assert.deepEqual(log, ["enter a", "a timer", "update a"]);
+  });
+
+  it("applies a request made while paused at once, with the new state's timers waiting for unpause", () => {
+    let scopeA: { readonly disposed: boolean } | undefined;
+    const { clock, log, machine } = setup({
+      a: {
+        enter: (scope) => {
+          scopeA = scope;
+          scope.every(10, () => log.push("a timer"));
+        },
+      },
+      b: { enter: (scope) => scope.after(10, () => log.push("b timer")) },
+    });
+
+    machine.request("a");
+    clock.paused = true;
+    machine.request("b");
+
+    assert.equal(machine.current, "b");
+    assert.equal(scopeA?.disposed, true);
+
+    machine.update(16);
+
+    assert.deepEqual(log, ["enter a", "exit a", "enter b"]);
+
+    clock.paused = false;
+    machine.update(16);
+
+    assert.deepEqual(log, ["enter a", "exit a", "enter b", "b timer", "update b"]);
+  });
+
+  it("fires only the active state's timers across repeated a -> b -> a replays", () => {
+    const fired: string[] = [];
+    const { machine } = setup({
+      a: { enter: (scope) => scope.every(10, () => fired.push("a")) },
+      b: { enter: (scope) => scope.every(10, () => fired.push("b")) },
+    });
+
+    for (let round = 0; round < 3; round++) {
+      machine.request("a");
+      machine.update(25);
+      machine.request("b");
+      machine.update(25);
+    }
+
+    assert.deepEqual(fired, ["a", "a", "b", "b", "a", "a", "b", "b", "a", "a", "b", "b"]);
+  });
+
+  it("ignores requests made inside exit", () => {
+    let saved: StateMachine<Id> | undefined;
+    const { log, machine } = setup({
+      a: {
+        enter: (_scope, m) => {
+          saved = m;
+        },
+        exit: () => saved?.request("c"),
+      },
+    });
+
+    machine.request("a");
+    machine.request("b");
+
+    assert.equal(machine.current, "b");
+    assert.deepEqual(log, ["enter a", "exit a", "enter b"]);
+  });
+
+  it("counts a state whose enter throws as entered, and exits it on the next transition", () => {
+    const { log, machine } = setup({
+      b: {
+        enter: (scope) => {
+          scope.after(10, () => log.push("b timer"));
+          throw new Error("enter failed");
+        },
+      },
+    });
+
+    machine.request("a");
+    assert.throws(() => machine.request("b"), /enter failed/);
+    assert.equal(machine.current, "b");
+
+    machine.request("c");
+    machine.update(20);
+
+    assert.deepEqual(log, ["enter a", "exit a", "enter b", "exit b", "enter c", "update c"]);
+  });
+
+  it("disposes the scope and leaves the machine idle when exit throws", () => {
+    let scopeA: { readonly disposed: boolean } | undefined;
+    const { log, machine } = setup({
+      a: {
+        enter: (scope) => {
+          scopeA = scope;
+        },
+        exit: () => {
+          throw new Error("exit failed");
+        },
+      },
+    });
+
+    machine.request("a");
+    assert.throws(() => machine.request("b"), /exit failed/);
+
+    assert.equal(machine.current, undefined);
+    assert.equal(scopeA?.disposed, true);
+
+    machine.request("c");
+
+    assert.equal(machine.current, "c");
+    assert.deepEqual(log, ["enter a", "exit a", "enter c"]);
   });
 
   it("stays usable after a state's update throws", () => {

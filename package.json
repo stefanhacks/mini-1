@@ -12,7 +12,7 @@
     "dev": "vite",
     "typecheck": "tsc",
     "lint": "eslint .",
-    "test": "node --test \"src/**/*.test.ts\"",
+    "test": "node --experimental-strip-types --test \"src/**/*.test.ts\"",
     "build": "vite build",
     "preview": "vite preview",
     "check": "npm run typecheck && npm run lint && npm run build"

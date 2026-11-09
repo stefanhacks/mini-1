@@ -62,6 +62,27 @@ export default tseslint.config(
     },
   },
   {
+    files: ["src/**/*.ts"],
+    ignores: ["src/**/*.test.ts"],
+    rules: {
+      "no-restricted-globals": [
+        "error",
+        ...["process", "Buffer", "global", "require", "__dirname", "__filename"].map((name) => ({
+          name,
+          message: "Node globals don't exist in the browser.",
+        })),
+        ...["setTimeout", "setInterval"].map((name) => ({
+          name,
+          message: "Use a TimerScope from src/core/clock.ts, so timers follow the game clock and pause.",
+        })),
+      ],
+      "no-restricted-imports": [
+        "error",
+        { patterns: [{ regex: "^node:", message: "Browser code can't import Node modules." }] },
+      ],
+    },
+  },
+  {
     files: ["src/**/*.test.ts"],
     rules: {
       "@typescript-eslint/no-floating-promises": [

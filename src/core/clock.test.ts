@@ -12,13 +12,14 @@ const setup = () => {
 };
 
 describe("GameClock", () => {
-  it("advances now by each tick and ignores non-positive deltas", () => {
+  it("advances now by each tick and ignores deltas that are not finite and above zero", () => {
     const { clock } = setup();
 
     clock.tick(16);
     clock.tick(0);
     clock.tick(-5);
     clock.tick(NaN);
+    clock.tick(Infinity);
     clock.tick(4);
 
     assert.equal(clock.now, 20);
@@ -109,6 +110,20 @@ describe("GameClock", () => {
 
     assert.deepEqual(log, ["pause@10", "b@20"]);
   });
+
+  it("throws when tick is called from inside a timer callback, and keeps working afterwards", () => {
+    const { clock, scope, log, record } = setup();
+
+    scope.after(10, () => clock.tick(5));
+    scope.after(20, record("b"));
+
+    assert.throws(() => clock.tick(15), /inside a timer callback/);
+    assert.equal(clock.now, 10);
+
+    clock.tick(10);
+
+    assert.deepEqual(log, ["b@20"]);
+  });
 });
 
 describe("TimerScope.every", () => {
@@ -146,11 +161,37 @@ describe("TimerScope.every", () => {
     assert.deepEqual(log, ["e@10", "a@15", "e@20", "b@20"]);
   });
 
-  it("rejects a period that is not a finite number above zero", () => {
+  it("anchors an every created inside a callback to that callback's due time", () => {
+    const { clock, scope } = setup();
+    const fired: number[] = [];
+
+    scope.after(10, () => scope.every(10, () => fired.push(clock.now)));
+    clock.tick(16);
+    clock.tick(30);
+
+    assert.deepEqual(fired, [20, 30, 40]);
+  });
+
+  it("does not drift over a long run of 60 fps ticks", () => {
+    const { clock, scope } = setup();
+    let fired = 0;
+
+    scope.every(100, () => fired++);
+
+    for (let frame = 0; frame < 108_000; frame++) {
+      clock.tick(1000 / 60);
+    }
+
+    assert.equal(fired, Math.floor(clock.now / 100));
+    assert.ok(fired >= 17_999);
+  });
+
+  it("rejects a period that is not a finite number of at least 1 ms", () => {
     const { scope } = setup();
     const noop = () => undefined;
 
     assert.throws(() => scope.every(0, noop), RangeError);
+    assert.throws(() => scope.every(0.5, noop), RangeError);
     assert.throws(() => scope.every(-1, noop), RangeError);
     assert.throws(() => scope.every(NaN, noop), RangeError);
     assert.throws(() => scope.every(Infinity, noop), RangeError);
@@ -196,8 +237,8 @@ describe("TimerScope.cancel", () => {
   it("cancels a timer due later in the same tick from an earlier callback", () => {
     const { clock, scope, log, record } = setup();
 
-    scope.after(10, () => scope.cancel(later));
     const later = scope.after(20, record("later"));
+    scope.after(10, () => scope.cancel(later));
     clock.tick(30);
 
     assert.deepEqual(log, []);
