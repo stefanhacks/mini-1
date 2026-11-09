@@ -27,7 +27,10 @@ These notes come from the reviewer, not the agents.
 - Touches that start within about 24 px of a screen edge are ignored, because of the iOS and Android edge gestures.
 - A pointer that went down before the challenge appeared is ignored.
 - Each pointer is tracked by `pointerId`.
-- Pixi v8 calls used: `globalpointermove`, `pointerup`, `pointerupoutside`, plus the `pointercancel` DOM fallback on `app.canvas`.
+- Pixi v8 calls used: `globalpointermove`, `pointerup`, `pointerupoutside`.
+  - A **mandatory** `pointercancel` DOM listener on `app.canvas`, because Pixi never forwards it.
+  - `globalpointermove` fires for every pointer, so filter by `pointerId`.
+- The zone's hit areas live in the UI layer, not in the pixel render texture.
 
 ### Chart the Course: Sequence
 
@@ -36,6 +39,8 @@ These notes come from the reviewer, not the agents.
    - Commit when |major| ≥ notch and |minor| < 0.6·notch.
    - After each commit, re-zero the origin at the finger's position.
    - The drag is relative, like a trackpad, so ↑↑↑↑↑↑↑ never runs out of room.
+   - **Drift reset:** if the minor axis reaches the limit before a commit, re-zero it. Otherwise a slow diagonal blocks every commit.
+   - **One active pointer only.** A second finger is ignored, which is what keeps the mash exploit closed.
 3. **Correct notch:** the next node lights, the boat drifts slightly that way, and a wake line grows behind it.
 4. **Wrong notch:** progress goes back to node 0, and the vignette pulses (not lightning, to stay under the 3 flashes/s budget).
    - A wrong notch that equals heading 0 advances to step 1 instead (the KB fix from 02).

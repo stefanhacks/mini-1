@@ -41,7 +41,7 @@ Use one on-screen cross of 4 buttons (↑ ↓ ← →) for all three challenge t
 | **Hold** ("... hold strong ...") | Press and hold the matching pad button for 3 s, while a radial ring fills. The pointer is tracked by `pointerId`; sliding off the button is tolerated. Progress ends only on `pointerup`, `pointerupoutside` or `pointercancel`. | Hold anywhere: loses the heading. Swipe-and-hold: gesture conflicts and complex to recognise. |
 | **Many** ("... be fast ...") | Tap the matching button 10× within 3 s, with a pip meter. | Tap anywhere: loses the heading. Swipe "rowing" or shaking: tiring, and shaking needs an iOS motion permission. |
 
-`pointercancel` *(uncertain)*: it's unclear whether Pixi v8 forwards it to display objects. Also listen for it on `app.canvas` as a DOM fallback.
+`pointercancel`: Pixi 8.20.1 does **not** forward it to display objects (see 04, correction 1). A DOM listener on `app.canvas` is **mandatory**. Also release every tracked pointer on `blur` and `visibilitychange`. The keyboard fallback ignores `KeyboardEvent.repeat`.
 
 **Optional accessibility mode** (owner decision): Hold becomes tap-to-start / tap-to-stop.
 
@@ -74,8 +74,9 @@ Use one on-screen cross of 4 buttons (↑ ↓ ← →) for all three challenge t
     - **Landscape:** pad in the side bands, text box inside the square as in the original.
 - **Background:** fill everything outside the square with black. The original art already fades to black at every edge (vignette, sea bottom, cloud top), so there are no visible seams. Do not extend the art.
 - **Scaling: "sharp-bilinear".**
-  1. Render the stage into a `RenderTexture` of 500·k pixels with nearest filtering, where k is the largest integer that fits the device pixels.
-  2. Draw that texture once with linear filtering, scaled to fit.
+  1. Render the stage, whose art textures use `scaleMode: "nearest"`, at scale k into a 500·k `RenderTexture`. k is the largest integer that fits the device pixels.
+  2. Draw that texture once, scaled to fit. The render texture's own source must use `"linear"` filtering.
+  - Touch targets can't live inside the render texture, because it is not hit-tested. All touch targets go in the UI layer.
   - This avoids both shimmering pixels and wasted screen space. Pure integer scaling uses only about 67% of a 375 px phone.
 - **Device pixel ratio:** use the real DPR for the output canvas. The template currently caps it at 2, which looks soft on DPR-3 iPhones. The render texture already bounds the cost.
 - **Safe areas:** add `viewport-fit=cover` to the viewport meta. Read the `env(safe-area-inset-*)` values through CSS variables on a hidden element.
@@ -92,7 +93,10 @@ Use one on-screen cross of 4 buttons (↑ ↓ ← →) for all three challenge t
 - **Render text outside the pixel render texture:** draw it in a UI layer with Pixi `Text` at full DPR, using the Josefin Slab TTF.
 - **Sizes:** story text at least 16–17 CSS px, credits at least 12 CSS px. The original sizes would come out at 8–14 px on a 360 px phone.
 - **Font loading:** wait for `document.fonts.load` before creating text, so the fallback font doesn't get baked in.
-- **Typing speeds:** keep 0.01 s/char for normal lines and 0.1 s/char for whispers. The whisper pacing is the mood.
+- **Typing speeds:**
+  - Normal lines: about one character per frame (~60 chars/s). The original's 0.01 s/char was capped by one `WaitForSeconds` per character.
+  - Whispers: 0.1 s/char. The whisper pacing is the mood.
+  - Use a time accumulator, and pre-wrap lines.
 - **Text box:** `text_box.png` scaled to its own integer size in the UI layer. The continue cursor is an indicator only.
 
 ## Audio
@@ -112,7 +116,8 @@ Use one on-screen cross of 4 buttons (↑ ↓ ← →) for all three challenge t
 ## Lifecycle
 
 - **Start gate:** this replaces the original 5 s load screen. It covers asset loading, the flashing-lights warning, and "Tap to begin". That tap also unlocks audio.
-- **Game clock:** every timer runs on Pixi ticker `deltaMS`, with large deltas clamped. No `setTimeout`. Stopping the ticker freezes the whole game.
+- **Game clock:** every timer runs on Pixi ticker `deltaMS`. No `setTimeout`. Stopping the ticker freezes the whole game. The Ticker already caps a frame at 100 ms.
+- **bfcache:** treat `pageshow` with `persisted` like returning from a hidden tab.
 - **Pause and resume:**
   - Pause on `visibilitychange` and `pagehide`.
   - When the page returns, show "Tap to continue" instead of resuming automatically.
@@ -124,7 +129,7 @@ Use one on-screen cross of 4 buttons (↑ ↓ ← →) for all three challenge t
 
 - **Keep every effect.** The fixed-size render texture bounds the cost, whatever the screen size.
 - **Rain:** v8 `ParticleContainer` / `Particle`, pooled, at 220/s. Halve the rate automatically only if a low-end test needs it.
-- **Ticker:** `maxFPS = 60` saves battery on 120 Hz screens. All motion is time-based.
+- **Ticker:** don't set `maxFPS = 60`. Pixi truncates the frame delta, which can give about 40 fps on 120 Hz screens (04, correction 3). Use `maxFPS` ≥ 63, or limit frames by hand. All motion is time-based.
 - **Flashes:**
   - Keep the warning.
   - The strike rate is already under the WCAG 2.3.1 threshold of 3 flashes/s.
