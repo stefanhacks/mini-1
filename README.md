@@ -1,4 +1,4 @@
-# eeiriee
+# mini-1
 
 Browser game client built with Vite, TypeScript and Pixi.js (the only runtime dependency).
 

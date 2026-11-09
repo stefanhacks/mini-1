@@ -1,4 +1,4 @@
-# eeiriee
+# mini-1
 
 Browser game client. Vite + TypeScript + Pixi.js (`pixi.js` is the only runtime dependency).
 
@@ -56,7 +56,7 @@ If `node_modules` is missing, install with `npm ci`. Run `npm run check` (`typec
   ```md
   Auto Delete Branches: https://cl-auto-delete-branches--eeiriee.netlify.app
 
-  PR: https://github.com/stefanhacks/eeiriee/pull/3
+  PR: https://github.com/stefanhacks/mini-1/pull/3
 
   ---
   ```
