@@ -1,4 +1,4 @@
-# mini-1
+# mini-one
 
 Browser game client. Vite + TypeScript + Pixi.js (`pixi.js` is the only runtime dependency).
 
@@ -56,7 +56,7 @@ If `node_modules` is missing, install with `npm ci`. Run `npm run check` (`typec
   ```md
   Auto Delete Branches: https://cl-auto-delete-branches--mini-one.netlify.app
 
-  PR: https://github.com/stefanhacks/mini-1/pull/3
+  PR: https://github.com/stefanhacks/mini-one/pull/3
 
   ---
   ```
