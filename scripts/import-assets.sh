@@ -11,10 +11,13 @@ if [ "$#" -ne 1 ]; then
 fi
 
 SRC="$1/Assets"
-OUT="$(dirname "$0")/../src/assets"
+ROOT="$(dirname "$0")/.."
+OUT="$ROOT/src/assets"
 RATE=44100
 GUARD=4410 # 0.1 s at 44.1 kHz, at the start of every audio file (and at the end of loops)
 PRIMING_TOLERANCE=1024 # one AAC frame: the decoder may keep the encoder's end padding
+MIN_SNR=15 # dB, decoded .m4a against its input PCM at lag 0
+MIN_SEAM_SNR=20 # dB, loops only: the band around loopStart against the band around loopEnd
 
 [ -d "$SRC/Graphics/SpritesFinal" ] || { echo "not a Unity checkout: $1" >&2; exit 1; }
 
@@ -23,10 +26,10 @@ trap 'rm -rf "$TMP"' EXIT
 
 # --- Sprites ---------------------------------------------------------------------------------------------------
 # Byte-identical copies. Dropped: Actors/eye_large, Actors/eye_small and Graphics/icon.png (unused).
-ACTORS="boat boat_flipped monster_a monster_b"
-STAGE="background_pillars background_tentacles bubble clouds flash raindrop sea_b sea_f sea_m
-  thunder_0 thunder_1 thunder_2 thunder_3 thunder_4 vignette"
-UI="arrow_down arrow_left arrow_right arrow_up cursor_empty cursor_past cursor_selected text_box title"
+ACTORS=(boat boat_flipped monster_a monster_b)
+STAGE=(background_pillars background_tentacles bubble clouds flash raindrop sea_b sea_f sea_m
+  thunder_0 thunder_1 thunder_2 thunder_3 thunder_4 vignette)
+UI=(arrow_down arrow_left arrow_right arrow_up cursor_empty cursor_past cursor_selected text_box title)
 
 # Unity SpriteAlignment presets (pivot in Unity space, y measured from the bottom); 9 = Custom uses spritePivot.
 preset_pivot() {
@@ -39,11 +42,14 @@ preset_pivot() {
 
 # Prints "<file> <alignment> <anchor x> <anchor y>"; Pixi anchors are y-down, so anchor y = 1 - Unity pivot y.
 sprite_anchor() { # $1 = .meta file
-  local mode align px py
+  local mode align pivot px py
   mode="$(awk '$1 == "spriteMode:" { print $2 }' "$1")"
   align="$(awk '$1 == "alignment:" { print $2; exit }' "$1")"
-  read -r px py < <(sed -n 's/^ *spritePivot: {x: \([-0-9.e]*\), y: \([-0-9.e]*\)}.*/\1 \2/p' "$1")
-  [ "$mode" = "1" ] || { echo "$1: spriteMode $mode is not Single" >&2; return 1; }
+  pivot="$(sed -n 's/^ *spritePivot: {x: \([-0-9.e]*\), y: \([-0-9.e]*\)}.*/\1 \2/p' "$1")"
+  [ "$mode" = "1" ] || { echo "$1: spriteMode '$mode' is not 1 (Single)" >&2; return 1; }
+  [ -n "$align" ] || { echo "$1: no alignment field" >&2; return 1; }
+  [ -n "$pivot" ] || { echo "$1: no spritePivot field" >&2; return 1; }
+  read -r px py <<< "$pivot"
   if [ "$align" != "9" ]; then
     local preset
     preset="$(preset_pivot "$align")"
@@ -57,18 +63,20 @@ sprite_anchor() { # $1 = .meta file
     'BEGIN { printf "%-26s alignment %s  anchor (%g, %g)\n", f, al, x, 1 - y }'
 }
 
-copy_sprites() { # $1 = Unity folder, $2 = output folder, $3 = names
-  mkdir -p "$OUT/sprites/$2"
-  for name in $3; do
-    cp "$SRC/Graphics/SpritesFinal/$1/$name.png" "$OUT/sprites/$2/$name.png"
-    sprite_anchor "$SRC/Graphics/SpritesFinal/$1/$name.png.meta"
+copy_sprites() { # $1 = Unity folder, $2 = output folder, $3... = names
+  local from="$1" to="$2"
+  shift 2
+  mkdir -p "$OUT/sprites/$to"
+  for name in "$@"; do
+    cp "$SRC/Graphics/SpritesFinal/$from/$name.png" "$OUT/sprites/$to/$name.png"
+    sprite_anchor "$SRC/Graphics/SpritesFinal/$from/$name.png.meta"
   done
 }
 
 echo "Sprites:"
-copy_sprites Actors actors "$ACTORS"
-copy_sprites Stage stage "$STAGE"
-copy_sprites UI ui "$UI"
+copy_sprites Actors actors "${ACTORS[@]}"
+copy_sprites Stage stage "${STAGE[@]}"
+copy_sprites UI ui "${UI[@]}"
 
 # --- Audio -----------------------------------------------------------------------------------------------------
 # All work is on raw mono f32le PCM, cut by exact byte counts (4 bytes per sample), then encoded once to AAC.
@@ -82,7 +90,8 @@ samples_of() { # $1 = file; exact sample count of the first audio stream
 
 # Checks the decoded .m4a: length within one AAC frame of the input, SNR against the input PCM at lag 0
 # (a misaligned decode would score near 0 dB), and for loops the seam: the GUARD band around loopStart must match
-# the one around loopEnd. $1 = .m4a, $2 = encoded input PCM, $3 = loop length in samples (0 for one-shots).
+# the one around loopEnd. Fails below MIN_SNR / MIN_SEAM_SNR.
+# $1 = .m4a, $2 = encoded input PCM, $3 = loop length in samples (0 for one-shots).
 verify() {
   local expected decoded
   expected=$(( $(stat -c %s "$2") / 4 ))
@@ -93,11 +102,13 @@ verify() {
     return 1
   fi
   paste <(od -An -v -t f4 -w4 "$2") <(od -An -v -t f4 -w4 "$TMP/check.raw") | awk -F '\t' \
-    -v name="$(basename "$1")" -v expected="$expected" -v decoded="$decoded" -v guard="$GUARD" -v len="$3" '
+    -v name="$(basename "$1")" -v expected="$expected" -v decoded="$decoded" -v guard="$GUARD" -v len="$3" \
+    -v min_snr="$MIN_SNR" -v min_seam="$MIN_SEAM_SNR" '
     $1 ~ /[0-9]/ { n++; s[n] = $2; sig += $1 * $1; err += ($1 - $2) ^ 2 }
     END {
-      line = sprintf("%-22s samples %d (decoded %d, +%d)  SNR %.1f dB", name, expected, decoded, decoded - expected,
-        10 * log(sig / err) / log(10))
+      snr = 10 * log(sig / err) / log(10)
+      line = sprintf("%-22s samples %d (decoded %d, +%d)  SNR %.1f dB", name, expected, decoded,
+        decoded - expected, snr)
       if (len > 0) {
         # sample index i (0-based) is s[i + 1]; compare [loopStart - GUARD/2, loopStart + GUARD/2) with loopEnd
         h = int(guard / 2)
@@ -106,15 +117,26 @@ verify() {
           d = a - b; if (d < 0) { d = -d }; if (d > max) { max = d }
           dif += (a - b) ^ 2; ref += a * a
         }
+        seam = 10 * log(ref / dif) / log(10)
         line = line sprintf("  seam s[%d]=%.4f s[%d]=%.4f  max|diff| %.4f  seam SNR %.1f dB", guard, s[guard + 1],
-          guard + len, s[guard + len + 1], max, 10 * log(ref / dif) / log(10))
+          guard + len, s[guard + len + 1], max, seam)
       }
       print line
+      if (snr < min_snr) {
+        printf "%s: SNR %.1f dB is below %d dB (bad encode or misaligned decode)\n", name, snr, min_snr > "/dev/stderr"
+        exit 1
+      }
+      if (len > 0 && seam < min_seam) {
+        printf "%s: loop seam SNR %.1f dB is below %d dB (loop region does not wrap)\n", name, seam, min_seam \
+          > "/dev/stderr"
+        exit 1
+      }
     }'
 }
 
-encode() { # $1 = input raw PCM, $2 = bitrate, $3 = output .m4a
-  ffmpeg -hide_banner -loglevel error -y -f f32le -ar "$RATE" -ac 1 -i "$1" -c:a aac -b:a "$2" "$3"
+encode() { # $1 = input raw PCM, $2 = bitrate, $3 = output .m4a; bit-exact and metadata-free for stable reruns
+  ffmpeg -hide_banner -loglevel error -y -f f32le -ar "$RATE" -ac 1 -i "$1" -map_metadata -1 \
+    -c:a aac -b:a "$2" -fflags +bitexact -flags:a +bitexact "$3"
 }
 
 # $1 = source .ogg (relative to Sounds/Pixitracker), $2 = output folder, $3 = output name, $4 = bitrate,
@@ -152,14 +174,24 @@ import_audio SFX/kraken.ogg sfx kraken 64k once
 # SFX/noise.ogg is unused and dropped. creak_loop / haul_tick in audio/sfx come from make-sfx.sh, left untouched.
 
 # --- Font ------------------------------------------------------------------------------------------------------
+FONT="$SRC/Font/JosefinSlab-Regular.ttf"
 mkdir -p "$OUT/fonts"
-cp "$SRC/Font/JosefinSlab-Regular.ttf" "$OUT/fonts/JosefinSlab-Regular.ttf"
-LICENSE="$(find "$SRC/Font" -maxdepth 1 \( -iname '*ofl*' -o -iname '*license*' \) ! -name '*.meta' | head -n 1)"
-if [ -n "$LICENSE" ]; then
-  cp "$LICENSE" "$OUT/fonts/"
-else
-  echo "Font: no OFL license text found next to JosefinSlab-Regular.ttf in the Unity project" >&2
-fi
+cp "$FONT" "$OUT/fonts/JosefinSlab-Regular.ttf"
+
+# The Unity project ships no license text for Josefin Slab. public/fonts/OFL.txt is built from the font's own
+# copyright notice (name ID 13) and the SIL OFL 1.1 text bundled with TextMesh Pro's Anton example font (its own
+# two-line copyright header dropped). Served unhashed at /fonts/OFL.txt.
+OFL_SRC="$SRC/TextMesh Pro/Examples & Extras/Fonts/Anton OFL.txt"
+COPYRIGHT="$(strings -e b "$FONT" | grep -o -m 1 'Copyright (c) [0-9]*, [^,]*, with Reserved Font Name [^.]*\.')" || {
+  echo "$FONT: no 'Copyright (c) <year>, <author>, with Reserved Font Name <name>.' notice found" >&2
+  exit 1
+}
+sed -n 3p "$OFL_SRC" | grep -q '^This Font Software is licensed under the SIL Open Font License, Version 1.1' || {
+  echo "$OFL_SRC: line 3 is not the OFL 1.1 notice; check the header before copying" >&2
+  exit 1
+}
+mkdir -p "$ROOT/public/fonts"
+{ echo "$COPYRIGHT"; tail -n +3 "$OFL_SRC"; } > "$ROOT/public/fonts/OFL.txt"
 
 echo "Outputs:"
-du -sh "$OUT/sprites" "$OUT/audio/music" "$OUT/audio/sfx" "$OUT/fonts"
+du -sh "$OUT/sprites" "$OUT/audio/music" "$OUT/audio/sfx" "$OUT/fonts" "$ROOT/public/fonts/OFL.txt"
