@@ -82,5 +82,5 @@ If `node_modules` is missing, install with `npm ci`. Run `npm run check` (`typec
   - `wip:` commits while the PR is a draft.
   - `add:` commits after the PR leaves draft that fit none of the prefixes below.
   - `fix:` commits focused only on hotfixes and tests.
-  - `pcr:` commits added after a review (post code review).
+  - `pcr:` commits added after a review (post code review), including fixes from reviewing agents. Applies whether or not the PR is a draft.
   - `mrg:` the squash-merge commit on `main`, titled after the PR with its number, e.g. `mrg: rename project to mini-one (#1)`.
