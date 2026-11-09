@@ -1,30 +1,87 @@
 import "./style.css";
-import { Application, Graphics } from "pixi.js";
+import { Application, Assets, Text, type Texture, type UnresolvedAsset } from "pixi.js";
+import { FONTS, SPRITES, type SpriteKey } from "./assets/manifest.ts";
+import { GameClock } from "./core/clock.ts";
+import { createLayers, fitLayers } from "./core/layers.ts";
+import { StateMachine } from "./core/state-machine.ts";
+import { buildPlaceholderScene } from "./game/placeholder.ts";
+import { createGameStates, type GameStateId } from "./game/states.ts";
 
-const CIRCLE_RADIUS = 50;
 const MAX_RESOLUTION = 2;
+const UI_FONT = "Josefin Slab";
+const UI_MARGIN = 12;
+
+// Pixel art: every sprite texture samples nearest. `data` becomes the TextureSource options.
+const loadSprites = async() => {
+  const assets = Object.entries(SPRITES).map(([alias, { url }]): UnresolvedAsset => ({
+    alias,
+    src: url,
+    data: { scaleMode: "nearest" },
+  }));
+
+  return (await Assets.load<Texture>(assets)) as Record<SpriteKey, Texture>;
+};
+
+// Without `family`, loadWebFont would name the font after its hashed file name.
+const loadFont = async() => {
+  await Assets.load({ src: FONTS[UI_FONT], data: { family: UI_FONT } });
+};
 
 const app = new Application();
 
 await app.init({
   resizeTo: window,
-  background: "#1e1e1e",
+  background: "#000000",
   resolution: Math.min(window.devicePixelRatio, MAX_RESOLUTION),
   autoDensity: true,
 });
 
 document.body.appendChild(app.canvas);
 
-const circle = new Graphics()
-  .circle(0, 0, CIRCLE_RADIUS)
-  .fill(0x00ff00);
+const layers = createLayers(app.stage);
+const clock = new GameClock();
+const assetsLoaded = Promise.all([loadSprites(), loadFont()]);
+const machine = new StateMachine<GameStateId>(clock, createGameStates({ loaded: assetsLoaded }));
 
-app.stage.addChild(circle);
+window.debug = { app, clock, machine, layers };
 
-const recenter = (width: number, height: number) => {
-  circle.position.set(width / 2, height / 2);
+// The only thing that ticks the clock. A listener that throws stops Pixi's frame loop for good (the Ticker skips its
+// next requestAnimationFrame), so the first error halts the game logic instead: it is reported as an uncaught error,
+// kept in `debug.error`, and the last frame keeps rendering.
+let halted = false;
+
+app.ticker.add((ticker) => {
+  if (halted) {
+    return;
+  }
+
+  try {
+    machine.update(ticker.deltaMS);
+  } catch (error) {
+    halted = true;
+    window.debug.error = error;
+    reportError(error);
+  }
+});
+
+machine.request("gate");
+
+const [textures] = await assetsLoaded;
+
+buildPlaceholderScene(layers, textures);
+
+const label = new Text({
+  text: "M0",
+  style: { fontFamily: UI_FONT, fontSize: 16, fill: "#ffffff" },
+});
+
+label.position.set(UI_MARGIN, UI_MARGIN);
+layers.ui.addChild(label);
+
+const resize = (width: number, height: number) => {
+  fitLayers(layers, width, height);
 };
 
-app.renderer.on("resize", recenter);
+app.renderer.on("resize", resize);
 
-recenter(app.screen.width, app.screen.height);
+resize(app.screen.width, app.screen.height);
