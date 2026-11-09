@@ -119,6 +119,9 @@ Inputs: screen size in CSS px, the safe-area insets, and the device pixel ratio.
 All approved:
 
 1. **Minimum control sizes:** portrait zone at least 30% of the safe height and at least 200 CSS px; landscape bands at least 200 CSS px each.
+   - These minimums are reserved **before** the 24 px edge exclusion (owner decision after review). On a side with no safe-area inset, the final zone or band is therefore at least 176 px.
+   - The compass pad is sized `min(200, zone width, zone height)`, and placed toward the bottom of a tall portrait zone.
+   - The API differs slightly from the plan text: `computeLayout(screen)` returns `{ orientation, safe, square, scale, zones, dpr, sideDevicePx }`, and the mapping functions are `playfieldToScreen(layout, point)` and `screenToPlayfield(layout, point)`.
 2. **DPR cap:** 3.
 3. **`@playwright/test`:** pinned to 1.63.
 
