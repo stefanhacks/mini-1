@@ -45,7 +45,7 @@ export default tseslint.config(
       "no-trailing-spaces": "error",
       "no-whitespace-before-property": "error",
       "space-before-blocks": ["error", "always"],
-      "space-before-function-paren": ["error", "never"],
+      "space-before-function-paren": ["error", { anonymous: "never", named: "never", asyncArrow: "always" }],
       "space-in-parens": ["error", "never"],
       "space-infix-ops": "error",
 
@@ -59,6 +59,36 @@ export default tseslint.config(
       "no-var": "error",
       "prefer-const": "error",
       "no-throw-literal": "error",
+    },
+  },
+  {
+    files: ["src/**/*.ts"],
+    ignores: ["src/**/*.test.ts"],
+    rules: {
+      "no-restricted-globals": [
+        "error",
+        ...["process", "Buffer", "global", "require", "__dirname", "__filename"].map((name) => ({
+          name,
+          message: "Node globals don't exist in the browser.",
+        })),
+        ...["setTimeout", "setInterval"].map((name) => ({
+          name,
+          message: "Use a TimerScope from src/core/clock.ts, so timers follow the game clock and pause.",
+        })),
+      ],
+      "no-restricted-imports": [
+        "error",
+        { patterns: [{ regex: "^node:", message: "Browser code can't import Node modules." }] },
+      ],
+    },
+  },
+  {
+    files: ["src/**/*.test.ts"],
+    rules: {
+      "@typescript-eslint/no-floating-promises": [
+        "error",
+        { allowForKnownSafeCalls: [{ from: "package", package: "node:test", name: ["describe", "it", "test"] }] },
+      ],
     },
   },
   {

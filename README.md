@@ -28,3 +28,6 @@ Netlify builds every branch and PR (`netlify.toml`):
 ## License
 
 [Unlicense](LICENSE) (public domain).
+
+The Josefin Slab font (`src/assets/fonts/`) is © Santiago Orozco and licensed under the SIL Open Font License 1.1
+(see [`public/fonts/OFL.txt`](public/fonts/OFL.txt)), not under the Unlicense.

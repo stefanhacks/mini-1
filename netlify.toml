@@ -4,3 +4,10 @@
 
 [build.environment]
   NODE_VERSION = "22"
+
+# /assets/ holds only Vite's content-hashed build output, so it can be cached forever.
+# Never put files in public/assets/: they would be served unhashed under this immutable header.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
