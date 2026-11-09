@@ -49,7 +49,7 @@ These notes come from the reviewer, not the agents.
    - **Lift grace:** about 1 s to put the finger back down and resume.
 6. **Building unease:** in later rounds the wake line lags or sways behind the finger ("is it steering you?") and the vignette tightens. The bubbles already rise 2 → 4 → 6.
 7. **The mash exploit** is impossible, because one pointer gives one axis per notch.
-8. **Accessibility:** tapping the adjacent node in a direction counts as one notch, which falls back to the pad model.
+8. **Accessibility:** the compass pad is the fallback: tap the arrows in order. The earlier "tap a node" idea was dropped by the owner, because the nodes are out of thumb reach in portrait and "the node in a direction" isn't well-defined.
 
 ### Brace the Helm: Hold
 

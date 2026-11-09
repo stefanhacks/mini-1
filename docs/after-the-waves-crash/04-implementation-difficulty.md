@@ -50,7 +50,7 @@ These were checked against `node_modules/pixi.js` and the Unity project. Items 1
 | **Chart the Course** | L | 4–6 | Tuning *is* the feel; the unease effect has no spec yet |
 | **Brace the Helm** | M | 2–3 | Stuck holds; rain slant depends on the rain system |
 | **Haul the Line** | M | 2–3 | Return-stroke jitter; fatigue (playtest) |
-| All Hands, Latch, Steady haul, node-tap assist | S each | 0.5–1 each | The assist specs are ambiguous (see Owner questions) |
+| All Hands, Latch, Steady haul | S each | 0.5 each | — (specs settled; the node-tap assist was dropped) |
 | Helm Wheel (if Chart is rejected) | L | 4–6 + art | Ghost detents; rotation shimmer, which needs pre-rendered frames |
 | Follow the Light (if Chart is rejected) | M–L | 3–5 | Design problems (reach, occlusion), not code problems |
 | State machine: title → 4 stories → 3 rounds → ending → replay | M | 2–3 | Leaks on replay |
@@ -127,13 +127,12 @@ Gameplay and platform tracks interleave. Each milestone ends with a Netlify bran
 
 ## Owner questions
 
-Open:
+All resolved:
 
-1. **Test tooling:** add `@playwright/test`, or use plain Node scripts with the global Playwright? Pure-logic tests can run on `node --test` with no dependency, but cross-file `.ts` imports need `allowImportingTsExtensions`.
-2. **Node-tap assist:** the nodes sit on the playfield, out of thumb reach in portrait. Drop it, or redefine it?
-
-Resolved:
-
+1. **Test tooling:** two stages.
+   - Pure-logic tests on `node --test` from M0, with no dependency. This needs `allowImportingTsExtensions` in tsconfig.
+   - `@playwright/test` is added as a dev dependency at M1, when there is a layout to screenshot. Until then, any browser check uses plain Node scripts with the global Playwright.
+2. **Node-tap assist:** dropped. The compass pad is Chart's accessibility fallback: tap the arrows in order.
 3. **Hold assists:** merged into one Latch, triggered from the compass pad or the keyboard (see 03).
 4. **Steady haul:** the window doubles, to 6 s.
 5. **Many window expiry:** the next window starts at the next counted movement.
