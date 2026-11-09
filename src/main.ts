@@ -1,9 +1,11 @@
 import "./style.css";
-import { Application, Assets, type Texture, type UnresolvedAsset } from "pixi.js";
+import { Application, Assets, UPDATE_PRIORITY, type Texture, type UnresolvedAsset } from "pixi.js";
 import { FONTS, SPRITES, type SpriteKey } from "./assets/manifest.ts";
 import { GameClock } from "./core/clock.ts";
-import { createLayers, fitLayers } from "./core/layers.ts";
-import { computeLayout, ZERO_INSETS } from "./core/layout.ts";
+import { createDebugOverlay, drawDebugOverlay, isDebugEnabled } from "./core/debug-overlay.ts";
+import { PlayfieldDisplay } from "./core/display.ts";
+import { createLayers } from "./core/layers.ts";
+import { computeLayout, type Layout } from "./core/layout.ts";
 import { StateMachine } from "./core/state-machine.ts";
 import {
   blockContextMenu,
@@ -12,6 +14,7 @@ import {
   onElementResize,
   onVisualViewportResize,
   readResolution,
+  readSafeAreaInsets,
 } from "./core/viewport.ts";
 import { buildPlaceholderScene } from "./game/placeholder.ts";
 import { createGameStates, type GameStateId } from "./game/states.ts";
@@ -52,23 +55,66 @@ onDevicePixelRatioChange(() => {
   app.renderer.resize(gameElement.clientWidth, gameElement.clientHeight, readResolution());
 });
 
-const layers = createLayers(app.stage);
+const layers = createLayers();
+const display = new PlayfieldDisplay(app.renderer, layers.playfield);
+const overlay = isDebugEnabled() ? createDebugOverlay() : null;
 
-// Temporary wiring until wave 2 reads the safe-area probe: no insets yet. Snaps to the canvas resolution, which is the
-// real device pixel grid (the DPR capped at MAX_RESOLUTION).
-const resize = (width: number, height: number) => {
-  fitLayers(layers, computeLayout({ width, height, insets: ZERO_INSETS, dpr: app.renderer.resolution }));
+app.stage.addChild(display.sprite, layers.ui);
+
+if (overlay) {
+  layers.ui.addChild(overlay);
+}
+
+// Whatever follows the layout besides the display and the overlay: the scene, once the assets are in.
+const layoutListeners: ((layout: Layout) => void)[] = [];
+
+// Sized from #game, not from the renderer's screen: Pixi rounds the canvas to whole device pixels, so at a fractional
+// resolution its screen can be up to half a device pixel larger than the page (1500 CSS px at 2.625 gives 1500.19),
+// and a square fitted to it could hang off the bottom or right edge.
+const computeCurrentLayout = () => computeLayout({
+  width: gameElement.clientWidth,
+  height: gameElement.clientHeight,
+  insets: readSafeAreaInsets(),
+  // The canvas resolution is the real device pixel grid: the DPR capped at MAX_RESOLUTION.
+  dpr: app.renderer.resolution,
+});
+
+let layout = computeCurrentLayout();
+
+const applyLayout = () => {
+  display.resize(layout);
+
+  if (overlay) {
+    drawDebugOverlay(overlay, layout);
+  }
+
+  for (const listener of layoutListeners) {
+    listener(layout);
+  }
 };
 
-app.renderer.on("resize", resize);
+// Every size, resolution and inset change ends in a renderer resize: see viewport.ts.
+app.renderer.on("resize", () => {
+  layout = computeCurrentLayout();
+  applyLayout();
+});
 
-resize(app.screen.width, app.screen.height);
+applyLayout();
 
 const clock = new GameClock();
 const assetsLoaded = Promise.all([loadSprites(), loadFont()]);
 const machine = new StateMachine<GameStateId>(clock, createGameStates({ loaded: assetsLoaded }));
 
-window.debug = { app, clock, machine, layers };
+window.debug = {
+  app,
+  clock,
+  machine,
+  layers,
+  display,
+  get layout() {
+    return layout;
+  },
+};
 
 // The only thing that ticks the clock. A listener that throws stops Pixi's frame loop for good (the Ticker skips its
 // next requestAnimationFrame), so the first error halts the game logic instead: it is reported as an uncaught error,
@@ -89,8 +135,16 @@ app.ticker.add((ticker) => {
   }
 });
 
+// Draws the playfield into its render texture after the game logic above (same priority, added later) and before
+// Pixi renders the stage (LOW). Outside the guard: a halted game keeps its last frame on screen.
+app.ticker.add(() => display.render(), undefined, UPDATE_PRIORITY.NORMAL);
+
 machine.request("gate");
 
 const [textures] = await assetsLoaded;
 
-buildPlaceholderScene(layers, textures);
+const scene = buildPlaceholderScene(layers, textures);
+
+window.debug.scene = scene;
+layoutListeners.push(scene.relayout);
+scene.relayout(layout);
