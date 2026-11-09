@@ -89,8 +89,20 @@ Follow the existing code written by Stefan:
 
 ## Open questions
 
-1. **Types for `node:test`:** `tsc` can't type-check `node:test` / `node:assert` imports without Node's type definitions. Not installed today.
+1. **Types for `node:test`:** resolved by the owner. `@types/node@22` was added as a dev dependency.
+   - The leak of Node globals into browser code is blocked by an ESLint rule.
+   - `setTimeout` and `setInterval` are banned in `src` in favour of `TimerScope`.
 2. **Page title:** `index.html` still says "Boil". It's left as is in M0, because M1 touches `index.html` anyway.
+
+## Carried forward from the M0 reviews
+
+- **M1:**
+  - Render the playfield at 500 px into the render texture and snap it to whole pixels. Without this, nearest sampling at scales below 1 drops pixel rows: the logo's "THE" becomes unreadable on a Pixel 7 in landscape.
+  - The render-texture swap is contained in `layers.ts`.
+- **M3:**
+  - The Gate needs a visible load error and a retry. Today a single failed asset (Pixi's default strategy is `"throw"`) leaves a black screen and one reported error.
+- **Security:**
+  - Pixi loads textures in a `blob:` web worker, so any future Content Security Policy needs `worker-src blob:`.
 
 ## Done when
 
