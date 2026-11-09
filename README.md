@@ -21,9 +21,9 @@ Node 22 (see `.nvmrc`).
 
 Netlify builds every branch and PR (`netlify.toml`):
 
-- Production (`main`): https://eeiriee.netlify.app
-- Branch preview: `https://<branch>--eeiriee.netlify.app`
-- PR preview: `https://deploy-preview-<pr-number>--eeiriee.netlify.app`
+- Production (`main`): https://mini-one.netlify.app
+- Branch preview: `https://<branch>--mini-one.netlify.app`
+- PR preview: `https://deploy-preview-<pr-number>--mini-one.netlify.app`
 
 ## License
 

@@ -47,14 +47,14 @@ If `node_modules` is missing, install with `npm ci`. Run `npm run check` (`typec
 
 ## Netlify
 
-- Site: `eeiriee`. Config lives in `netlify.toml` (build `npm run build`, publish `dist`, Node 22).
-- Branch preview: `https://<branch>--eeiriee.netlify.app`
-- PR preview: `https://deploy-preview-<pr-number>--eeiriee.netlify.app`
-- Production (builds from `main`): `https://eeiriee.netlify.app`
+- Site: `mini-one`. Config lives in `netlify.toml` (build `npm run build`, publish `dist`, Node 22).
+- Branch preview: `https://<branch>--mini-one.netlify.app`
+- PR preview: `https://deploy-preview-<pr-number>--mini-one.netlify.app`
+- Production (builds from `main`): `https://mini-one.netlify.app`
 - Start every answer with a header: the task name and the branch preview link of the current branch, then the GitHub PR link, then a horizontal rule. The task name is the branch name without `cl-`, in title case. Omit the PR line if no PR is open. With no working branch, use the production link. Nothing else in the header: no notes on build status.
 
   ```md
-  Auto Delete Branches: https://cl-auto-delete-branches--eeiriee.netlify.app
+  Auto Delete Branches: https://cl-auto-delete-branches--mini-one.netlify.app
 
   PR: https://github.com/stefanhacks/mini-1/pull/3
 
