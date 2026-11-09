@@ -13,7 +13,11 @@ export const MIN_ZONE_HEIGHT = 200;
 /** Landscape: each side band is at least this wide, so the 170–200 px pad fits. */
 export const MIN_BAND_WIDTH = 200;
 
-/** Keep-out strip along every physical screen edge, against the iOS swipe-back and Android back gestures. */
+/**
+ * Keep-out strip along every physical screen edge, against the iOS swipe-back and Android back gestures. It is cut out
+ * after the minimum control space is reserved (owner decision), so on a side with no inset the final zone or band is
+ * at least MIN − EDGE_EXCLUSION: 176 px for MIN_ZONE_HEIGHT and MIN_BAND_WIDTH.
+ */
 export const EDGE_EXCLUSION = 24;
 
 // Absorbs float noise such as 0.1 * 3 = 0.30000000000000004 before snapping to device pixels.
@@ -49,10 +53,20 @@ export interface ScreenInfo {
 
 export interface Layout {
   readonly orientation: "portrait" | "landscape";
+  /** The device pixel ratio the layout snapped to: `ScreenInfo.dpr`, or 1 when that is not finite and positive. */
+  readonly dpr: number;
   /** The screen minus the safe-area insets. */
   readonly safe: Rect;
-  /** Where the playfield lands. Position and side are whole device pixels; `width === height`. */
+  /**
+   * Where the playfield lands, always inside `safe`; `width === height`. A non-empty square's position and side are
+   * whole device pixels. An empty one sits at the safe rect's top-left corner, unsnapped.
+   */
   readonly square: Rect;
+  /**
+   * The square's side in device pixels, an exact integer. Use it instead of `square.width * dpr`, which can land just
+   * under the integer in floats (dpr 1.2000000476837158 and 2500 device px give 2499.9999999999995).
+   */
+  readonly sideDevicePx: number;
   /** Square side / PLAYFIELD_SIZE: CSS px per art pixel. */
   readonly scale: number;
   /** The final control zones: one in portrait, the left and right bands in landscape. May have zero size. */
@@ -111,8 +125,8 @@ const exclude = (zone: Rect, keep: Rect, screen: ScreenInfo): Rect => {
  *    bands everything in the safe rect beside it.
  * 5. The edge exclusion is cut out of each zone (see `exclude`).
  *
- * Degenerate screens (empty, smaller than the reserved space, insets larger than the screen) give a zero square and
- * zero-size zones, never negative sizes.
+ * Degenerate screens (empty, smaller than the reserved space, insets larger than the screen) give an empty square at
+ * the safe rect's top-left corner and zones that may have zero size, never negative sizes.
  */
 export const computeLayout = (screen: ScreenInfo): Layout => {
   const { width, height, insets } = screen;
@@ -137,12 +151,16 @@ export const computeLayout = (screen: ScreenInfo): Layout => {
   const vertical = deviceSpan({ start: safe.y, end: portrait ? safeBottom - zoneHeight : safeBottom }, dpr);
   const side = Math.min(horizontal.length, vertical.length);
 
-  const square: Rect = {
-    x: place(horizontal, side, true) / dpr,
-    y: place(vertical, side, !portrait) / dpr,
-    width: side / dpr,
-    height: side / dpr,
-  };
+  // With no room the spans can lie outside the safe rect (the reserved space is larger than it), so an empty square
+  // is pinned to the safe corner instead of placed on them.
+  const square: Rect = side === 0
+    ? { x: safe.x, y: safe.y, width: 0, height: 0 }
+    : {
+      x: place(horizontal, side, true) / dpr,
+      y: place(vertical, side, !portrait) / dpr,
+      width: side / dpr,
+      height: side / dpr,
+    };
   const squareRight = square.x + square.width;
   const squareBottom = square.y + square.height;
 
@@ -164,8 +182,10 @@ export const computeLayout = (screen: ScreenInfo): Layout => {
 
   return {
     orientation: portrait ? "portrait" : "landscape",
+    dpr,
     safe,
     square,
+    sideDevicePx: side,
     scale: square.width / PLAYFIELD_SIZE,
     zones: raw.map((zone) => exclude(zone, keep, screen)),
   };

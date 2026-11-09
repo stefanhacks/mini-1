@@ -35,6 +35,21 @@ const DEVICES: readonly Device[] = [
   { name: "iPad landscape", screen: { width: 1024, height: 768, insets: ZERO_INSETS, dpr: 2 } },
   { name: "1:1 window", screen: { width: 600, height: 600, insets: ZERO_INSETS, dpr: 1 } },
   { name: "desktop 16:9", screen: { width: 1280, height: 720, insets: ZERO_INSETS, dpr: 1 } },
+  { name: "iPhone 15", screen: { width: 393, height: 852, insets: insets(59, 0, 34, 0), dpr: 3 } },
+  { name: "iPhone 15 landscape", screen: { width: 852, height: 393, insets: insets(0, 59, 21, 59), dpr: 3 } },
+  // A 64 device px camera cutout and a 48 device px gesture bar, as Android reports them: fractional CSS px.
+  {
+    name: "Android cutout",
+    screen: { width: 412, height: 915, insets: insets(64 / 2.625, 0, 48 / 2.625, 0), dpr: 2.625 },
+  },
+  {
+    name: "Android cutout landscape",
+    screen: { width: 915, height: 412, insets: insets(0, 64 / 2.625, 0, 64 / 2.625), dpr: 2.625 },
+  },
+  { name: "dpr 1.5 laptop", screen: { width: 1280, height: 800, insets: ZERO_INSETS, dpr: 1.5 } },
+  { name: "dpr 1.75 phone", screen: { width: 360, height: 780, insets: insets(24.57, 0, 13.71, 0), dpr: 1.75 } },
+  { name: "dpr 1.75 phone landscape", screen: { width: 780, height: 360, insets: insets(0, 24.57, 0, 0), dpr: 1.75 } },
+  { name: "1379×343 at dpr 2.625", screen: { width: 1379, height: 343, insets: ZERO_INSETS, dpr: 2.625 } },
   { name: "empty", screen: { width: 0, height: 0, insets: ZERO_INSETS, dpr: 1 } },
 ];
 
@@ -84,10 +99,12 @@ describe("computeLayout invariants across devices", () => {
         assert.ok(square.width >= 0);
         assert.ok(contains(safe, square), JSON.stringify({ safe, square }));
         assert.equal(layout.scale, square.width / PLAYFIELD_SIZE);
+        assert.ok(Number.isInteger(layout.sideDevicePx));
+        assert.equal(layout.sideDevicePx / layout.dpr, square.width);
       });
 
       it("snaps the square's position and side to whole device pixels", () => {
-        for (const value of [square.x, square.y, square.width]) {
+        for (const value of layout.sideDevicePx === 0 ? [square.width] : [square.x, square.y, square.width]) {
           assert.ok(isWholeDevicePx(value, screen.dpr), `${value} at dpr ${screen.dpr}`);
         }
       });
@@ -109,7 +126,8 @@ describe("computeLayout invariants across devices", () => {
         } else {
           const [left, right] = reservedSpace(layout);
 
-          assert.ok(Math.abs((left ?? 0) - (right ?? 0)) <= 1 / screen.dpr + EPSILON, "square centred");
+          // Up to 1 device px from rounding each band's outer edge onto the grid, plus 1 from the floored odd pixel.
+          assert.ok(Math.abs((left ?? 0) - (right ?? 0)) <= 2 / screen.dpr + EPSILON, "square centred");
         }
       });
 
@@ -217,6 +235,35 @@ describe("computeLayout specific layouts", () => {
   });
 });
 
+describe("computeLayout device pixels", () => {
+  it("keeps sideDevicePx an exact integer at a Chrome-zoom dpr", () => {
+    const dpr = 1.2000000476837158;
+    const layout = computeLayout({ width: 4000, height: 2500 / dpr, insets: ZERO_INSETS, dpr });
+
+    assert.equal(layout.dpr, dpr);
+    assert.equal(layout.sideDevicePx, 2500);
+  });
+
+  it("reports the sanitised dpr", () => {
+    assert.equal(computeLayout({ width: 200, height: 200, insets: ZERO_INSETS, dpr: 0 }).dpr, 1);
+  });
+
+  it("starts the square on the first whole device pixel under a fractional cutout", () => {
+    const layout = computeLayout(screenOf("Android cutout"));
+
+    // 64 / 2.625 CSS px is exactly device pixel 64.
+    assert.equal(layout.square.y * 2.625, 64);
+    assert.equal(layout.sideDevicePx, 1081);
+  });
+
+  it("gives at least MIN − EDGE_EXCLUSION on a side with no inset", () => {
+    const [left, right] = computeLayout(screenOf("iPad landscape")).zones;
+
+    assert.equal(left?.width, MIN_BAND_WIDTH - EDGE_EXCLUSION);
+    assert.equal(right?.width, MIN_BAND_WIDTH - EDGE_EXCLUSION);
+  });
+});
+
 describe("computeLayout degenerate screens", () => {
   const cases: readonly ScreenInfo[] = [
     { width: 0, height: 0, insets: ZERO_INSETS, dpr: 1 },
@@ -225,6 +272,8 @@ describe("computeLayout degenerate screens", () => {
     { width: 100, height: 100, insets: insets(80, 80, 80, 80), dpr: 2 },
     { width: 200, height: 200, insets: ZERO_INSETS, dpr: 0 },
     { width: 200, height: 200, insets: ZERO_INSETS, dpr: Number.NaN },
+    { width: 200, height: 200, insets: insets(20.5, 0.3, 13.7, 0), dpr: 1 },
+    { width: 120, height: 900, insets: insets(10.4, 0, 0, 0.6), dpr: 2.625 },
   ];
 
   for (const screen of cases) {
@@ -233,6 +282,7 @@ describe("computeLayout degenerate screens", () => {
 
       assert.ok(layout.square.width >= 0 && layout.safe.width >= 0 && layout.safe.height >= 0);
       assert.ok(Number.isFinite(layout.square.x) && Number.isFinite(layout.square.y));
+      assert.ok(contains(layout.safe, layout.square), JSON.stringify(layout));
 
       for (const zone of layout.zones) {
         assert.ok(zone.width >= 0 && zone.height >= 0);
