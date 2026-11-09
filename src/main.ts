@@ -5,7 +5,14 @@ import { GameClock } from "./core/clock.ts";
 import { createLayers, fitLayers } from "./core/layers.ts";
 import { computeLayout, ZERO_INSETS } from "./core/layout.ts";
 import { StateMachine } from "./core/state-machine.ts";
-import { blockContextMenu, getGameElement, onVisualViewportResize, readResolution } from "./core/viewport.ts";
+import {
+  blockContextMenu,
+  getGameElement,
+  onDevicePixelRatioChange,
+  onElementResize,
+  onVisualViewportResize,
+  readResolution,
+} from "./core/viewport.ts";
 import { buildPlaceholderScene } from "./game/placeholder.ts";
 import { createGameStates, type GameStateId } from "./game/states.ts";
 
@@ -40,6 +47,10 @@ await app.init({
 gameElement.appendChild(app.canvas);
 blockContextMenu(gameElement);
 onVisualViewportResize(() => app.queueResize());
+onElementResize(gameElement, () => app.queueResize());
+onDevicePixelRatioChange(() => {
+  app.renderer.resize(gameElement.clientWidth, gameElement.clientHeight, readResolution());
+});
 
 const layers = createLayers(app.stage);
 

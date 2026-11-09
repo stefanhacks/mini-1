@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const PORT = 4173;
+// Not 4173, `vite preview`'s default: a preview left running there could be serving a stale build.
+const PORT = 4174;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 
 // Tests run against the production build, served by `vite preview`, so they see what Netlify ships. Every project
@@ -23,6 +24,6 @@ export default defineConfig({
   webServer: {
     command: `npm run build && npm run preview -- --host 127.0.0.1 --port ${PORT} --strictPort`,
     url: BASE_URL,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
   },
 });

@@ -85,3 +85,39 @@ export const onVisualViewportResize = (onResize: () => void) => {
 
   return () => viewport.removeEventListener("resize", onResize);
 };
+
+/**
+ * Calls `onResize` whenever `element`'s box changes size, including changes no `window` `resize` reports (iOS rotation
+ * settling a frame late, the container restyled). Pass a call to `app.queueResize()`: Pixi's ResizePlugin only listens
+ * to `window` `resize`, and nothing in Pixi observes the container. Also fires once on observe, which is harmless.
+ * Returns a function that disconnects the observer.
+ */
+export const onElementResize = (element: HTMLElement, onResize: () => void) => {
+  const observer = new ResizeObserver(() => onResize());
+
+  observer.observe(element);
+
+  return () => observer.disconnect();
+};
+
+/**
+ * Calls `onChange` when the device pixel ratio changes: browser zoom, a move to another monitor, devtools emulation.
+ * A `(resolution: Ndppx)` query only reports leaving N, so it is re-armed for the new ratio after every change.
+ * Resize the renderer with `renderer.resize(width, height, readResolution())` there: it emits "resize", so the layout
+ * recomputes. The `renderer.resolution` setter emits nothing and would leave the layout stale.
+ * Returns a function that removes the listener.
+ */
+export const onDevicePixelRatioChange = (onChange: () => void) => {
+  let query = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+
+  const handleChange = () => {
+    query.removeEventListener("change", handleChange);
+    query = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+    query.addEventListener("change", handleChange);
+    onChange();
+  };
+
+  query.addEventListener("change", handleChange);
+
+  return () => query.removeEventListener("change", handleChange);
+};

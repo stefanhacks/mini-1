@@ -12,10 +12,12 @@ body {
   width: 100%;
   height: 100%;
   margin: 0;
+  background: #000;
 }
 
 /* Browser gestures that fight the game: pull-to-refresh and bounce, text selection, the iOS long-press callout and
-   the tap flash. Pixi already sets touch-action: none on the canvas. */
+   the tap flash. Pixi already sets touch-action: none on the canvas. A future text input must set user-select: text
+   (and -webkit-user-select), or it can't be edited or selected in WebKit. */
 html,
 body {
   overscroll-behavior: none;
@@ -41,8 +43,9 @@ canvas {
   display: block;
 }
 
-/* Never seen: it only carries the insets as padding, so getComputedStyle resolves env() to px. Fixed and zero-sized,
-   so it can't add to the document's scroll size. */
+/* Never seen: it only carries the insets as padding, so getComputedStyle resolves env() to px. Its padding gives it a
+   box the size of the insets, but it is fixed and hidden, so it can't add to the document's scroll size or catch
+   input. */
 #safe-area-probe {
   position: fixed;
   top: 0;
