@@ -63,7 +63,7 @@ The game in M2 is therefore static and silent: scene changes are instant, but ev
   - Any key or tap also counts as "advance" outside rounds, as in the original.
 - **Output:** a queue of `{ kind: "press" | "release" | "advance" | "cancel", dir? }` events. States drain it in `update`. Pure parts (hit-test, queue, pointer map) are unit tested.
 
-### 3. Compass pad view (`src/game/pad.ts`)
+### 3. Compass pad view (`src/game/pad-view.ts`)
 
 - 4 buttons in a cross, each ≥ 48 CSS px, with a hit area larger than the art. The size is `min(200, zone.width, zone.height)`.
 - **Portrait:** centred horizontally in the zone, toward its bottom.
