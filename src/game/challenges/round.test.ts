@@ -16,7 +16,8 @@ const setup = (specs: readonly ChallengeSpec[]) => {
   const clock = new GameClock();
   const scope = clock.createScope();
   const log: string[] = [];
-  const context: RuleContext = { scope, now: () => clock.now, tuning: TUNING, onDone: () => log.push(`round@${clock.now}`) };
+  const onDone = () => log.push(`round@${clock.now}`);
+  const context: RuleContext = { scope, now: () => clock.now, tuning: TUNING, onDone };
   const round = new Round(specs, context, (index) => log.push(`challenge ${index}@${clock.now}`));
 
   return { clock, scope, context, round, log };
