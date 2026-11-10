@@ -77,7 +77,7 @@ The game in M2 is therefore static and silent: scene changes are instant, but ev
   - **Title:** logo, credits, "Tap to begin". The static frame of the original's final title.
   - **Story N:** text box visible, the real script (01) in pages via `storyLinesPerPage`, breaking at sentence ends where possible. A tap advances to the next page, then the next line. Whisper lines are centred.
   - **Transition:** waits 0.5 s on the clock, then starts the round. The thunder at 0.167 s comes in M4.
-  - **Round N:** arrows and cursors in the playfield, using the original's spacing (check it in `KeyManager.cs` and `ArrowSpot` in `Main.unity`). The prompt text ("... follow ...", "... hold strong ...", "... be fast ...") goes in `ui`, with the pad and a hold ring/pip meter for feedback. When the round is won, wait 1.25 s, show the pillars (after round 1) or tentacles (after round 2) instantly, then go to the next story part.
+  - **Round N:** arrows and cursors in the playfield, using the original's spacing (check it in `KeyManager.cs` and `ArrowSpot` in `Main.unity`). The prompt text ("... follow ...", "... hold strong ...", "... be fast ...") goes in `ui`, with the pad and a hold ring/pip meter for feedback. When the round is won, show the pillars (after round 1) or tentacles (after round 2) at once, as the original starts their fade at the win (`GameManager.cs:164-171`). Then wait 1.25 s and go to the next story part.
   - **Ending:** after story part 3: broken boat and kraken shown, then the empty sea, then the logo and credits. Instant cuts, with the original's waits (0.58 s, 1.5 s, 8 s, 10 s, +3.5 s) kept on the clock so M4 only adds the tweens. Then "Tap to play again".
   - **Replay:** a soft reset to Title. A new seed, scene objects reset, nothing reloaded.
 - **Scene module:** builds every sprite once (world, fx, top) and exposes show/hide per scene state. `placeholder.ts` is deleted.
@@ -98,7 +98,7 @@ The game in M2 is therefore static and silent: scene changes are instant, but ev
 - **e2e (Playwright):**
   - A **full playthrough by keyboard** and **by touch** (Playwright touchscreen / CDP `Input.dispatchTouchEvent` for holds and multi-touch), with `?seed=`, on all three presets. The test reads the current challenge from `window.debug` and answers it.
   - Plus: a wrong input resets; a `pointercancel` during a Hold releases it; the pad appears only in rounds; story pages never spill out of the box at the smallest square; replay twice without leaks.
-- **Speed:** the full playthrough must not depend on wall time: the waits are about 25 s of game time. Add a `?timescale=` debug parameter read only when `?debug` is set; it multiplies `deltaMS` in the ticker. That's the only test hook.
+- **Speed:** the full playthrough must not depend on wall time: the waits are about 25 s of game time. Add a `?timescale=` debug parameter read only when `?debug` is set; it multiplies `deltaMS` in the ticker. Together with `window.debug.setTimescale` (also gated by `?debug`), which the e2e uses to slow down while answering and speed up during waits, these are the only test hooks.
 
 ## How the work runs
 
