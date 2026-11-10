@@ -67,7 +67,7 @@ The game in M2 is therefore static and silent: scene changes are instant, but ev
 
 - 4 buttons in a cross, each ≥ 48 CSS px, with a hit area larger than the art. The size is `min(200, zone.width, zone.height)`.
 - **Portrait:** centred horizontally in the zone, toward its bottom.
-- **Landscape:** see Owner question 1.
+- **Landscape:** one full pad in each side band, both active (owner decision 1).
 - Shown only during rounds, and dimmed until the round's first challenge appears, because the Transition state comes first. Pressed and released states are drawn with `Graphics` (in the UI layer, CSS px) until there is art for them.
 - Repositioned on every layout change.
 
@@ -106,7 +106,7 @@ The same pattern as M0 and M1: builders write, reviewers only read and report, C
 | 1, build | **Dwarf Engineer: Challenge Rules**, **Elf Scout: Input Router**, **Gnome Scribe: Story Paging** | Deliverables 1, 2 (pure parts and DOM wiring) and 5. Pure, so they run in parallel on separate folders. |
 | 1, review | **Orc Judge: Rules Review**, **Goblin Tracker: Input Review** | Rules against 01/02 and the owner decisions, by brute-force event scripts. Input on cancel, blur, multi-touch and repeat. Paging is reviewed together with the input review. |
 | 2, build | **Human Captain: States Scene**, **Halfling Tinker: Pad View** | Deliverables 3, 4 and the playthrough e2e. The pad first, then the states use it. |
-| 2, review | **Lizard Warden: Runtime Review**, **Goblin Scribe: Code Review** | Playthroughs on the device presets, leaks across replays, layout of the pad and the arrows, code against the plan. |
+| 2, review | **Lizard Warden: Runtime Review**, **Goblin Scribe: Code Review**, **Troll Sentinel: Dual-pad Review** | Playthroughs on the device presets, leaks across replays, layout of the pad and the arrows, code against the plan; the dual landscape pads' edge cases (owner decision 1). |
 
 **Estimate:** about 8–10 dev-days. 04 said 6–7; paging, replay and the real scene moved into M2, but none of them depend on M3/M4.
 
@@ -117,13 +117,18 @@ The same pattern as M0 and M1: builders write, reviewers only read and report, C
 - **Landscape pad:** the band is about 176–227 px wide, so the pad's 48 px minimum per button is close to the limit on small phones (playtest).
 - **Arrow row width:** 7 arrows of 24 art px at the original spacing must fit 500 art px. Check against the source before building.
 
-## Owner questions
+## Owner decisions
 
-1. **Landscape pad placement:** the two side bands are separate.
-   - **(a)** a full pad in **each** band, both active, so either thumb works and left-handed players need no setting (recommended);
-   - **(b)** one pad in the right band only;
-   - **(c)** split the cross across the bands (← ↓ left, ↑ → right).
-2. **Replay in M2:** a soft "Tap to play again" after the ending, instead of in M4. It's cheap, and it proves the no-leak teardown early (recommended).
-3. **Real script in M2:** use the real story text, paged, without the typewriter (recommended), or placeholder text until M4?
-4. **Pad visibility:** shown only during rounds (recommended), or always visible?
-5. **Still open from 02:** a tap while text is typing **finishes the line**. It only matters once M4 adds the typewriter; confirm then or now.
+1. **Landscape pad:** a full pad in **each** side band, both active. Either thumb works, and left-handed players need no setting.
+   - The owner expects edge cases here ("a can of worms"), so wave 2 adds a dedicated reviewer: **Troll Sentinel: Dual-pad Review**. It checks:
+     - two thumbs on two pads at once: Hold on one pad, a press on the other; the same direction on both; a release on one pad while the other still holds;
+     - Sequence order when both pads are pressed in the same frame, and the Many count across pads;
+     - a pointer that slides from one band to the other, and `pointercancel` on one pad only;
+     - the visual feedback, so both pads show the same state;
+     - narrow bands on small landscape phones;
+     - the keyboard used at the same time.
+   - Rule for the builders: both pads feed **one** logical direction state per direction. A direction is "held" while any pointer holds it on either pad. A press counts once per new pointer going down.
+2. **Replay:** in M2, a soft "Tap to play again".
+3. **Story text:** the real script, paged, without the typewriter.
+4. **Pad visibility:** only during rounds.
+5. **Tap while typing (M4):** a tap finishes the current line. The next tap advances.
