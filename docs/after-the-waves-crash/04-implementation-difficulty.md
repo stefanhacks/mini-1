@@ -106,7 +106,7 @@ Gameplay and platform tracks interleave. Each milestone ends with a Netlify bran
    - Game clock, layers, a state skeleton that owns its timers, a test harness.
 2. **M1, display skeleton (3–4 days):** render texture scaling, both orientations, safe areas, UI layer, page protections, the real control zones, and `@playwright/test`. Detailed and revised in [m1-plan.md](m1-plan.md).
    - **First device check:** safe areas, URL bar, callouts.
-3. **M2, playable loop with the pad (6–7 days):** challenge generation, pointer router with the DOM cancel, the three rules, keyboard fallback, placeholder text.
+3. **M2, playable loop with the pad (about 8–10 days):** challenge generation, a DOM pointer router with cancel handling, the three rules, keyboard fallback, the real states and scene, the real script with paging (moved from M4), and soft replay. Replanned in [m2-plan.md](m2-plan.md).
 4. **M3, audio and start gate (3–4 days).** iOS goes first, because it's the biggest unknown.
 5. **M4, story and presentation (6–8 days):** typewriter, transitions, Hermite animations, event timelines, thunder and flash, ending, replay.
 6. **M5, effects and lifecycle (4–6 days):** rain, splash, bubbles, reduced motion, pause and resume, soft restart.
