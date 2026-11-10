@@ -47,3 +47,10 @@ export const nextBarTime = (now: number, anchor: number, bar: number, lead = MIN
 
 /** How many bars `time` is after the anchor, as a float. Whole numbers mean "on a boundary" (for debug and e2e). */
 export const barsFromAnchor = (time: number, anchor: number, bar: number): number => (time - anchor) / bar;
+
+/**
+ * When a change asked for at `now` takes effect if it must also wait for `notBefore` (a one-shot overlay's natural
+ * end; owner decision: `bgm02` is never cut): the later of the next bar and the first bar at or after `notBefore`.
+ */
+export const changeBarTime = (now: number, anchor: number, bar: number, notBefore = -Infinity, lead = MIN_LEAD) =>
+  Math.max(nextBarTime(now, anchor, bar, lead), barTime(anchor, bar, barIndexAtOrAfter(notBefore, anchor, bar)));

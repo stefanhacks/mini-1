@@ -12,9 +12,7 @@ export interface MuteButtonView {
   /** Follows a new layout. Call it from onLayout. Hidden while the layout has no room for it. */
   setLayout(layout: Layout): void;
   setMuted(muted: boolean): void;
-  setVisible(visible: boolean): void;
   readonly graphics: Graphics;
-  destroy(): void;
 }
 
 /** The icon's colour: the voice grey, as the pad's outlines, so it stays out of the way. */
@@ -27,14 +25,13 @@ export const createMuteButton = (parent: Container): MuteButtonView => {
   const graphics = new Graphics({ label: "mute-button", eventMode: "none" });
   let layout: Layout | null = null;
   let muted = false;
-  let visible = true;
 
   const draw = () => {
     graphics.clear();
 
     const rect = layout === null ? null : muteButtonRect(layout);
 
-    graphics.visible = visible && rect !== null;
+    graphics.visible = rect !== null;
 
     if (layout === null || rect === null) {
       return;
@@ -85,13 +82,6 @@ export const createMuteButton = (parent: Container): MuteButtonView => {
         draw();
       }
     },
-    setVisible: (next) => {
-      visible = next;
-      draw();
-    },
     graphics,
-    destroy: () => {
-      graphics.destroy();
-    },
   };
 };

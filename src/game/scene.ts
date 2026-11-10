@@ -493,6 +493,11 @@ const GATE_BAR = { x: 170, y: 290, width: 160, height: 4 } as const;
 export interface GateScene extends GateView {
   /** Follows a new layout. Call it from `onLayout`. */
   readonly relayout: (layout: Layout) => void;
+  /**
+   * Call once the UI font has loaded: drops the font metrics measured with a fallback and redraws the texts, so a text
+   * drawn before the font (the failure screen, then a retry that loads it) doesn't keep the fallback.
+   */
+  readonly refreshFont: () => void;
   readonly parts: { readonly warning: Text; readonly bar: Graphics; readonly prompt: Text };
 }
 
@@ -553,6 +558,11 @@ export const createGateView = (layers: Layers, initial: Layout): GateScene => {
       placeUiText(warning, GATE_WARNING, next);
       placeUiText(prompt, GATE_PROMPT, next);
       drawBar();
+    },
+    refreshFont: () => {
+      CanvasTextMetrics.clearMetrics();
+      warning.style.update();
+      prompt.style.update();
     },
     parts: { warning, bar, prompt },
   };

@@ -2,8 +2,6 @@
 // It uses DOM events, not Pixi's federated events: Pixi never delivers pointercancel (04, correction 1), and the
 // playfield is a render texture outside the hit-test tree. DOM handlers only queue events; the active state drains them
 // in `update`, so input runs under the state machine's error guard and in game time.
-
-//
 // The decisions (mute button first, pads, the activation and mute hooks) live in router-core.ts, with their contract.
 
 import type { Direction } from "../direction.ts";
@@ -25,7 +23,8 @@ export interface InputRouter {
   /**
    * Calls `listener` synchronously inside the DOM event (pointerup or keydown) of every input that queues "advance",
    * right after it is queued: the place for `audio.unlock()` and, on Gate's begin tap, `startMusic()`. Never for a
-   * pointerdown, a stale or cancelled pointer, a key repeat, or a mute tap. Returns the unsubscribe.
+   * pointerdown, a stale or cancelled pointer, a key repeat, or a mute tap. A touch tap calls it a second time from the
+   * `touchend` that follows (iOS fallback), so listeners must be idempotent. Returns the unsubscribe.
    */
   onActivate(listener: () => void): () => void;
   /**
@@ -73,8 +72,12 @@ export const createInputRouter = (canvas: HTMLElement, frame: HTMLElement = getG
   const onPointerUp = (event: PointerEvent) => {
     const { x, y } = local(event);
 
-    core.pointerUp(event.pointerId, x, y);
+    core.pointerUp(event.pointerId, x, y, event.pointerType === "touch");
   };
+
+  // iOS fallback: some WebKit versions only count `touchend` as the gesture that may resume audio, not the pointerup
+  // before it. See router-core.ts `touchEnd`. Passive: it never blocks scrolling or calls preventDefault.
+  const onTouchEnd = () => core.touchEnd();
 
   const onPointerCancel = (event: PointerEvent) => core.pointerCancel(event.pointerId);
 
@@ -95,6 +98,7 @@ export const createInputRouter = (canvas: HTMLElement, frame: HTMLElement = getG
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointerup", onPointerUp);
   canvas.addEventListener("pointercancel", onPointerCancel);
+  canvas.addEventListener("touchend", onTouchEnd, { passive: true });
   canvas.addEventListener("lostpointercapture", onLostPointerCapture);
   document.addEventListener("visibilitychange", onVisibilityChange);
 
@@ -115,6 +119,7 @@ export const createInputRouter = (canvas: HTMLElement, frame: HTMLElement = getG
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointerup", onPointerUp);
       canvas.removeEventListener("pointercancel", onPointerCancel);
+      canvas.removeEventListener("touchend", onTouchEnd);
       canvas.removeEventListener("lostpointercapture", onLostPointerCapture);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       detachKeyboard();

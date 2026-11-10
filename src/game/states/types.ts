@@ -68,7 +68,8 @@ export interface SceneView {
 export interface GateLoader {
   /**
    * Loads everything not loaded yet and builds the scene, reporting progress (0..1). Resolves once the scene exists;
-   * rejects if anything failed. Calling it again retries only what failed. Gate never calls it twice at once.
+   * rejects if anything failed, after reporting the error itself (Gate doesn't). Calling it again retries only what
+   * failed. Gate never calls it twice at once.
    */
   load(onProgress: (fraction: number) => void): Promise<void>;
   /** Whether the UI font is in. The gate's texts wait for it (or a failure), so they never flash in a fallback font. */

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { LoopAudioAsset } from "../../assets/manifest.ts";
-import { barIndexAtOrAfter, barLength, barsFromAnchor, MIN_LEAD, nextBarTime } from "./bar-clock.ts";
+import { barIndexAtOrAfter, barLength, barsFromAnchor, changeBarTime, MIN_LEAD, nextBarTime } from "./bar-clock.ts";
 
 // Built like the manifest's `loop()`: 0.1 s guard, 423360 samples at 44.1 kHz.
 const BGM01: LoopAudioAsset = {
@@ -77,5 +77,29 @@ describe("nextBarTime", () => {
     assert.equal(barIndexAtOrAfter(boundary + 1e-9, anchor, BAR), 3750);
     assert.equal(barIndexAtOrAfter(boundary - 1e-9, anchor, BAR), 3750);
     assert.equal(barIndexAtOrAfter(boundary + 1e-3, anchor, BAR), 3751);
+  });
+});
+
+describe("changeBarTime", () => {
+  it("is the next bar when nothing has to finish first", () => {
+    assert.equal(changeBarTime(5 + 3, 5, BAR), 5 + BAR);
+    assert.equal(changeBarTime(5 + 3, 5, BAR, 5 + 2), 5 + BAR);
+  });
+
+  it("waits for the first bar at or after a one-shot's natural end", () => {
+    // bgm02 from bar 1: 20.425 s after the offset ends inside bar 3, so the change lands on bar 4.
+    const start = 5 + BAR;
+
+    assert.equal(changeBarTime(start + 1, 5, BAR, start + 20.425), 5 + 4 * BAR);
+  });
+
+  it("uses a bar the natural end falls exactly on", () => {
+    assert.equal(changeBarTime(5 + 1, 5, BAR, 5 + 3 * BAR), 5 + 3 * BAR);
+  });
+
+  it("still keeps the lead when the natural end is just ahead", () => {
+    const end = 5 + 2 * BAR;
+
+    assert.equal(changeBarTime(end - 0.05, 5, BAR, end), 5 + 3 * BAR);
   });
 });

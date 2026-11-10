@@ -1,8 +1,70 @@
 // The start gate and the mute button (m3-plan, deliverables 2 and 4). Written by Claude Code.
 import { expect, test, type Page } from "@playwright/test";
-import { openGame, readGame, readGatePhase, readLayout, SEED, waitForGateReady } from "./game.ts";
+import { openGame, readGame, readGatePhase, readLayout, SEED, touchDriver, waitForGateReady } from "./game.ts";
 
 const POLL = { intervals: [20, 50, 100], timeout: 45_000 };
+
+interface ResumeCall {
+  /** `window.event?.type`: the DOM event being dispatched when `resume()` was called, if any. */
+  readonly type: string | null;
+  /** `navigator.userActivation.isActive`: whether the browser counted it as inside a user gesture. */
+  readonly active: boolean | null;
+  readonly phase: string | null;
+}
+
+type RecordingWindow = Window & { resumeCalls?: ResumeCall[] };
+
+/**
+ * Records every `AudioContext.resume()` call. Headless Chromium starts the context "running", so the context state
+ * proves nothing about the unlock; when and where resume is called does.
+ */
+const recordResumes = (page: Page) => page.addInitScript(() => {
+  const calls: ResumeCall[] = [];
+  const proto = AudioContext.prototype;
+  const original = Object.getOwnPropertyDescriptor(proto, "resume")?.value as (this: AudioContext) => Promise<void>;
+
+  (window as RecordingWindow).resumeCalls = calls;
+  proto.resume = function resume(this: AudioContext) {
+    calls.push({
+      type: window.event?.type ?? null,
+      active: navigator.userActivation?.isActive ?? null,
+      phase: window.debug?.gate.phase ?? null,
+    });
+
+    return original.call(this);
+  };
+});
+
+const readResumes = (page: Page) => page.evaluate(() => (window as RecordingWindow).resumeCalls ?? []);
+
+const hasTouch = () => test.info().project.use.hasTouch === true;
+
+/** A tap at (x, y): a real touch sequence on the touch projects, a mouse click on desktop. */
+const tapAt = async (page: Page, x: number, y: number) => {
+  if (hasTouch()) {
+    await page.touchscreen.tap(x, y);
+  } else {
+    await page.mouse.click(x, y);
+  }
+};
+
+/** Goes down at `from`, slides to `to` and lifts there: touch on the touch projects, the mouse on desktop. */
+const slide = async (page: Page, from: { x: number; y: number }, to: { x: number; y: number }) => {
+  if (hasTouch()) {
+    const driver = await touchDriver(page);
+    const point = { ...from, id: 99 };
+
+    await driver.down(point);
+    await driver.move(point, (from.x + to.x) / 2, (from.y + to.y) / 2);
+    await driver.move(point, to.x, to.y);
+    await driver.up({ ...point, ...to });
+  } else {
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(to.x, to.y, { steps: 4 });
+    await page.mouse.up();
+  }
+};
 
 const readGateScreen = (page: Page) => page.evaluate(() => {
   const ui = window.debug.layers.ui;
@@ -25,17 +87,33 @@ const readGateScreen = (page: Page) => page.evaluate(() => {
 const tapPlayfield = async (page: Page) => {
   const { square } = await readLayout(page);
 
-  await page.mouse.click(square.x + square.width / 2, square.y + square.height / 2);
+  await tapAt(page, square.x + square.width / 2, square.y + square.height / 2);
 };
 
-const tapMute = async (page: Page) => {
+const muteCentre = async (page: Page) => {
   const rect = await page.evaluate(() => window.debug.router.muteRect);
 
   if (rect === null) {
     throw new Error("no mute button");
   }
 
-  await page.mouse.click(rect.x + rect.width / 2, rect.y + rect.height / 2);
+  return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+};
+
+const tapMute = async (page: Page) => {
+  const { x, y } = await muteCentre(page);
+
+  await tapAt(page, x, y);
+};
+
+/** The begin tap's resume calls: inside the gesture's own event, with the gate showing "ready". */
+const expectBeginResumes = (calls: readonly ResumeCall[], first: string) => {
+  expect(calls[0]).toEqual({ type: first, active: true, phase: "ready" });
+
+  // On touch, the iOS fallback repeats the activation from the touchend that follows (router-core.ts).
+  const extra = hasTouch() && first === "pointerup" ? [{ type: "touchend", active: true, phase: "ready" }] : [];
+
+  expect(calls.slice(1)).toEqual(extra);
 };
 
 test("shows progress and the warning, then Tap to begin, whose tap starts the music and goes to Title", async ({
@@ -46,6 +124,7 @@ test("shows progress and the warning, then Tap to begin, whose tap starts the mu
     release = resolve;
   });
 
+  await recordResumes(page);
   // Holds BGM01 back, so the gate stays in "loading" until the test lets it through.
   await page.route(/bgm01.*\.m4a$/, async (route) => {
     await held;
@@ -62,20 +141,32 @@ test("shows progress and the warning, then Tap to begin, whose tap starts the mu
   expect(loading.prompt).toBeNull();
   expect(loading.progress).toBeLessThan(1);
 
+  // A tap while loading does nothing: no resume, and it doesn't carry over into "ready".
+  await tapPlayfield(page);
+
   release();
   await waitForGateReady(page);
+  await page.waitForTimeout(200);
+  expect((await readGame(page)).state).toBe("gate");
+  expect(await readResumes(page)).toEqual([]);
   await expect.poll(async () => (await readGateScreen(page)).prompt, POLL).toBe("Tap to begin");
   expect((await readGateScreen(page)).bar).toBe(false);
   expect(await page.evaluate(() => window.debug.audio.debug.barAnchor)).toBeNull();
 
   await tapPlayfield(page);
   await expect.poll(async () => (await readGame(page)).state, POLL).toBe("title");
-
-  const audio = await page.evaluate(() => window.debug.audio.debug);
-
-  expect(audio.contextState).toBe("running");
-  expect(audio.barAnchor).not.toBeNull();
+  expectBeginResumes(await readResumes(page), "pointerup");
+  expect(await page.evaluate(() => window.debug.audio.debug.barAnchor)).not.toBeNull();
   expect((await readGateScreen(page)).warning).toBeNull();
+});
+
+test("a key begins too, resuming audio inside its keydown", async ({ page }) => {
+  await recordResumes(page);
+  await page.goto(`/?debug&seed=${SEED}`);
+  await waitForGateReady(page);
+  await page.keyboard.press("Space");
+  await expect.poll(async () => (await readGame(page)).state, POLL).toBe("title");
+  expectBeginResumes(await readResumes(page), "keydown");
 });
 
 test("a failed load shows Tap to retry, and the tap reloads what failed", async ({ page }) => {
@@ -103,6 +194,15 @@ test("a failed load shows Tap to retry, and the tap reloads what failed", async 
 test("the mute button and the M key toggle mute without advancing, and mute persists", async ({ page }) => {
   await openGame(page);
   expect(await page.evaluate(() => window.debug.audio.muted)).toBe(false);
+
+  // Sliding off the button before lifting does nothing: no mute, no advance.
+  const centre = await muteCentre(page);
+  const { square } = await readLayout(page);
+
+  await slide(page, centre, { x: square.x + square.width / 2, y: square.y + square.height / 2 });
+  await page.waitForTimeout(200);
+  expect(await page.evaluate(() => window.debug.audio.muted)).toBe(false);
+  expect((await readGame(page)).state).toBe("title");
 
   await tapMute(page);
   await expect.poll(() => page.evaluate(() => window.debug.audio.muted), POLL).toBe(true);

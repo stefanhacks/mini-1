@@ -12,7 +12,12 @@
 // - Activation listeners run synchronously, inside the DOM event, exactly when an "advance" is queued: a pointerup that
 //   ends a live tap (not a stale or cancelled one, not a mute tap) and a non-repeat keydown that advances. Never on
 //   pointerdown, so a listener may call `AudioContext.resume()`: touch only counts as a gesture on the up. The advance
-//   is queued first, then the listeners run. A listener that throws is reported (reportError) and the others still
+//   is queued first, then the listeners run.
+// - iOS fallback: an activation from a touch pointerup sets a flag, and the `touchend` that follows (dom-router.ts)
+//   clears it and runs the activation listeners once more, with no second "advance". Some WebKit versions only accept
+//   `touchend` as the gesture that may resume audio. Listeners must therefore be idempotent (Gate.activate and the
+//   audio engine's unlock/startMusic are). Any pointerdown clears a flag whose touchend never came.
+// - A listener that throws is reported (reportError) and the others still
 //   run; the event stays queued.
 
 import type { Layout, Rect } from "../../core/layout.ts";
@@ -57,7 +62,12 @@ const subscribe = (listeners: Set<Listener>, listener: Listener) => {
 export const createRouterCore = () => {
   const activateListeners = new Set<Listener>();
   const muteListeners = new Set<Listener>();
-  const map = new PointerMap(() => callAll(activateListeners));
+  let activated = false;
+  let touchActivation = false;
+  const map = new PointerMap(() => {
+    activated = true;
+    callAll(activateListeners);
+  });
   const mutePointers = new Set<number>();
   let pads: readonly Pad[] = [];
   let muteRect: Rect | null = null;
@@ -75,6 +85,7 @@ export const createRouterCore = () => {
       return muteRect;
     },
     pointerDown: (id: number, x: number, y: number) => {
+      touchActivation = false;
       // A down for an id already tracked means its up was lost.
       mutePointers.delete(id);
 
@@ -86,7 +97,8 @@ export const createRouterCore = () => {
 
       map.pointerDown(id, hitTest(pads, x, y)?.dir ?? null);
     },
-    pointerUp: (id: number, x: number, y: number) => {
+    /** `touch`: a touch contact (`pointerType === "touch"`), so its `touchend` repeats the activation. */
+    pointerUp: (id: number, x: number, y: number, touch = false) => {
       if (mutePointers.delete(id)) {
         if (muteActive() && hitsMuteButton(muteRect, x, y)) {
           callAll(muteListeners);
@@ -95,7 +107,16 @@ export const createRouterCore = () => {
         return;
       }
 
+      activated = false;
       map.pointerUp(id);
+      touchActivation = touch && activated;
+    },
+    /** A `touchend` on the canvas: repeats the activation of the touch pointerup just before it, once. */
+    touchEnd: () => {
+      if (touchActivation) {
+        touchActivation = false;
+        callAll(activateListeners);
+      }
     },
     pointerCancel: (id: number) => {
       if (!mutePointers.delete(id)) {

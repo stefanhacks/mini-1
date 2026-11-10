@@ -25,9 +25,10 @@ export const OVERLAY_PLANS: readonly OverlayPlan[] = [
   { key: "bgm02", mode: "once" },
 ];
 
-/** The overlay gain, reached with a fade from 0 at 1/s when the layer starts from silence (original `FadeIn`). */
+/** The overlay gain, reached with a fade from 0 when the layer starts from silence (original `FadeIn`). */
 export const OVERLAY_GAIN = 0.9;
-export const OVERLAY_FADE = OVERLAY_GAIN;
+/** The fade's length in seconds. The original raised the volume at 1/s (`fadeSpeed` 1), so 0 to 0.9 takes 0.9 s. */
+export const OVERLAY_FADE = OVERLAY_GAIN / 1;
 
 /** The overlay for a story part; `null` (no part) is no overlay. Throws on a part that doesn't exist. */
 export const overlayForPart = (part: number | null): OverlayPlan | null => {

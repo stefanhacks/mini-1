@@ -47,6 +47,7 @@ export const createGate = (
     }).then(() => {
       result = "loaded";
     }, () => {
+      // The loader reports the error itself (main.ts: reportError); Gate only shows the retry.
       result = "failed";
     });
   };

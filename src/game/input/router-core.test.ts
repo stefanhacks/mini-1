@@ -137,3 +137,35 @@ describe("router core: activation", () => {
     assert.deepEqual(core.map.drain(), [{ kind: "advance" }]);
   });
 });
+
+describe("router core: the iOS touchend fallback", () => {
+  it("repeats a touch tap's activation once on the touchend, with no second advance", () => {
+    const { core, log } = setup();
+
+    core.pointerDown(1, 195, 300);
+    core.pointerUp(1, 195, 300, true);
+    core.touchEnd();
+    core.touchEnd();
+    assert.deepEqual(log, ["activate(advance)", "activate()"]);
+  });
+
+  it("does nothing on the touchend of a mouse tap, a mute tap, a stale tap, or after a new down", () => {
+    const { core, log, muteCentre } = setup();
+
+    core.pointerDown(1, 195, 300);
+    core.pointerUp(1, 195, 300, false);
+    core.touchEnd();
+    core.pointerDown(2, muteCentre.x, muteCentre.y);
+    core.pointerUp(2, muteCentre.x, muteCentre.y, true);
+    core.touchEnd();
+    core.pointerDown(3, 195, 300);
+    core.map.beginEpoch();
+    core.pointerUp(3, 195, 300, true);
+    core.touchEnd();
+    core.pointerDown(4, 195, 300);
+    core.pointerUp(4, 195, 300, true);
+    core.pointerDown(5, 195, 300);
+    core.touchEnd();
+    assert.deepEqual(log, ["activate(advance)", "mute", "activate(advance)"]);
+  });
+});

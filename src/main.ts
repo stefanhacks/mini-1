@@ -216,7 +216,13 @@ onLayout(gateView.relayout);
 // Weights are the parts' sizes in KB, roughly, so the bar moves with the bytes.
 let textures: Record<SpriteKey, Texture> | null = null;
 const loads = createLoadPlan({
-  font: { weight: 110, load: loadFont },
+  font: {
+    weight: 110,
+    load: async () => {
+      await loadFont();
+      gateView.refreshFont();
+    },
+  },
   sprites: {
     weight: 140,
     load: async (onProgress) => {
@@ -225,6 +231,32 @@ const loads = createLoadPlan({
   },
   audio: { weight: 830, load: (onProgress) => audio.load((loaded, total) => onProgress(loaded / total)) },
 });
+
+// Builds the scene, or reports why not. A throw is a code bug, not a network one, but Gate still offers "Tap to
+// retry": what the failed build added to the layers is destroyed first, so a retry starts from empty layers instead
+// of building on top of a half scene. (A reload would lose the decoded audio and cached textures for no gain: the
+// same code fails the same way either way.)
+const buildScene = (loaded: Record<SpriteKey, Texture>) => {
+  const parents = [layers.world, layers.fx, layers.top, layers.ui];
+  const before = parents.map((parent) => parent.children.length);
+
+  try {
+    const built = createScene(layers, loaded, layout);
+
+    window.debug.scene = built;
+    onLayout(built.relayout);
+
+    return built;
+  } catch (error) {
+    parents.forEach((parent, index) => {
+      for (const child of parent.removeChildren(before[index])) {
+        child.destroy({ children: true });
+      }
+    });
+    reportError(error);
+    throw error;
+  }
+};
 
 const loader = {
   load: async (onProgress: (fraction: number) => void) => {
@@ -237,11 +269,7 @@ const loader = {
     }
 
     if (scene === null && textures !== null) {
-      const built = createScene(layers, textures, layout);
-
-      scene = built;
-      window.debug.scene = built;
-      onLayout(built.relayout);
+      scene = buildScene(textures);
     }
   },
   get fontReady() {
