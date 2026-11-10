@@ -68,6 +68,7 @@ If `node_modules` is missing, install with `npm ci`. Run `npm run check` (`typec
 
 - Show only changed code unless asked for the full file. Flag risks: performance, breaking changes, browser compatibility.
 - Match the existing code style. This codebase is shared by engineers of different levels, so when styles conflict, ask, and prefer the style written by Stefan (the owner, `stefanhacks`).
+  - Functions are `const` arrow functions, and object members that are functions are arrow-function properties (`{ update: () => { … } }`), not method shorthand (`{ update() { … } }`). Class methods stay as they are.
 - Don't invent APIs, config options, or library functions. If unsure something exists, say so.
 - Don't add dependencies without stating the trade-off first. Prefer not adding any.
 - Watch for machine-written code in the repo; it may be outdated or written under weak instructions. Verify before building on it.
