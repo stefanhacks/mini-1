@@ -87,7 +87,10 @@ The game in M2 is therefore static and silent: scene changes are instant, but ev
 
 - Split a line into pages from `storyLinesPerPage(layout)` and measured line wraps, breaking at sentence ends where possible.
 - Measuring needs Pixi's `CanvasTextMetrics`, which can't run under node. So the paging function takes a `measure(text) => lines` callback; unit tests use a fixed-width fake, and e2e uses the real one.
-- **Page boundaries on resize:** a page shown keeps its text until the player advances; pagination is recomputed from the current line's start. That way a rotation never skips text.
+- **Page boundaries on resize:** pages already read stay read. The text from the current page's start to the end of the line is paged again, and the current page becomes the first of the new pages, starting at the same word.
+  - The current page's text may change on rotation, because keeping it could spill out of the box. A rotation never skips or repeats text.
+- **Vertical alignment (verify in wave 2):** the original's `Type()` switches HistoryText to TMP `Left`/`Center`. These are probably the *midline* variants, so the text was likely centred vertically in its 80 px rect, not top-anchored as `text-box.ts` assumes today. Check the TMP enum values before the view relies on it.
+- **Whisper colour:** whispers were grey (`#464646`), not white. The original types them in the speaker colour.
 
 ### 6. Tests
 
