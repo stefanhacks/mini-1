@@ -122,9 +122,15 @@ Milestone M3 from [04-implementation-difficulty.md](04-implementation-difficulty
 - **Bar alignment vs game timing:** music changes wait up to 9.6 s for the next bar, as in the original, so a part's music can start a few seconds after its text. That's faithful, but noticeable on fast tapping.
 - **Mute button vs game input:** a tap near the corner must never also advance or press. The router's ordering and an e2e test cover it.
 
-## Owner questions
+## Owner decisions
 
-1. **Mute button corner:** top-right of the safe area (recommended: away from the pads in both orientations, and the usual place), or top-left?
-2. **Load strategy:** decode all audio (about 0.8 MB) before "Tap to begin" (recommended: simple, and the gate already waits for the art), or show "Tap to begin" as soon as BGM01 and the SFX are ready and stream the rest?
-3. **Flashing-lights warning:** keep it on the start gate, as the original showed it before the game (recommended)?
-4. **Still open from M2:** should the pad's grey (#464646) become #767676 to match the text?
+1. **Mute button:** top-right corner of the safe area.
+2. **Loading:** decode all audio (about 0.8 MB) before "Tap to begin".
+3. **Flashing-lights warning:** kept on the start gate, shown while loading and with "Tap to begin". There's no forced wait.
+4. **Pad grey:** the pad's outlines and arrows change from #464646 to #767676, matching the text.
+
+## Notes from wave 1
+
+- **Autoplay tests:** headless Chromium ignores `--autoplay-policy=user-gesture-required`; the context starts `running`. So e2e can't reach "locked" or "needs-gesture" through the policy. It forces them instead, by stubbing `AudioContext.prototype.resume` and `state` in `addInitScript`.
+- **Gate:** it calls `startMusic()` right after `unlock()`, in the same gesture handler, once `load` has succeeded. Before BGM01 is decoded, `startMusic()` does nothing.
+- **"Tap to continue":** after `suspend()` the engine reports `needs-gesture` even while the tab is hidden. Show the prompt only when `resume()` returns false on becoming visible. Don't block on `resume()`: on some iOS versions it may never settle outside a gesture.
