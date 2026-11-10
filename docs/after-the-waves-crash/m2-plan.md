@@ -135,3 +135,17 @@ The same pattern as M0 and M1: builders write, reviewers only read and report, C
 3. **Story text:** the real script, paged, without the typewriter.
 4. **Pad visibility:** only during rounds.
 5. **Tap while typing (M4):** a tap finishes the current line. The next tap advances.
+6. **Sequence step-0 forgiveness (decided after the wave-1 review):** a wrong press equal to step 0 counts as a correct step 0 and **restarts** the 1 s timer. Truly wrong presses still reset to 0 without restarting it.
+
+## Rules for wave 2 (from the wave-1 reviews)
+
+- **Drain the queue in every state, on every update**, and discard what doesn't apply:
+  - Rounds ignore `advance`; the other states ignore `press` and `release`.
+  - Filter with an explicit `switch` in the round state, because `challenges/` must not import `input/`.
+- **`beginEpoch()` on every state enter and at every phase change inside a state**, such as each Ending wait. Otherwise early taps would trigger "Tap to play again".
+- **Rule context:** build it from the state's own clock and scope, with `now = () => clock.now`.
+- **Resume after a pause or a hidden tab:** handle a queued `cancel` before the first resumed tick can complete a Hold.
+  - Full pause is M5. M2 only makes sure a hidden tab's `cancel` is applied first.
+- **Story text** is centred vertically on the text box (TMP midline alignment, as the original), and whispers are grey.
+- **Device check:** on iOS, a tap advances Story. WebKit's `lostpointercapture` order wasn't testable here.
+
