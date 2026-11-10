@@ -47,6 +47,8 @@ export const createStoryCursor = (
   let lineIndex = 0;
   let pageIndex = 0;
   let ranges: PageRange[] = [];
+  // The page last built, so repeated reads of `page` in a frame return the same object without re-slicing.
+  let cached: { lineIndex: number; start: number; end: number; page: StoryPage } | null = null;
 
   const pageLine = (from: number) => pageRanges(lineText(part[lineIndex]), layout.linesPerPage, layout.measure, from);
 
@@ -89,11 +91,17 @@ export const createStoryCursor = (
       const line = part[lineIndex];
       const { start, end } = ranges[pageIndex];
 
-      return {
-        segments: lineSegments(line, start, end),
-        text: lineText(line).slice(start, end),
-        whisper: line.whisper,
-      };
+      if (cached === null || cached.lineIndex !== lineIndex || cached.start !== start || cached.end !== end) {
+        const page = {
+          segments: lineSegments(line, start, end),
+          text: lineText(line).slice(start, end),
+          whisper: line.whisper,
+        };
+
+        cached = { lineIndex, start, end, page };
+      }
+
+      return cached.page;
     },
     get isLastPage() {
       return !done() && pageIndex === ranges.length - 1;

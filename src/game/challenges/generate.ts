@@ -14,6 +14,10 @@ const randomDirection = (rng: Rng): Direction => DIRECTIONS[rng.nextInt(DIRECTIO
  * Every arrow is uniform over DIRECTIONS. Throws a RangeError if a round can't fit its Holds and Manys.
  */
 export const generateRounds = (rng: Rng, tuning: Tuning): RoundSpec[] => {
+  if (tuning.rounds.length === 0) {
+    throw new RangeError("A game needs at least one round");
+  }
+
   const layouts = tuning.rounds.map((round) => pickKinds(rng, round));
 
   return layouts.map((kinds, i) => {

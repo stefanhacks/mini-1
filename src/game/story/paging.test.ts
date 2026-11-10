@@ -100,6 +100,27 @@ describe("paginate", () => {
     ]);
   });
 
+  it("skips a sentence end that would keep under a third of the greedy page", () => {
+    const sir = "[First Mate]: \"Sir I... I don't think that voice was speaking with-\"";
+
+    // Page 2 starts at "I...": breaking there would keep 4 of the greedy 18 characters.
+    assert.deepEqual(paginate(sir, 1, fixedWidthMeasure(20)), [
+      "[First Mate]: \"Sir",
+      "I... I don't think",
+      "that voice was",
+      "speaking with-\"",
+    ]);
+  });
+
+  it("keeps good 1-line breaks at a sentence end", () => {
+    assert.deepEqual(paginate("[Captain]: \"Men! Get a grip on yourselves!\"", 1, fixedWidthMeasure(24))[0],
+      "[Captain]: \"Men!");
+    assert.deepEqual(paginate("[Captain]: \"Shush sailor! Let me think!\"", 1, fixedWidthMeasure(30)), [
+      "[Captain]: \"Shush sailor!",
+      "Let me think!\"",
+    ]);
+  });
+
   it("doesn't break after a leading ellipsis, but does after ?! and a trailing one", () => {
     const he = "[First Mate]: \"... the he-?! Cap'n, do you hear this voice!?\"";
 

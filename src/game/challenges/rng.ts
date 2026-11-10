@@ -37,7 +37,8 @@ export const createRng = (seed: number): Rng => {
 
 /**
  * The seed a `?seed=` value names. A whole decimal number from 0 to 2^32 − 1 is used as is, so a seed shown in a bug
- * report reads back the same; any other string is hashed (FNV-1a, 32 bits, over UTF-16 code units).
+ * report reads back the same (leading zeros parse too: "0123" is 123); any other string is hashed (FNV-1a, 32 bits,
+ * over UTF-16 code units).
  */
 export const seedFromString = (text: string): number => {
   if (/^\d{1,10}$/.test(text) && Number(text) < UINT32) {

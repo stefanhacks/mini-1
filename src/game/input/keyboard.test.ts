@@ -5,6 +5,7 @@ import { type KeyInput, keyToDirection, readKeyDown } from "./keyboard.ts";
 const key = (name: string, extra: Partial<KeyInput> = {}): KeyInput => ({
   key: name,
   repeat: false,
+  isComposing: false,
   altKey: false,
   ctrlKey: false,
   metaKey: false,
@@ -43,5 +44,21 @@ describe("readKeyDown", () => {
     assert.equal(readKeyDown(key("r", { metaKey: true })), null);
     assert.equal(readKeyDown(key("Shift")), null);
     assert.equal(readKeyDown(key("Control", { ctrlKey: true })), null);
+  });
+
+  it("does not advance on Escape, Tab, F1–F12, Dead, Process or Unidentified", () => {
+    for (const name of ["Escape", "Tab", "F1", "F5", "F10", "F12", "Dead", "Process", "Unidentified"]) {
+      assert.equal(readKeyDown(key(name)), null, name);
+    }
+  });
+
+  it("still advances on F13 and other F-named keys", () => {
+    assert.deepEqual(readKeyDown(key("F13")), { dir: null, advance: true });
+    assert.deepEqual(readKeyDown(key("f")), { dir: null, advance: true });
+  });
+
+  it("ignores keys during an input method composition", () => {
+    assert.equal(readKeyDown(key("a", { isComposing: true })), null);
+    assert.equal(readKeyDown(key("ArrowUp", { isComposing: true })), null);
   });
 });

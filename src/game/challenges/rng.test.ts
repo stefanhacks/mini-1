@@ -93,6 +93,7 @@ describe("seedFromString", () => {
     assert.equal(seedFromString("0"), 0);
     assert.equal(seedFromString("42"), 42);
     assert.equal(seedFromString("4294967295"), 4294967295);
+    assert.equal(seedFromString("0123"), 123);
   });
 
   it("hashes anything else to a deterministic uint32", () => {

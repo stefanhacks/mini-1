@@ -68,6 +68,15 @@ describe("story cursor", () => {
     assert.ok(cursor.page?.segments.every(({ tone }) => tone === "whisper"));
   });
 
+  it("returns the same page object until the page changes", () => {
+    const cursor = createStoryCursor(STORY_PARTS[0], 1, fixedWidthMeasure(20));
+    const first = cursor.page;
+
+    assert.equal(cursor.page, first);
+    cursor.advance();
+    assert.notEqual(cursor.page, first);
+  });
+
   it("joins a page's segments into its text", () => {
     const cursor = createStoryCursor(STORY_PARTS[3], 2, fixedWidthMeasure(18));
 

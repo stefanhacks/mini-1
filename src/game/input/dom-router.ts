@@ -52,8 +52,15 @@ export const createInputRouter = (canvas: HTMLElement, frame: HTMLElement = getG
 
   const onPointerUp = (event: PointerEvent) => map.pointerUp(event.pointerId);
 
-  // Also fires right after every pointerup, when the capture is released; the pointer is already forgotten by then.
   const onPointerCancel = (event: PointerEvent) => map.pointerCancel(event.pointerId);
+
+  // Also fires right after every pointerup, when the capture is released, with no buttons pressed. Only a loss while a
+  // button or contact is still down cancels, so an engine that fires it before pointerup can't eat the tap's advance.
+  const onLostPointerCapture = (event: PointerEvent) => {
+    if (event.buttons !== 0) {
+      map.pointerCancel(event.pointerId);
+    }
+  };
 
   const onVisibilityChange = () => {
     if (document.visibilityState === "hidden") {
@@ -64,7 +71,7 @@ export const createInputRouter = (canvas: HTMLElement, frame: HTMLElement = getG
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointerup", onPointerUp);
   canvas.addEventListener("pointercancel", onPointerCancel);
-  canvas.addEventListener("lostpointercapture", onPointerCancel);
+  canvas.addEventListener("lostpointercapture", onLostPointerCapture);
   document.addEventListener("visibilitychange", onVisibilityChange);
 
   // keydown, keyup and blur.
@@ -81,7 +88,7 @@ export const createInputRouter = (canvas: HTMLElement, frame: HTMLElement = getG
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointerup", onPointerUp);
       canvas.removeEventListener("pointercancel", onPointerCancel);
-      canvas.removeEventListener("lostpointercapture", onPointerCancel);
+      canvas.removeEventListener("lostpointercapture", onLostPointerCapture);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       detachKeyboard();
     },

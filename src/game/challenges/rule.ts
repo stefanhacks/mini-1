@@ -1,6 +1,6 @@
 // The common shape of the three challenge rules (Sequence, Hold, Many) and the input contract they rely on.
 // Pure TypeScript with no Pixi import.
-import type { TimerScope } from "../../core/clock.ts";
+import type { GameClock, TimerScope } from "../../core/clock.ts";
 import type { Direction } from "../direction.ts";
 import type { Tuning } from "./tuning.ts";
 
@@ -41,7 +41,10 @@ export type ChallengeProgress = SequenceProgress | HoldProgress | ManyProgress;
 export interface RuleContext {
   /** The owning state's scope. A rule's timers all live here, so they pause with the clock and die with the state. */
   readonly scope: TimerScope;
-  /** Current game time in ms, normally `() => clock.now`. Only read for timestamps and view progress. */
+  /**
+   * Current game time in ms. Must be `() => clock.now` of the clock that owns `scope` (use `ruleContext`), or the
+   * timestamps and progress drift from the timers. Only read for timestamps and view progress.
+   */
   readonly now: () => number;
   readonly tuning: Tuning;
   /**
@@ -85,3 +88,11 @@ export interface ChallengeRule {
   readonly done: boolean;
   readonly progress: ChallengeProgress;
 }
+
+/** The usual RuleContext: `now` reads the clock that owns `scope`. */
+export const ruleContext = (
+  clock: GameClock,
+  scope: TimerScope,
+  tuning: Tuning,
+  onDone?: () => void,
+): RuleContext => ({ scope, now: () => clock.now, tuning, onDone });

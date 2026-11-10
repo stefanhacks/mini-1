@@ -24,12 +24,20 @@
 // - `beginEpoch` (call it when a state starts) empties the queue and makes every pointer and key that is down stale:
 //   stale ones hold nothing, and their later up emits nothing. So the tap that closed the dialogue can't count as the
 //   round's first input, and can't release or advance anything either.
+// - If more than MAX_QUEUED_EVENTS pile up undrained, the queue is flushed as by `beginEpoch` and holds a single
+//   "cancel". Individual presses and releases are never dropped on their own.
 
 import { type Direction, DIRECTIONS } from "../direction.ts";
 
 export type InputEvent =
   | { readonly kind: "press" | "release"; readonly dir: Direction }
   | { readonly kind: "advance" | "cancel" };
+
+/**
+ * A safety net, not a limit states should reach: past this many undrained events the queue is flushed as by
+ * `beginEpoch`, and a single "cancel" stands for all of it.
+ */
+export const MAX_QUEUED_EVENTS = 256;
 
 type Holder = number | "keyboard";
 
@@ -69,7 +77,7 @@ export class PointerMap {
   /** A pointer lifted normally. Unknown ids (down before the router existed, or a non-primary button) are ignored. */
   pointerUp(id: number): void {
     if (this.letPointerGo(id)) {
-      this.queue.push({ kind: "advance" });
+      this.enqueue({ kind: "advance" });
     }
   }
 
@@ -89,7 +97,7 @@ export class PointerMap {
     }
 
     if (advance) {
-      this.queue.push({ kind: "advance" });
+      this.enqueue({ kind: "advance" });
     }
   }
 
@@ -104,6 +112,16 @@ export class PointerMap {
     }
   }
 
+  /**
+   * Lets go of every arrow key, as their keyups would. For keyups the OS never sends: macOS sends none for keys
+   * released while Meta is held, so keyboard.ts calls this on the Meta keyup.
+   */
+  releaseAllKeys(): void {
+    for (const dir of [...this.keys.keys()]) {
+      this.keyUp(dir);
+    }
+  }
+
   /** Lets everything go at once (blur, hidden page). Emits "cancel" if anything was held. */
   cancelAll(): void {
     const anyHeld = DIRECTIONS.some((dir) => this.isHeld(dir));
@@ -111,7 +129,7 @@ export class PointerMap {
     this.makeAllStale();
 
     if (anyHeld) {
-      this.queue.push({ kind: "cancel" });
+      this.enqueue({ kind: "cancel" });
     }
   }
 
@@ -130,6 +148,15 @@ export class PointerMap {
     return events;
   }
 
+  private enqueue(event: InputEvent) {
+    this.queue.push(event);
+
+    if (this.queue.length > MAX_QUEUED_EVENTS) {
+      this.makeAllStale();
+      this.queue = [{ kind: "cancel" }];
+    }
+  }
+
   private holdersOf(dir: Direction): Set<Holder> {
     const set = this.holders.get(dir);
 
@@ -142,14 +169,14 @@ export class PointerMap {
 
   private hold(dir: Direction, holder: Holder) {
     this.holdersOf(dir).add(holder);
-    this.queue.push({ kind: "press", dir });
+    this.enqueue({ kind: "press", dir });
   }
 
   private letGo(dir: Direction, holder: Holder) {
     const set = this.holdersOf(dir);
 
     if (set.delete(holder) && set.size === 0) {
-      this.queue.push({ kind: "release", dir });
+      this.enqueue({ kind: "release", dir });
     }
   }
 

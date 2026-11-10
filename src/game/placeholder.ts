@@ -67,11 +67,11 @@ export const buildPlaceholderScene = (layers: Layers, textures: Textures): Place
   placeOnArtGrid(textBox, TEXT_BOX_CENTER.x, TEXT_BOX_CENTER.y);
   layers.top.addChild(textBox);
 
-  // M1 only: M2/M4 drive the text. The colour is HistoryText's. `roundPixels` keeps it on whole device pixels: the
-  // centre anchor can put its left edge on half of one.
+  // M1 only: M2/M4 drive the text. The colour is HistoryText's. Centred both ways on the text rect, as the original.
+  // `roundPixels` keeps it on whole device pixels: the centre anchor can put an edge on half of one.
   const line = new Text({
     text: TEST_LINE,
-    anchor: { x: 0.5, y: 0 },
+    anchor: { x: 0.5, y: 0.5 },
     style: { fontFamily: TEXT_FONT, fill: "#ffffff", align: "center", wordWrap: true },
     roundPixels: true,
     label: "text-line",

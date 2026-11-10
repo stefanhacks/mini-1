@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { type InputEvent, PointerMap } from "./pointer-map.ts";
+import { type InputEvent, MAX_QUEUED_EVENTS, PointerMap } from "./pointer-map.ts";
 
 const press = (dir: "up" | "down" | "left" | "right"): InputEvent => ({ kind: "press", dir });
 const release = (dir: "up" | "down" | "left" | "right"): InputEvent => ({ kind: "release", dir });
@@ -133,12 +133,35 @@ describe("PointerMap: keyboard", () => {
     assert.deepEqual(map.drain(), [press("left"), press("left"), ADVANCE, ADVANCE, release("left")]);
   });
 
-  it("does not press again a key that is already down", () => {
+  it("does not press again a key that is already down (a second non-repeat keydown with no keyup between)", () => {
     const map = new PointerMap();
 
     map.keyDown("down", false);
     map.keyDown("down", false);
     assert.deepEqual(map.drain(), [press("down")]);
+  });
+
+  it("releaseAllKeys lets go of every key whose keyup was lost, as their keyups would", () => {
+    const map = new PointerMap();
+
+    map.keyDown("down", false);
+    map.keyDown("left", false);
+    map.pointerDown(1, "left");
+    map.releaseAllKeys();
+    assert.ok(!map.isHeld("down"));
+    assert.ok(map.isHeld("left"));
+    map.keyDown("down", false);
+    assert.deepEqual(map.drain(), [press("down"), press("left"), press("left"), release("down"), press("down")]);
+  });
+
+  it("releaseAllKeys forgets stale keys silently", () => {
+    const map = new PointerMap();
+
+    map.keyDown("up", false);
+    map.beginEpoch();
+    map.releaseAllKeys();
+    map.keyDown("up", false);
+    assert.deepEqual(map.drain(), [press("up")]);
   });
 
   it("advances for non-arrow keys and ignores keyups of keys it never saw", () => {
@@ -255,5 +278,33 @@ describe("PointerMap: beginEpoch", () => {
     assert.deepEqual(map.drain(), []);
     map.keyDown("down", false);
     assert.deepEqual(map.drain(), [press("down")]);
+  });
+});
+
+describe("PointerMap: queue safety net", () => {
+  it("keeps up to MAX_QUEUED_EVENTS events untouched", () => {
+    const map = new PointerMap();
+
+    for (let index = 0; index < MAX_QUEUED_EVENTS; index++) {
+      map.keyDown(null, true);
+    }
+
+    assert.equal(map.drain().length, MAX_QUEUED_EVENTS);
+  });
+
+  it("past MAX_QUEUED_EVENTS, flushes like beginEpoch and leaves a single cancel", () => {
+    const map = new PointerMap();
+
+    map.pointerDown(1, "up");
+
+    for (let index = 0; index < MAX_QUEUED_EVENTS; index++) {
+      map.keyDown(null, true);
+    }
+
+    assert.deepEqual(map.drain(), [CANCEL]);
+    assert.ok(!map.isHeld("up"));
+
+    map.pointerUp(1);
+    assert.deepEqual(map.drain(), []);
   });
 });

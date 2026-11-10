@@ -141,6 +141,10 @@ describe("generateRounds", () => {
     }
   });
 
+  it("throws on a game with no rounds", () => {
+    assert.throws(() => generateRounds(createRng(1), { ...TUNING, rounds: [] }), RangeError);
+  });
+
   it("throws on a round that can't fit its specials or is empty", () => {
     const bad = (round: Tuning["rounds"][number]) => () => generateRounds(createRng(1), { ...TUNING, rounds: [round] });
 

@@ -1,5 +1,6 @@
 // The story script, word for word from the original: `Prefabs/TextManager.prefab` (talker, sentences, special), with
-// the three part 2 sentences `Scenes/Main.unity` overrides on its TextManager instance. Pure TypeScript.
+// the three sentences of part index 2 (the third part) that `Scenes/Main.unity` overrides on its TextManager
+// instance. Pure TypeScript.
 //
 // How the original showed a line (TextManager.cs, `Type`): the talker string in <#464646>, then the sentence in white.
 // A whisper ("special") keeps its text in the talker string with an empty sentence, so it is typed all in grey,

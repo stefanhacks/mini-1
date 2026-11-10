@@ -6,7 +6,7 @@ import { HoldRule } from "./hold.ts";
 import { ManyRule } from "./many.ts";
 import { createRng } from "./rng.ts";
 import { createRule, Round } from "./round.ts";
-import type { ChallengeSpec, RuleContext } from "./rule.ts";
+import { ruleContext, type ChallengeSpec, type RuleContext } from "./rule.ts";
 import { SequenceRule } from "./sequence.ts";
 import { TUNING } from "./tuning.ts";
 
@@ -65,6 +65,19 @@ describe("createRule", () => {
     assert.ok(createRule({ kind: "sequence", directions: ["up"] }, context) instanceof SequenceRule);
     assert.ok(createRule({ kind: "hold", direction: "up" }, context) instanceof HoldRule);
     assert.ok(createRule({ kind: "many", direction: "up" }, context) instanceof ManyRule);
+  });
+});
+
+describe("ruleContext", () => {
+  it("reads now from the clock that owns the scope", () => {
+    const clock = new GameClock();
+    const scope = clock.createScope();
+    const context = ruleContext(clock, scope, TUNING);
+
+    clock.tick(123);
+    assert.equal(context.now(), 123);
+    assert.equal(context.scope, scope);
+    assert.equal(context.onDone, undefined);
   });
 });
 
@@ -131,6 +144,42 @@ describe("Round", () => {
     }
 
     assert.equal(round.done, true);
+  });
+
+  it("doesn't carry the finishing press into a next Sequence starting with the same arrow", () => {
+    const { round } = setup([
+      { kind: "sequence", directions: ["up"] },
+      { kind: "sequence", directions: ["up", "down"] },
+    ]);
+
+    round.press("up");
+    assert.equal(round.index, 1);
+    assert.deepEqual(round.current?.progress, { kind: "sequence", pointer: 0, length: 2 });
+  });
+
+  it("doesn't carry the finishing press into a next Many of the same arrow", () => {
+    const { round } = setup([
+      { kind: "sequence", directions: ["up"] },
+      { kind: "many", direction: "up" },
+    ]);
+
+    round.press("up");
+    assert.equal(round.index, 1);
+    assert.deepEqual(round.current?.progress, { kind: "many", count: 0, target: 10, windowRemainingMs: 0 });
+  });
+
+  it("starts a Many after a Many with count 0 and no window", () => {
+    const { round } = setup([
+      { kind: "many", direction: "up" },
+      { kind: "many", direction: "up" },
+    ]);
+
+    for (let i = 0; i < 10; i++) {
+      round.press("up");
+    }
+
+    assert.equal(round.index, 1);
+    assert.deepEqual(round.current?.progress, { kind: "many", count: 0, target: 10, windowRemainingMs: 0 });
   });
 
   it("ignores input once done", () => {

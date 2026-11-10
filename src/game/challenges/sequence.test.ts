@@ -105,16 +105,27 @@ describe("SequenceRule", () => {
     assert.equal(pointer(), 1);
   });
 
-  it("does not restart the timeout on a wrong press, even one equal to step 0 (owner decision)", () => {
+  it("restarts the timeout on a wrong press equal to step 0: it is a correct step 0 (owner decision)", () => {
     const { clock, rule, pointer } = setup(["up", "down", "left"]);
 
     rule.press("up");
     clock.tick(600);
     rule.press("up");
     assert.equal(pointer(), 1);
-    clock.tick(399);
+    clock.tick(999);
     assert.equal(pointer(), 1);
     clock.tick(1);
+    assert.equal(pointer(), 0);
+  });
+
+  it("does not restart the timeout on a truly wrong press: the pointer is 0 and stays 0", () => {
+    const { clock, rule, pointer } = setup(["up", "down", "left"]);
+
+    rule.press("up");
+    clock.tick(600);
+    rule.press("right");
+    assert.equal(pointer(), 0);
+    clock.tick(5000);
     assert.equal(pointer(), 0);
   });
 

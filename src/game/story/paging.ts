@@ -4,7 +4,8 @@
 // Break rules:
 // - Pages break only between words, never inside one, except a word that alone needs more than a page's lines.
 // - A page takes as many words as measure fits in `linesPerPage` lines. If more text follows and a sentence ends
-//   inside the page, the page ends after the last such sentence instead (no minimum fill).
+//   inside the page, the page ends after the last such sentence instead, as long as it keeps at least a third of
+//   the greedy page's characters.
 // - Every page is checked by measuring its own text, so it never needs more than `linesPerPage` lines.
 
 /** Wraps text at the view's width and returns its lines. */
@@ -25,6 +26,9 @@ interface Word {
 const CLOSERS = /["'”’)\]]+$/u;
 const SENTENCE_END = /(?:[.!?]|…)$/u;
 const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
+
+// A page cut at a sentence end keeps at least 1 / MIN_FILL of the greedy page's characters (review: a half is worse).
+const MIN_FILL = 3;
 
 /**
  * Whether a word ends a sentence: it ends with `.`, `!`, `?` or `…`, before any closing quotes. A word with no
@@ -105,8 +109,15 @@ export const pageRanges = (text: string, linesPerPage: number, measure: Measure,
     }
 
     if (count < words.length) {
-      // More text follows: end the page after the last sentence end on it, if there is one.
+      // More text follows: end the page after the last sentence end on it, if the page keeps at least a third of the
+      // greedy page's characters. Below that, a short opener like `"Sir I...` would get a near-empty page.
+      const full = words[count - 1].end - start;
+
       for (let last = count; last >= 1; last -= 1) {
+        if (words[last - 1].end - start < full / MIN_FILL) {
+          break;
+        }
+
         if (isSentenceEnd(text.slice(words[last - 1].start, words[last - 1].end))) {
           count = last;
           break;

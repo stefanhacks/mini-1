@@ -17,7 +17,11 @@ export const TEXT_BOX_RECT: Rect = {
   height: TEXT_BOX_SIZE.height,
 };
 
-/** HistoryText's 390×80 rect in playfield px. The original types its lines top-centred inside it. */
+/**
+ * HistoryText's 390×80 rect in playfield px. Its prefab alignment is Top, but TextManager.cs sets TMP's `Left` or
+ * `Center` before every line, which are the midline variants (513, 514): the original centred each block of lines
+ * vertically on the rect's centre, playfield y 410, which is also the box art's centre.
+ */
 export const TEXT_AREA: Rect = {
   x: TEXT_BOX_CENTER.x - 390 / 2,
   y: TEXT_BOX_CENTER.y - 80 / 2,
@@ -26,8 +30,9 @@ export const TEXT_AREA: Rect = {
 };
 
 /**
- * The height a page of story text may fill, in art px: from the text rect's top to the box art's bottom (95 px). Text
- * never spills out of the box; what doesn't fit goes on the next page (owner decision; M4 pages it).
+ * The height a page of story text may fill, in art px: 95, from the text rect's top to the box art's bottom (owner
+ * decision). Centred on y 410, such a block spans y 362.5 to 457.5, inside the box art (355 to 465). Text never spills
+ * out of the box; what doesn't fit goes on the next page.
  */
 export const TEXT_PAGE_HEIGHT = TEXT_BOX_RECT.y + TEXT_BOX_RECT.height - TEXT_AREA.y;
 
@@ -48,7 +53,10 @@ export const TEXT_LINE_HEIGHT = 1.25;
 const LINES_EPSILON = 1e-9;
 
 export interface TextPlacement {
-  /** The text's top-centre anchor in screen CSS px, snapped to whole device pixels. */
+  /**
+   * The centre of the text block in screen CSS px, snapped to whole device pixels: anchor the text at (0.5, 0.5).
+   * Whatever its line count, the block is centred on the text rect's centre, as in the original.
+   */
   readonly anchor: Point;
   /** The width lines wrap at, in CSS px: the text rect's width on screen. */
   readonly wrapWidth: number;
@@ -59,8 +67,8 @@ export interface TextPlacement {
 }
 
 /**
- * Places story text over the text box: top-centred in the original's text rect, mapped to the screen. How many of
- * its wrapped lines fit at once is `storyLinesPerPage`.
+ * Places story text over the text box: centred in the original's text rect, both ways, mapped to the screen. How many
+ * of its wrapped lines fit at once is `storyLinesPerPage`.
  */
 export const placeStoryText = (layout: Layout): TextPlacement => {
   const area = rectToScreen(layout, TEXT_AREA);
@@ -68,7 +76,7 @@ export const placeStoryText = (layout: Layout): TextPlacement => {
   const fontSize = Math.max(MIN_TEXT_FONT_SIZE, TEXT_FONT_SIZE * layout.scale);
 
   return {
-    anchor: { x: snap(area.x + area.width / 2), y: snap(area.y) },
+    anchor: { x: snap(area.x + area.width / 2), y: snap(area.y + area.height / 2) },
     wrapWidth: area.width,
     fontSize,
     lineHeight: fontSize * TEXT_LINE_HEIGHT,

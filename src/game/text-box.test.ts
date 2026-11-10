@@ -35,14 +35,14 @@ describe("text box geometry", () => {
 });
 
 describe("placeStoryText", () => {
-  it("anchors the text top-centre in the text rect, on whole device pixels", () => {
+  it("centres the text block on the text rect (y 410, as the original), on whole device pixels", () => {
     for (const dpr of [1, 2, 2.625, 3]) {
       const layout = computeLayout({ width: 412, height: 915, insets: ZERO_INSETS, dpr });
       const area = rectToScreen(layout, TEXT_AREA);
       const { anchor, wrapWidth } = placeStoryText(layout);
 
       assert.ok(Math.abs(anchor.x - (area.x + area.width / 2)) <= 0.5 / dpr + EPSILON, `dpr ${dpr}`);
-      assert.ok(Math.abs(anchor.y - area.y) <= 0.5 / dpr + EPSILON, `dpr ${dpr}`);
+      assert.ok(Math.abs(anchor.y - (area.y + area.height / 2)) <= 0.5 / dpr + EPSILON, `dpr ${dpr}`);
       assert.ok(Math.abs(anchor.x * dpr - Math.round(anchor.x * dpr)) < 1e-6, `dpr ${dpr}`);
       assert.ok(Math.abs(anchor.y * dpr - Math.round(anchor.y * dpr)) < 1e-6, `dpr ${dpr}`);
       assert.equal(wrapWidth, area.width);
@@ -67,6 +67,14 @@ describe("storyLinesPerPage", () => {
 
   it("fills the 95 art px from the text top to the box bottom", () => {
     assert.equal(TEXT_PAGE_HEIGHT, 95);
+  });
+
+  it("keeps a full page inside the box art when it is centred on y 410", () => {
+    const centre = TEXT_AREA.y + TEXT_AREA.height / 2;
+
+    assert.equal(centre, TEXT_BOX_CENTER.y);
+    assert.ok(centre - TEXT_PAGE_HEIGHT / 2 >= TEXT_BOX_RECT.y);
+    assert.ok(centre + TEXT_PAGE_HEIGHT / 2 <= TEXT_BOX_RECT.y + TEXT_BOX_RECT.height);
   });
 
   it("fits floor(95 × scale / line height) lines, never spilling out of the box", () => {

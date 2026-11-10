@@ -13,7 +13,7 @@ import {
 } from "../src/core/layout.ts";
 import { renderTextureScale } from "../src/core/render-scale.ts";
 import { floorToDevicePixels } from "../src/core/viewport.ts";
-import { MIN_TEXT_FONT_SIZE, storyLinesPerPage, TEXT_BOX_RECT } from "../src/game/text-box.ts";
+import { MIN_TEXT_FONT_SIZE, storyLinesPerPage, TEXT_AREA, TEXT_BOX_RECT } from "../src/game/text-box.ts";
 
 interface Debug {
   readonly app: Application;
@@ -198,8 +198,8 @@ const expectDisplay = (state: State, insets: Insets) => {
   expect(state.playfield).toEqual({ parent: null, position: { x: 0, y: 0 }, scale: { x: 1, y: 1 } });
   expectRectClose(state.sprite, layout.square);
 
-  // The test line sits on the text box, centred, at least 16 CSS px, and never spills out of it: it shows only as many
-  // lines as a page holds.
+  // The test line sits on the text box, centred both ways on the text rect (y 410, as the original), at least 16 CSS
+  // px, and never spills out of it: it shows only as many lines as a page holds.
   expect(state.textBox).toEqual({ visible: true });
 
   if (state.line === null) {
@@ -207,6 +207,7 @@ const expectDisplay = (state: State, insets: Insets) => {
   }
 
   const box = rectToScreen(layout, TEXT_BOX_RECT);
+  const area = rectToScreen(layout, TEXT_AREA);
   const { bounds: line, fontSize, lineHeight } = state.line;
   const lines = Math.round(line.height / lineHeight);
 
@@ -218,6 +219,7 @@ const expectDisplay = (state: State, insets: Insets) => {
   expect(Math.abs(line.x + line.width / 2 - (box.x + box.width / 2))).toBeLessThanOrEqual(1);
   expect(line.y).toBeGreaterThanOrEqual(box.y);
   expect(line.y + line.height).toBeLessThanOrEqual(box.y + box.height);
+  expect(Math.abs(line.y + line.height / 2 - (area.y + area.height / 2))).toBeLessThanOrEqual(1);
 
   // Nothing scrolls.
   expect(state.document).toEqual(state.viewport);

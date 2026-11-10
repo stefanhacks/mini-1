@@ -11,7 +11,10 @@ export const PAD_MAX_SIZE = 200;
 /** The smallest button side the pad aims for. A pad of 3 × this (144 px) or more meets it; zones are ≥ 176 px. */
 export const MIN_BUTTON_SIZE = 48;
 
-/** In a zone taller than the pad, the pad's centre sits this far above the zone's bottom, toward the thumbs. */
+/**
+ * In a zone taller than 2 × this (280 px), the pad's centre sits this far above the zone's bottom, toward the thumbs.
+ * In a shorter zone the pad is centred.
+ */
 export const PAD_BOTTOM_OFFSET = 140;
 
 /** The hit area reaches this far past the cross's bounding square on each side, clipped to the zone. */
