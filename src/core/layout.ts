@@ -197,6 +197,13 @@ export const playfieldToScreen = (layout: Layout, point: Point): Point => ({
   y: layout.square.y + point.y * layout.scale,
 });
 
+/** Maps a rect in playfield art px to screen CSS px. */
+export const rectToScreen = (layout: Layout, rect: Rect): Rect => {
+  const { x, y } = playfieldToScreen(layout, rect);
+
+  return { x, y, width: rect.width * layout.scale, height: rect.height * layout.scale };
+};
+
 /** Maps a point in screen CSS px to playfield art px. An empty square maps everything to the playfield origin. */
 export const screenToPlayfield = (layout: Layout, point: Point): Point => {
   if (layout.scale === 0) {

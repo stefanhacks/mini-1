@@ -81,8 +81,9 @@ Use one on-screen cross of 4 buttons (↑ ↓ ← →) for all three challenge t
 - **Device pixel ratio:** use the real DPR for the output canvas, capped at 3 (low-end Android reports 3.5–4). The template caps it at 2, which looks soft on DPR-3 iPhones. The render texture already bounds the art cost.
 - **Safe areas:** add `viewport-fit=cover` to the viewport meta. Read the `env(safe-area-inset-*)` values through CSS variables on a hidden element.
 - **Resize and orientation changes:** point Pixi's `resizeTo` at a `position: fixed; inset: 0` container.
-  - Pixi's resize plugin only listens to `window` `resize`, so also call `app.queueResize()` on `visualViewport` `resize`.
-  - `queueResize` already coalesces resizes to one per frame.
+  - As built in M1: the game sizes the renderer itself (not Pixi's `resizeTo`).
+    - It resizes on window `resize`, `visualViewport` `resize`, a `ResizeObserver` and DPR changes, coalesced to one resize per frame.
+    - The size is floored to whole device pixels.
 - **Page gesture protection:**
   - `touch-action: none` on the canvas.
   - `overscroll-behavior: none` on `html` and `body`.

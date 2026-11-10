@@ -9,10 +9,13 @@ import { computeLayout, type Layout } from "./core/layout.ts";
 import { StateMachine } from "./core/state-machine.ts";
 import {
   blockContextMenu,
+  createResizeQueue,
   getGameElement,
   onDevicePixelRatioChange,
   onElementResize,
   onVisualViewportResize,
+  onWindowResize,
+  readGameSize,
   readResolution,
   readSafeAreaInsets,
 } from "./core/viewport.ts";
@@ -40,8 +43,9 @@ const loadFont = async () => {
 const gameElement = getGameElement();
 const app = new Application();
 
+// No `resizeTo`: Pixi's ResizePlugin would size the canvas from clientWidth/clientHeight, half a device pixel off at
+// fractional ratios. `resizeRenderer` below does it instead.
 await app.init({
-  resizeTo: gameElement,
   background: "#000000",
   resolution: readResolution(),
   autoDensity: true,
@@ -49,11 +53,6 @@ await app.init({
 
 gameElement.appendChild(app.canvas);
 blockContextMenu(gameElement);
-onVisualViewportResize(() => app.queueResize());
-onElementResize(gameElement, () => app.queueResize());
-onDevicePixelRatioChange(() => {
-  app.renderer.resize(gameElement.clientWidth, gameElement.clientHeight, readResolution());
-});
 
 const layers = createLayers();
 const display = new PlayfieldDisplay(app.renderer, layers.playfield);
@@ -65,21 +64,47 @@ if (overlay) {
   layers.ui.addChild(overlay);
 }
 
-// Whatever follows the layout besides the display and the overlay: the scene, once the assets are in.
-const layoutListeners: ((layout: Layout) => void)[] = [];
+// Whatever follows the layout besides the display and the overlay, such as the scene.
+const layoutListeners = new Set<(layout: Layout) => void>();
 
-// Sized from #game, not from the renderer's screen: Pixi rounds the canvas to whole device pixels, so at a fractional
-// resolution its screen can be up to half a device pixel larger than the page (1500 CSS px at 2.625 gives 1500.19),
-// and a square fitted to it could hang off the bottom or right edge.
-const computeCurrentLayout = () => computeLayout({
-  width: gameElement.clientWidth,
-  height: gameElement.clientHeight,
+/** Calls `listener` with every new layout. Returns a function that unsubscribes it (soft restart, scene teardown). */
+const onLayout = (listener: (layout: Layout) => void) => {
+  layoutListeners.add(listener);
+
+  return () => {
+    layoutListeners.delete(listener);
+  };
+};
+
+// `width` and `height` are the renderer's screen: #game floored to whole device pixels by `resizeRenderer`, so the
+// square never hangs off the canvas.
+const computeCurrentLayout = (width: number, height: number) => computeLayout({
+  width,
+  height,
   insets: readSafeAreaInsets(),
   // The canvas resolution is the real device pixel grid: the DPR capped at MAX_RESOLUTION.
   dpr: app.renderer.resolution,
 });
 
-let layout = computeCurrentLayout();
+let layout = computeCurrentLayout(app.screen.width, app.screen.height);
+
+// Render-texture passes run outside the game-logic guard below, behind their own: the first throw (from M4 render
+// code, say) is reported once and stops further passes, so the stage keeps the last frame and the ticker survives.
+let renderHalted = false;
+
+const renderPlayfield = () => {
+  if (renderHalted) {
+    return;
+  }
+
+  try {
+    display.render();
+  } catch (error) {
+    renderHalted = true;
+    window.debug.error ??= error;
+    reportError(error);
+  }
+};
 
 const applyLayout = () => {
   display.resize(layout);
@@ -93,13 +118,32 @@ const applyLayout = () => {
   }
 };
 
-// Every size, resolution and inset change ends in a renderer resize: see viewport.ts.
-app.renderer.on("resize", () => {
-  layout = computeCurrentLayout();
+// Every size, resolution and inset change goes through `resizeRenderer`, which emits this.
+app.renderer.on("resize", (width: number, height: number) => {
+  layout = computeCurrentLayout(width, height);
   applyLayout();
+  // `resizeRenderer` draws the stage right after this, outside the ticker: the render texture must be current by
+  // then, or a resized one shows a frame of nothing.
+  renderPlayfield();
 });
 
-applyLayout();
+// Sizes the renderer to #game, floored to whole device pixels at the current resolution, so the canvas backing is
+// exactly its CSS size × resolution and the browser copies it 1:1 (see `readGameSize`).
+const resizeRenderer = () => {
+  const resolution = readResolution();
+  const { width, height } = readGameSize(gameElement, resolution);
+
+  app.renderer.resize(width, height, resolution);
+  // Resizing clears the canvas: draw now, or the browser can show an empty frame before the next tick.
+  app.render();
+};
+
+const queueResize = createResizeQueue(resizeRenderer);
+
+onWindowResize(queueResize);
+onVisualViewportResize(queueResize);
+onElementResize(gameElement, queueResize);
+onDevicePixelRatioChange(queueResize);
 
 const clock = new GameClock();
 const assetsLoaded = Promise.all([loadSprites(), loadFont()]);
@@ -111,6 +155,7 @@ window.debug = {
   machine,
   layers,
   display,
+  onLayout,
   get layout() {
     return layout;
   },
@@ -136,8 +181,10 @@ app.ticker.add((ticker) => {
 });
 
 // Draws the playfield into its render texture after the game logic above (same priority, added later) and before
-// Pixi renders the stage (LOW). Outside the guard: a halted game keeps its last frame on screen.
-app.ticker.add(() => display.render(), undefined, UPDATE_PRIORITY.NORMAL);
+// Pixi renders the stage (LOW). Outside the game-logic guard: a halted game keeps its last frame on screen.
+app.ticker.add(renderPlayfield, undefined, UPDATE_PRIORITY.NORMAL);
+
+resizeRenderer();
 
 machine.request("gate");
 
@@ -146,5 +193,5 @@ const [textures] = await assetsLoaded;
 const scene = buildPlaceholderScene(layers, textures);
 
 window.debug.scene = scene;
-layoutListeners.push(scene.relayout);
+onLayout(scene.relayout);
 scene.relayout(layout);

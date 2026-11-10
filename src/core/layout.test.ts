@@ -12,6 +12,7 @@ import {
   type Rect,
   type ScreenInfo,
   playfieldToScreen,
+  rectToScreen,
   screenToPlayfield,
   ZERO_INSETS,
 } from "./layout.ts";
@@ -307,5 +308,18 @@ describe("playfieldToScreen", () => {
     assert.deepEqual(playfieldToScreen(layout, { x: 0, y: 0 }), { x: 280, y: 0 });
     assert.deepEqual(playfieldToScreen(layout, { x: PLAYFIELD_SIZE, y: PLAYFIELD_SIZE }), { x: 1000, y: 720 });
     assert.deepEqual(screenToPlayfield(layout, { x: 640, y: 360 }), { x: 250, y: 250 });
+  });
+});
+
+describe("rectToScreen", () => {
+  it("maps a playfield rect through the layout's square", () => {
+    const RECT: Rect = { x: 55, y: 370, width: 390, height: 80 };
+    const layout = computeLayout({ width: 1280, height: 720, insets: ZERO_INSETS, dpr: 1 });
+    const rect = rectToScreen(layout, RECT);
+
+    assert.ok(Math.abs(rect.x - (layout.square.x + RECT.x * layout.scale)) < EPSILON);
+    assert.ok(Math.abs(rect.y - (layout.square.y + RECT.y * layout.scale)) < EPSILON);
+    assert.ok(Math.abs(rect.width - RECT.width * layout.scale) < EPSILON);
+    assert.ok(Math.abs(rect.height - RECT.height * layout.scale) < EPSILON);
   });
 });

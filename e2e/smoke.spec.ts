@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { Application } from "pixi.js";
-import { MAX_RESOLUTION, capResolution } from "../src/core/viewport.ts";
+import { MAX_RESOLUTION, capResolution, floorToDevicePixels } from "../src/core/viewport.ts";
 
 const readCanvas = (page: Page) => page.evaluate(() => {
   const canvas = document.querySelector<HTMLCanvasElement>("#game > canvas");
@@ -9,10 +9,32 @@ const readCanvas = (page: Page) => page.evaluate(() => {
   return {
     devicePixelRatio: window.devicePixelRatio,
     resolution: app.renderer.resolution,
-    css: { width: canvas?.clientWidth, height: canvas?.clientHeight },
+    // The CSS size autoDensity sets, unrounded: clientWidth would round it to whole CSS px.
+    css: { width: Number.parseFloat(canvas?.style.width ?? ""), height: Number.parseFloat(canvas?.style.height ?? "") },
     backing: { width: canvas?.width, height: canvas?.height },
   };
 });
+
+interface Size {
+  readonly width: number;
+  readonly height: number;
+}
+
+const deviceFloored = (size: Size, resolution: number) => ({
+  width: floorToDevicePixels(size.width, resolution),
+  height: floorToDevicePixels(size.height, resolution),
+});
+
+const backingOf = (size: Size, resolution: number) => ({
+  width: Math.round(floorToDevicePixels(size.width, resolution) * resolution),
+  height: Math.round(floorToDevicePixels(size.height, resolution) * resolution),
+});
+
+// Chromium serializes the inline CSS size to about six significant digits ("411.81px" for 411.8095...).
+const expectCssSize = (actual: { width?: number; height?: number }, expected: Size) => {
+  expect(actual.width).toBeCloseTo(expected.width, 2);
+  expect(actual.height).toBeCloseTo(expected.height, 2);
+};
 
 test("loads into #game without errors, failed requests or page overflow", async ({ page }) => {
   const problems: string[] = [];
@@ -48,19 +70,15 @@ test("loads into #game without errors, failed requests or page overflow", async 
 
   expect(sizes.document).toEqual(sizes.viewport);
   expect(sizes.game).toEqual(sizes.viewport);
-  expect(canvas.css).toEqual(sizes.viewport);
-  // The canvas renders at the device pixel ratio, capped.
+  // The canvas renders at the device pixel ratio, capped, over the viewport floored to whole device pixels.
   expect(canvas.resolution).toBe(capResolution(canvas.devicePixelRatio));
-  expect(canvas.backing).toEqual({
-    width: Math.round(sizes.viewport.width * canvas.resolution),
-    height: Math.round(sizes.viewport.height * canvas.resolution),
-  });
+  expectCssSize(canvas.css, deviceFloored(sizes.viewport, canvas.resolution));
+  expect(canvas.backing).toEqual(backingOf(sizes.viewport, canvas.resolution));
   expect(problems).toEqual([]);
 });
 
 // Headless Chromium only fires the media query `change` for an emulated DPR when the emulated size changes too, so each
-// step nudges the width by 1 px and then restores it. The window `resize` that also causes reaches Pixi's ResizePlugin,
-// but that path keeps the old resolution: only the DPR watcher in viewport.ts can move it.
+// step nudges the width by 1 px and then restores it. Every resize path reads the resolution afresh (main.ts).
 test("follows device pixel ratio changes, capped", async ({ page, isMobile }) => {
   await page.goto("/");
   await expect(page.locator("#game > canvas")).toHaveCount(1);
@@ -81,16 +99,14 @@ test("follows device pixel ratio changes, capped", async ({ page, isMobile }) =>
     await emulate(deviceScaleFactor, viewport.width + 1);
     await expect.poll(async () => (await readCanvas(page)).resolution).toBe(expected);
     await emulate(deviceScaleFactor, viewport.width);
-    await expect.poll(async () => (await readCanvas(page)).css).toEqual(viewport);
+    await expect.poll(async () => (await readCanvas(page)).backing).toEqual(backingOf(viewport, expected));
 
     const canvas = await readCanvas(page);
 
+    expectCssSize(canvas.css, deviceFloored(viewport, expected));
     expect(canvas.devicePixelRatio).toBe(deviceScaleFactor);
     expect(canvas.resolution).toBe(expected);
-    expect(canvas.backing).toEqual({
-      width: Math.round(viewport.width * expected),
-      height: Math.round(viewport.height * expected),
-    });
+    expect(canvas.backing).toEqual(backingOf(viewport, expected));
   }
 });
 

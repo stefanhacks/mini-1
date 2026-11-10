@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { computeLayout, PLAYFIELD_SIZE, ZERO_INSETS } from "./layout.ts";
-import { renderTextureScale } from "./render-scale.ts";
+import { MAX_RENDER_SCALE, renderTextureScale } from "./render-scale.ts";
 
 describe("renderTextureScale", () => {
   it("is the largest integer whose PLAYFIELD_SIZE·k texture fits the side", () => {
@@ -11,6 +11,14 @@ describe("renderTextureScale", () => {
     assert.equal(renderTextureScale(1081), 2);
     assert.equal(renderTextureScale(1500), 3);
     assert.equal(renderTextureScale(2159), 4);
+  });
+
+  it("is capped at MAX_RENDER_SCALE, a 3000² texture", () => {
+    assert.equal(MAX_RENDER_SCALE, 6);
+    assert.equal(renderTextureScale(3000), 6);
+    assert.equal(renderTextureScale(3499), 6);
+    assert.equal(renderTextureScale(3500), 6);
+    assert.equal(renderTextureScale(7680), 6);
   });
 
   it("is at least 1, on small, empty and unusable sides", () => {

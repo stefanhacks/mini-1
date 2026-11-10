@@ -29,7 +29,9 @@ The review found five problems in the M1 design as 02 describes it. 02 has been 
    - **Fix:** snap the final sprite's position and size to device pixels.
 5. **Pixi's resize plugin misses `visualViewport` changes.**
    - With `resizeTo` set to an element, `ResizePlugin` still listens only to `window` `resize`. It reads `clientWidth`/`clientHeight`, and it already coalesces to one resize per frame (`queueResize`). It never sees iOS URL-bar or keyboard changes that only fire on `visualViewport`.
-   - **Fix:** also call `app.queueResize()` from `visualViewport`'s `resize` event.
+   - **Fix (as built):** Pixi's `resizeTo` isn't used. `main.ts` sizes the renderer itself, through one per-frame resize queue.
+     - Triggers: window `resize`, `visualViewport` `resize`, a `ResizeObserver` on `#game`, and the DPR watcher.
+     - The size is `#game`'s bounding box floored to whole device pixels, so the canvas backing matches the screen exactly and isn't resampled at fractional DPRs.
 
 ## Deliverables
 

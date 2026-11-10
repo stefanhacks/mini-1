@@ -1,6 +1,7 @@
 // The stage tree every scene draws into. Layout math (PLAYFIELD_SIZE, the fit, the control zone) lives in layout.ts,
 // which has no Pixi import: import it from there, so logic that uses it stays testable under node.
-import { Container } from "pixi.js";
+import { Container, type Sprite } from "pixi.js";
+import { snapToArtPixels } from "./art-grid.ts";
 
 /**
  * - `playfield`: the PLAYFIELD_SIZE square of pixel art, in art pixels. It is never on the stage: PlayfieldDisplay
@@ -8,6 +9,9 @@ import { Container } from "pixi.js";
  *   - `world`: sea, sky, boat, backgrounds and the kraken.
  *   - `fx`: lightning, flash, black overlay and vignette.
  *   - `top`: pixel art the original draws above every light effect: the title logo, credits and the text box.
+ *   Rule: every playfield sprite at a whole-number scale sits on whole art pixels (its texture's edges on integer art
+ *   coordinates). Place it, and move it in animations, with `placeOnArtGrid`. A half-pixel edge tears rows in the
+ *   render texture. Sprites at a fractional scale (the vignette at 1.05) can't be on the grid and are left alone.
  * - `ui`: screen space in CSS px, drawn above the playfield: text, buttons and every touch target (the render texture
  *   is not hit-tested). Map playfield points onto it with `playfieldToScreen` from layout.ts.
  */
@@ -28,4 +32,14 @@ export const createLayers = (): Layers => {
   const ui = new Container({ label: "ui" });
 
   return { playfield, world, fx, top, ui };
+};
+
+/**
+ * Moves `sprite` to (x, y) in art px, nudged so its texture's edges land on whole art pixels (see `snapToArtPixels`).
+ * Set its texture, anchor and scale first: they decide where its edges are.
+ */
+export const placeOnArtGrid = (sprite: Sprite, x: number, y: number) => {
+  const { anchor, width, height } = sprite;
+
+  sprite.position.set(snapToArtPixels(x, anchor.x, width), snapToArtPixels(y, anchor.y, height));
 };
