@@ -148,4 +148,7 @@ The same pattern as M0 and M1: builders write, reviewers only read and report, C
   - Full pause is M5. M2 only makes sure a hidden tab's `cancel` is applied first.
 - **Story text** is centred vertically on the text box (TMP midline alignment, as the original), and whispers are grey.
 - **Device check:** on iOS, a tap advances Story. WebKit's `lostpointercapture` order wasn't testable here.
+7. **Grey text (after the wave-2 review):** the challenge prompt, whisper lines and speaker labels use **#767676** instead of the original's #464646. That's about 4.5:1 contrast on black, against 2.2:1.
+8. **Pad hint:** kept for Hold and Many (never for Sequence).
+9. **Code style:** object members that are functions are arrow-function properties, not method shorthand (recorded in `CLAUDE.md`).
 
