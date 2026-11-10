@@ -1,10 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
-import type { Application } from "pixi.js";
 import { MAX_RESOLUTION, capResolution, floorToDevicePixels } from "../src/core/viewport.ts";
 
 const readCanvas = (page: Page) => page.evaluate(() => {
   const canvas = document.querySelector<HTMLCanvasElement>("#game > canvas");
-  const app = window.debug.app as Application;
+  const app = window.debug.app;
 
   return {
     devicePixelRatio: window.devicePixelRatio,

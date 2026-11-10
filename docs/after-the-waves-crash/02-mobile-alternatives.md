@@ -11,7 +11,7 @@ These notes come from the reviewer, not the agents.
 - **Tap while dialogue is typing.**
   - The Touch-alternatives agent suggested keeping the original "no skip" rule, as an option.
   - The Platform agent recommended "tap completes the line, next tap advances".
-  - **Decision: tap completes the line.** This is the touch convention, and the original rule only matters for the 0.1 s/char whispers. It changes the original behaviour, so the owner should confirm it.
+  - **Decision: tap completes the line**, confirmed by the owner. This is the touch convention, and the original rule only matters for the 0.1 s/char whispers.
 - **Audio format.** Keep the OGG masters in the source tree and ship AAC (`.m4a`) for playback. Whether iOS Safari decodes Ogg Vorbis through Web Audio across the versions in use is uncertain, and AAC is supported everywhere.
 - **No new dependency is required** by any recommendation below. `@pixi/sound` was considered and rejected in favour of plain Web Audio.
 
