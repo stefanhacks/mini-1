@@ -48,7 +48,7 @@ Milestone M3 from [04-implementation-difficulty.md](04-implementation-difficulty
   - hidden → `suspend()`; visible → `resume()`;
   - `pageshow` with `persisted` → the same as visible;
   - any state other than `running` after a resume attempt (including iOS's non-standard `interrupted`) → report "needs gesture".
-  - Suspending also re-anchors the bar math: `ctx.currentTime` stops while suspended, so boundaries stay correct.
+  - Suspending needs no re-anchoring: `ctx.currentTime` freezes while suspended, so bar boundaries stay correct.
 - **Pure parts, unit tested:** next-boundary maths, loop/offset parameters from the manifest, the overlay choice per part, the mute persistence parser, the state → "needs gesture" mapping.
 
 ### 2. Start gate (`src/game/states/gate.ts` + scene)
@@ -134,3 +134,9 @@ Milestone M3 from [04-implementation-difficulty.md](04-implementation-difficulty
 - **Autoplay tests:** headless Chromium ignores `--autoplay-policy=user-gesture-required`; the context starts `running`. So e2e can't reach "locked" or "needs-gesture" through the policy. It forces them instead, by stubbing `AudioContext.prototype.resume` and `state` in `addInitScript`.
 - **Gate:** it calls `startMusic()` right after `unlock()`, in the same gesture handler, once `load` has succeeded. Before BGM01 is decoded, `startMusic()` does nothing.
 - **"Tap to continue":** after `suspend()` the engine reports `needs-gesture` even while the tab is hidden. Show the prompt only when `resume()` returns false on becoming visible. Don't block on `resume()`: on some iOS versions it may never settle outside a gesture.
+
+## Owner decisions after the wave-1 reviews
+
+5. **bgm02 is never cut:** on replay, the next part's overlay starts on the first bar at or after bgm02's natural end, as the original let a non-looping clip finish.
+6. **"Tap to begin" on both the gate and Title,** for now. In M4, Title only shows and accepts its prompt after its intro (about 7.25 s, as the original), so the two prompts never feel doubled.
+
