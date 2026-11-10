@@ -15,25 +15,43 @@ interface ResumeCall {
 type RecordingWindow = Window & { resumeCalls?: ResumeCall[] };
 
 /**
- * Records every `AudioContext.resume()` call. Headless Chromium starts the context "running", so the context state
- * proves nothing about the unlock; when and where resume is called does.
+ * Records every `AudioContext.resume()` call and emulates a locked context. Headless Chromium starts the context
+ * "running", so the recorder makes `state` read "suspended" until a resume succeeds, as on a phone. `failEvents` lists
+ * event types whose resume stays locked, to emulate a browser that doesn't count that event as a user gesture.
  */
-const recordResumes = (page: Page) => page.addInitScript(() => {
+const recordResumes = (page: Page, failEvents: readonly string[] = []) => page.addInitScript((failing) => {
   const calls: ResumeCall[] = [];
   const proto = AudioContext.prototype;
   const original = Object.getOwnPropertyDescriptor(proto, "resume")?.value as (this: AudioContext) => Promise<void>;
+  const stateDescriptor = Object.getOwnPropertyDescriptor(BaseAudioContext.prototype, "state");
+  const unlocked = new WeakSet<BaseAudioContext>();
 
   (window as RecordingWindow).resumeCalls = calls;
+  Object.defineProperty(BaseAudioContext.prototype, "state", {
+    configurable: true,
+    get(this: BaseAudioContext) {
+      const real = stateDescriptor?.get?.call(this) as AudioContextState;
+
+      return real === "running" && !unlocked.has(this) ? "suspended" : real;
+    },
+  });
   proto.resume = function resume(this: AudioContext) {
+    const type = window.event?.type ?? null;
+
     calls.push({
-      type: window.event?.type ?? null,
+      type,
       active: navigator.userActivation?.isActive ?? null,
       phase: window.debug?.gate.phase ?? null,
     });
 
+    if (type === null || !failing.includes(type)) {
+      unlocked.add(this);
+      this.dispatchEvent(new Event("statechange"));
+    }
+
     return original.call(this);
   };
-});
+}, failEvents);
 
 const readResumes = (page: Page) => page.evaluate(() => (window as RecordingWindow).resumeCalls ?? []);
 
@@ -106,14 +124,12 @@ const tapMute = async (page: Page) => {
   await tapAt(page, x, y);
 };
 
-/** The begin tap's resume calls: inside the gesture's own event, with the gate showing "ready". */
+/**
+ * The begin tap's resume calls: exactly one, inside the gesture's own event, with the gate showing "ready". Once it
+ * succeeds the context is running, so the touchend fallback (router-core.ts) has nothing left to resume.
+ */
 const expectBeginResumes = (calls: readonly ResumeCall[], first: string) => {
-  expect(calls[0]).toEqual({ type: first, active: true, phase: "ready" });
-
-  // On touch, the iOS fallback repeats the activation from the touchend that follows (router-core.ts).
-  const extra = hasTouch() && first === "pointerup" ? [{ type: "touchend", active: true, phase: "ready" }] : [];
-
-  expect(calls.slice(1)).toEqual(extra);
+  expect(calls).toEqual([{ type: first, active: true, phase: "ready" }]);
 };
 
 test("shows progress and the warning, then Tap to begin, whose tap starts the music and goes to Title", async ({
@@ -167,6 +183,20 @@ test("a key begins too, resuming audio inside its keydown", async ({ page }) => 
   await page.keyboard.press("Space");
   await expect.poll(async () => (await readGame(page)).state, POLL).toBe("title");
   expectBeginResumes(await readResumes(page), "keydown");
+});
+
+test("on touch, a pointerup that doesn't unlock is rescued by the touchend that follows", async ({ page }) => {
+  test.skip(!hasTouch(), "touch only");
+  await recordResumes(page, ["pointerup"]);
+  await page.goto(`/?debug&seed=${SEED}`);
+  await waitForGateReady(page);
+  await tapPlayfield(page);
+  await expect.poll(async () => (await readGame(page)).state, POLL).toBe("title");
+  expect(await readResumes(page)).toEqual([
+    { type: "pointerup", active: true, phase: "ready" },
+    { type: "touchend", active: true, phase: "ready" },
+  ]);
+  expect(await page.evaluate(() => window.debug.audio.status)).toBe("running");
 });
 
 test("a failed load shows Tap to retry, and the tap reloads what failed", async ({ page }) => {
