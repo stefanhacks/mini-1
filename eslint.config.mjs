@@ -2,11 +2,11 @@ import eslint from "@eslint/js";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist/"] },
+  { ignores: ["dist/", "test-results/", "playwright-report/"] },
   eslint.configs.recommended,
   tseslint.configs.recommendedTypeChecked,
   {
-    files: ["src/**/*.ts"],
+    files: ["src/**/*.ts", "e2e/**/*.ts", "playwright.config.ts"],
     languageOptions: {
       parserOptions: {
         projectService: true,

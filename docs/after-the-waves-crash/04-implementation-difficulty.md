@@ -104,7 +104,7 @@ Gameplay and platform tracks interleave. Each milestone ends with a Netlify bran
 1. **M0, foundations (3–4 days):**
    - Asset import: PNGs, the AAC transcode script with guard bands, the font, cache headers.
    - Game clock, layers, a state skeleton that owns its timers, a test harness.
-2. **M1, display skeleton (3–4 days):** render texture scaling, both orientations, safe areas, UI layer, page protections.
+2. **M1, display skeleton (3–4 days):** render texture scaling, both orientations, safe areas, UI layer, page protections, the real control zones, and `@playwright/test`. Detailed and revised in [m1-plan.md](m1-plan.md).
    - **First device check:** safe areas, URL bar, callouts.
 3. **M2, playable loop with the pad (6–7 days):** challenge generation, pointer router with the DOM cancel, the three rules, keyboard fallback, placeholder text.
 4. **M3, audio and start gate (3–4 days).** iOS goes first, because it's the biggest unknown.

@@ -68,19 +68,22 @@ Use one on-screen cross of 4 buttons (↑ ↓ ← →) for all three challenge t
 ## Layout and scaling
 
 - **Orientation:** support **both** orientations with one rule. iPhone Safari can't lock orientation, so a "rotate your phone" screen would only add friction.
-  - The 500×500 playfield fits the shorter side of the safe area.
-  - The leftover strip on the longer side holds the UI:
-    - **Portrait:** text box and pad below the square, with the pad in the bottom 35–40%.
-    - **Landscape:** pad in the side bands, text box inside the square as in the original.
+  - **Control space is reserved first:** a bottom zone in portrait, two side bands in landscape. The 500×500 playfield takes the rest of the safe area, with all leftover space going back to the controls. (Revised in [m1-plan.md](m1-plan.md).)
+  - **Text box:** it stays **inside the square**, at the bottom as in the original, in both orientations. Story text and controls are never on screen at the same time. Under-square placement didn't fit 16:9 phones.
+  - Its art goes through the render texture. Its text is drawn in the UI layer over it.
 - **Background:** fill everything outside the square with black. The original art already fades to black at every edge (vignette, sea bottom, cloud top), so there are no visible seams. Do not extend the art.
 - **Scaling: "sharp-bilinear".**
   1. Render the stage, whose art textures use `scaleMode: "nearest"`, at scale k into a 500·k `RenderTexture`. k is the largest integer that fits the device pixels.
   2. Draw that texture once, scaled to fit. The render texture's own source must use `"linear"` filtering.
   - Touch targets can't live inside the render texture, because it is not hit-tested. All touch targets go in the UI layer.
   - This avoids both shimmering pixels and wasted screen space. Pure integer scaling uses only about 67% of a 375 px phone.
-- **Device pixel ratio:** use the real DPR for the output canvas. The template currently caps it at 2, which looks soft on DPR-3 iPhones. The render texture already bounds the cost.
+  - Snap the displayed square's position and size to whole **device** pixels, not CSS pixels: at DPR 2.625 a whole CSS pixel isn't a whole device pixel.
+- **Device pixel ratio:** use the real DPR for the output canvas, capped at 3 (low-end Android reports 3.5–4). The template caps it at 2, which looks soft on DPR-3 iPhones. The render texture already bounds the art cost.
 - **Safe areas:** add `viewport-fit=cover` to the viewport meta. Read the `env(safe-area-inset-*)` values through CSS variables on a hidden element.
-- **Resize and orientation changes:** recompute on Pixi `resize` and `visualViewport` `resize`, at most once per animation frame. Use a `position: fixed; inset: 0` container or `100dvh`.
+- **Resize and orientation changes:** point Pixi's `resizeTo` at a `position: fixed; inset: 0` container.
+  - As built in M1: the game sizes the renderer itself (not Pixi's `resizeTo`).
+    - It resizes on window `resize`, `visualViewport` `resize`, a `ResizeObserver` and DPR changes, coalesced to one resize per frame.
+    - The size is floored to whole device pixels.
 - **Page gesture protection:**
   - `touch-action: none` on the canvas.
   - `overscroll-behavior: none` on `html` and `body`.
@@ -97,7 +100,7 @@ Use one on-screen cross of 4 buttons (↑ ↓ ← →) for all three challenge t
   - Normal lines: about one character per frame (~60 chars/s). The original's 0.01 s/char was capped by one `WaitForSeconds` per character.
   - Whispers: 0.1 s/char. The whisper pacing is the mood.
   - Use a time accumulator, and pre-wrap lines.
-- **Text box:** `text_box.png` scaled to its own integer size in the UI layer. The continue cursor is an indicator only.
+- **Text box:** `text_box.png` goes in the playfield (`top` layer), so it is scaled by the render texture like all other art. Its smallest integer scale, 438 px, is already wider than a 375 px phone. The text is placed over it in the UI layer. The continue cursor is an indicator only.
 
 ## Audio
 

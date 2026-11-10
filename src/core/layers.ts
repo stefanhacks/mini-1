@@ -1,16 +1,19 @@
 // The stage tree every scene draws into. Layout math (PLAYFIELD_SIZE, the fit, the control zone) lives in layout.ts,
 // which has no Pixi import: import it from there, so logic that uses it stays testable under node.
-import { Container } from "pixi.js";
-import { fitPlayfield } from "./layout.ts";
+import { Container, type Sprite } from "pixi.js";
+import { snapToArtPixels } from "./art-grid.ts";
 
 /**
- * - `playfield`: the PLAYFIELD_SIZE square of pixel art, in art pixels. M1 renders it into a render texture; until
- *   then it is contain-fitted straight onto the screen by `fitLayers`.
+ * - `playfield`: the PLAYFIELD_SIZE square of pixel art, in art pixels. It is never on the stage: PlayfieldDisplay
+ *   (display.ts) renders it into a render texture every frame, and the stage shows that texture.
  *   - `world`: sea, sky, boat, backgrounds and the kraken.
  *   - `fx`: lightning, flash, black overlay and vignette.
- *   - `top`: pixel art the original draws above every light effect: the title logo and credits.
+ *   - `top`: pixel art the original draws above every light effect: the title logo, credits and the text box.
+ *   Rule: every playfield sprite at a whole-number scale sits on whole art pixels (its texture's edges on integer art
+ *   coordinates). Place it, and move it in animations, with `placeOnArtGrid`. A half-pixel edge tears rows in the
+ *   render texture. Sprites at a fractional scale (the vignette at 1.05) can't be on the grid and are left alone.
  * - `ui`: screen space in CSS px, drawn above the playfield: text, buttons and every touch target (the render texture
- *   is not hit-tested).
+ *   is not hit-tested). Map playfield points onto it with `playfieldToScreen` from layout.ts.
  */
 export interface Layers {
   readonly playfield: Container;
@@ -20,23 +23,23 @@ export interface Layers {
   readonly ui: Container;
 }
 
-/** Builds the layers on `root`, back to front. */
-export const createLayers = (root: Container): Layers => {
+/** Builds the layers, back to front. The caller puts the playfield's display, then `ui`, on the stage. */
+export const createLayers = (): Layers => {
   const world = new Container({ label: "world" });
   const fx = new Container({ label: "fx" });
   const top = new Container({ label: "top" });
   const playfield = new Container({ label: "playfield", children: [world, fx, top] });
   const ui = new Container({ label: "ui" });
 
-  root.addChild(playfield, ui);
-
   return { playfield, world, fx, top, ui };
 };
 
-/** Fits the playfield to a `width`×`height` screen. Temporary until M1's render texture. */
-export const fitLayers = (layers: Layers, width: number, height: number) => {
-  const fit = fitPlayfield(width, height);
+/**
+ * Moves `sprite` to (x, y) in art px, nudged so its texture's edges land on whole art pixels (see `snapToArtPixels`).
+ * Set its texture, anchor and scale first: they decide where its edges are.
+ */
+export const placeOnArtGrid = (sprite: Sprite, x: number, y: number) => {
+  const { anchor, width, height } = sprite;
 
-  layers.playfield.scale.set(fit.scale);
-  layers.playfield.position.set(fit.x, fit.y);
+  sprite.position.set(snapToArtPixels(x, anchor.x, width), snapToArtPixels(y, anchor.y, height));
 };
