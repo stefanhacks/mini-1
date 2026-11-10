@@ -19,8 +19,15 @@ import {
   readResolution,
   readSafeAreaInsets,
 } from "./core/viewport.ts";
-import { buildPlaceholderScene } from "./game/placeholder.ts";
-import { createGameStates, type GameStateId } from "./game/states.ts";
+import { randomSeed, seedFromString } from "./game/challenges/rng.ts";
+import { TUNING } from "./game/challenges/tuning.ts";
+import { createFrameStepper } from "./game/frame-step.ts";
+import { createInputRouter } from "./game/input/dom-router.ts";
+import { computePads } from "./game/input/pad-geometry.ts";
+import { createPadView } from "./game/pad-view.ts";
+import { createScene, type Scene } from "./game/scene.ts";
+import { createGame, type GameStateId } from "./game/states/index.ts";
+import { snapshotSession } from "./game/states/session.ts";
 
 const UI_FONT = "Josefin Slab";
 
@@ -145,9 +152,80 @@ onVisualViewportResize(queueResize);
 onElementResize(gameElement, queueResize);
 onDevicePixelRatioChange(queueResize);
 
+const params = new URLSearchParams(window.location.search);
+const debugEnabled = isDebugEnabled();
+
+// `?debug&timescale=N` multiplies game time, so e2e playthroughs don't wait out the original's ~25 s of pauses. Read
+// only with `?debug`: the one test hook (m2-plan, deliverable 6).
+const readTimescale = () => {
+  const value = Number(params.get("timescale") ?? "1");
+
+  return Number.isFinite(value) && value > 0 ? value : 1;
+};
+
+let timescale = debugEnabled ? readTimescale() : 1;
+
+// `?seed=` makes games reproducible (tests, bug reports): game n plays seed + n − 1, so a replay is still a new game.
+// Without it every game gets a random seed.
+const seedParam = params.get("seed");
+let gamesSeeded = 0;
+
+const nextSeed = () => {
+  gamesSeeded += 1;
+
+  return seedParam === null ? randomSeed() : (seedFromString(seedParam) + gamesSeeded - 1) >>> 0;
+};
+
+// Input: DOM listeners on the canvas, the keyboard and page visibility, queued for the states to drain.
+const router = createInputRouter(app.canvas, gameElement);
+const padView = createPadView(layers.ui);
+
+const layoutPads = (next: Layout) => {
+  router.setLayout(next);
+  padView.setPads(computePads(next), next.dpr);
+};
+
+onLayout(layoutPads);
+layoutPads(layout);
+
 const clock = new GameClock();
-const assetsLoaded = Promise.all([loadSprites(), loadFont()]);
-const machine = new StateMachine<GameStateId>(clock, createGameStates({ loaded: assetsLoaded }));
+let scene: Scene | null = null;
+
+// The scene needs the textures and the font. Gate moves on once it is built.
+const sceneBuilt = Promise.all([loadSprites(), loadFont()]).then(([textures]) => {
+  const built = createScene(layers, textures, layout);
+
+  scene = built;
+  window.debug.scene = built;
+  onLayout(built.relayout);
+
+  return built;
+});
+
+const game = createGame({
+  loaded: sceneBuilt,
+  clock,
+  input: router,
+  pad: padView,
+  scene: () => {
+    if (scene === null) {
+      throw new Error("The scene is used before it was built");
+    }
+
+    return scene;
+  },
+  nextSeed,
+  tuning: TUNING,
+});
+const machine = new StateMachine<GameStateId>(clock, game.states);
+const stepper = createFrameStepper(machine);
+
+// See frame-step.ts: the first frame back runs no game time, so a cancel queued while hidden is applied first.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    stepper.resume();
+  }
+});
 
 window.debug = {
   app,
@@ -156,14 +234,34 @@ window.debug = {
   layers,
   display,
   onLayout,
+  router,
+  padView,
   get layout() {
     return layout;
+  },
+  /** The game as plain data: state, seed, part, phase, current challenge and story page. */
+  get game() {
+    return { state: machine.current, ...snapshotSession(game.session) };
+  },
+  /** Listener counts, for the replay leak test. */
+  get counts() {
+    return { layoutListeners: layoutListeners.size, tickerListeners: app.ticker.count };
+  },
+  get timescale() {
+    return timescale;
+  },
+  /** Changes the time scale; only with `?debug`. */
+  setTimescale: (value: number) => {
+    if (debugEnabled && Number.isFinite(value) && value > 0) {
+      timescale = value;
+    }
   },
 };
 
 // The only thing that ticks the clock. A listener that throws stops Pixi's frame loop for good (the Ticker skips its
 // next requestAnimationFrame), so the first error halts the game logic instead: it is reported as an uncaught error,
-// kept in `debug.error`, and the last frame keeps rendering.
+// kept in `debug.error`, and the last frame keeps rendering. The pad view follows the held directions inside the same
+// guard, after the states, so a halted game freezes it too.
 let halted = false;
 
 app.ticker.add((ticker) => {
@@ -172,7 +270,8 @@ app.ticker.add((ticker) => {
   }
 
   try {
-    machine.update(ticker.deltaMS);
+    stepper.step(ticker.deltaMS * timescale);
+    padView.update((dir) => router.isHeld(dir));
   } catch (error) {
     halted = true;
     window.debug.error = error;
@@ -188,10 +287,5 @@ resizeRenderer();
 
 machine.request("gate");
 
-const [textures] = await assetsLoaded;
-
-const scene = buildPlaceholderScene(layers, textures);
-
-window.debug.scene = scene;
-onLayout(scene.relayout);
-scene.relayout(layout);
+// A failed load surfaces here as an uncaught error; Gate just stays.
+await sceneBuilt;

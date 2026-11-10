@@ -4,7 +4,6 @@ import type { PlayfieldDisplay } from "../src/core/display.ts";
 import type { Layers } from "../src/core/layers.ts";
 import {
   computeLayout,
-  rectToScreen,
   ZERO_INSETS,
   PLAYFIELD_SIZE,
   type Insets,
@@ -13,14 +12,14 @@ import {
 } from "../src/core/layout.ts";
 import { renderTextureScale } from "../src/core/render-scale.ts";
 import { floorToDevicePixels } from "../src/core/viewport.ts";
-import { MIN_TEXT_FONT_SIZE, storyLinesPerPage, TEXT_AREA, TEXT_BOX_RECT } from "../src/game/text-box.ts";
 
 interface Debug {
   readonly app: Application;
   readonly display: PlayfieldDisplay;
   readonly layers: Layers;
   readonly layout: Layout;
-  readonly scene?: { readonly textBox: Sprite; readonly line: Text };
+  readonly scene?: { readonly parts: { readonly tapPrompt: Text; readonly credits: Text } };
+  readonly game: { readonly state?: string };
 }
 
 // Faked notches, set through the probe's CSS variables: a portrait iPhone and the same phone turned landscape.
@@ -45,7 +44,7 @@ const readState = (page: Page) => page.evaluate(() => {
     return { x, y, width, height };
   };
   const title = layers.top.getChildByLabel("title") as Sprite | null;
-  const line = debug.scene?.line;
+  const prompt = debug.scene?.parts.tapPrompt;
 
   return {
     viewport: { width: window.innerWidth, height: window.innerHeight },
@@ -67,10 +66,8 @@ const readState = (page: Page) => page.evaluate(() => {
       scale: { x: layers.playfield.scale.x, y: layers.playfield.scale.y },
     },
     artScaleMode: title?.texture.source.scaleMode ?? null,
-    textBox: debug.scene ? { visible: debug.scene.textBox.visible } : null,
-    line: line
-      ? { bounds: toRect(line), fontSize: Number(line.style.fontSize), lineHeight: line.style.lineHeight }
-      : null,
+    state: debug.game.state,
+    prompt: prompt?.visible ? { bounds: toRect(prompt), fontSize: Number(prompt.style.fontSize) } : null,
     overlay: layers.ui.getChildByLabel("debug-overlay") !== null,
   };
 });
@@ -162,11 +159,11 @@ const nextFrame = (page: Page) => page.evaluate(() => new Promise(requestAnimati
 
 /** Waits until the page's layout matches `insets` and its viewport, then returns the state. */
 const settle = async (page: Page, insets: Insets) => {
-  await page.waitForFunction(() => (window.debug as unknown as Debug | undefined)?.scene !== undefined);
+  await page.waitForFunction(() => (window.debug as unknown as Debug | undefined)?.game.state === "title");
   await expect.poll(async () => {
     const state = await readState(page);
 
-    return state.line !== null && JSON.stringify(state.layout) === JSON.stringify(expectedLayout(state, insets));
+    return state.prompt !== null && JSON.stringify(state.layout) === JSON.stringify(expectedLayout(state, insets));
   }).toBe(true);
 
   // Two more frames, so the render texture, the text and the stage have all drawn the new layout.
@@ -198,28 +195,21 @@ const expectDisplay = (state: State, insets: Insets) => {
   expect(state.playfield).toEqual({ parent: null, position: { x: 0, y: 0 }, scale: { x: 1, y: 1 } });
   expectRectClose(state.sprite, layout.square);
 
-  // The test line sits on the text box, centred both ways on the text rect (y 410, as the original), at least 16 CSS
-  // px, and never spills out of it: it shows only as many lines as a page holds.
-  expect(state.textBox).toEqual({ visible: true });
+  // The title's tap prompt (ui, CSS px) sits inside the square, at least 16 CSS px. Story text is checked page by
+  // page in playthrough.spec.ts.
+  expect(state.state).toBe("title");
 
-  if (state.line === null) {
-    throw new Error("the scene has no test line");
+  if (state.prompt === null) {
+    throw new Error("the title shows no tap prompt");
   }
 
-  const box = rectToScreen(layout, TEXT_BOX_RECT);
-  const area = rectToScreen(layout, TEXT_AREA);
-  const { bounds: line, fontSize, lineHeight } = state.line;
-  const lines = Math.round(line.height / lineHeight);
+  const { bounds: prompt, fontSize } = state.prompt;
 
-  expect(fontSize).toBeGreaterThanOrEqual(MIN_TEXT_FONT_SIZE);
-  expect(lines).toBeGreaterThanOrEqual(1);
-  expect(lines).toBeLessThanOrEqual(storyLinesPerPage(layout));
-  expect(line.x).toBeGreaterThanOrEqual(box.x);
-  expect(line.x + line.width).toBeLessThanOrEqual(box.x + box.width);
-  expect(Math.abs(line.x + line.width / 2 - (box.x + box.width / 2))).toBeLessThanOrEqual(1);
-  expect(line.y).toBeGreaterThanOrEqual(box.y);
-  expect(line.y + line.height).toBeLessThanOrEqual(box.y + box.height);
-  expect(Math.abs(line.y + line.height / 2 - (area.y + area.height / 2))).toBeLessThanOrEqual(1);
+  expect(fontSize).toBeGreaterThanOrEqual(16);
+  expect(prompt.x).toBeGreaterThanOrEqual(layout.square.x);
+  expect(prompt.x + prompt.width).toBeLessThanOrEqual(layout.square.x + layout.square.width);
+  expect(prompt.y).toBeGreaterThanOrEqual(layout.square.y);
+  expect(prompt.y + prompt.height).toBeLessThanOrEqual(layout.square.y + layout.square.height);
 
   // Nothing scrolls.
   expect(state.document).toEqual(state.viewport);

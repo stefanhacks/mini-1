@@ -1,6 +1,6 @@
 // Compass pad geometry and hit-testing: where each pad sits in its control zone, its four button rects, and which
 // direction a point hits. Pure TypeScript with no Pixi import, so it runs under `node --test`. Every length is in #game
-// CSS px. The pad view (src/game/pad.ts) draws from the same `Pad`s, so art and hit-testing never disagree.
+// CSS px. The pad view (src/game/pad-view.ts) draws from the same `Pad`s, so art and hit-testing never disagree.
 
 import type { Layout, Point, Rect } from "../../core/layout.ts";
 import type { Direction } from "../direction.ts";

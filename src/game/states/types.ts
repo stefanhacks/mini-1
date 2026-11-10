@@ -1,0 +1,78 @@
+// What the game states drive, as interfaces: the scene, the pad and the input queue. Pure TypeScript with no Pixi
+// import, so the whole game flow runs under `node --test` with fakes. main.ts passes the real scene (scene.ts), the pad
+// view (pad-view.ts) and the input router (input/dom-router.ts), which all satisfy these.
+import type { GameClock } from "../../core/clock.ts";
+import type { State } from "../../core/state-machine.ts";
+import type { ChallengeProgress, ChallengeSpec } from "../challenges/rule.ts";
+import type { Tuning } from "../challenges/tuning.ts";
+import type { Direction } from "../direction.ts";
+import type { InputEvent } from "../input/pointer-map.ts";
+import type { StoryPage } from "../story/cursor.ts";
+import type { Measure } from "../story/paging.ts";
+
+export type GameStateId = "gate" | "title" | "story" | "transition" | "round" | "ending";
+
+export type GameState = State<GameStateId>;
+
+/** The input router's side the states use. */
+export interface InputSource {
+  /** The queued events, oldest first; empties the queue. */
+  drain(): InputEvent[];
+  /** Drops queued events and makes whatever is down stale. Call it on every enter and phase change. */
+  beginEpoch(): void;
+}
+
+/** The pad view's side the states use. */
+export interface PadControl {
+  setVisible(visible: boolean): void;
+  setDimmed(dimmed: boolean): void;
+  setHint(dir: Direction | null): void;
+}
+
+/** How story text wraps right now. A new object after every layout change, so a state can tell it changed. */
+export interface Paging {
+  readonly linesPerPage: number;
+  readonly measure: Measure;
+}
+
+export type Backdrop = "pillars" | "tentacles";
+
+export type Boat = "whole" | "broken" | "none";
+
+/**
+ * The scene as the states see it: show and hide per scene state, all instant in M2 (M4 adds the tweens). Every call
+ * is idempotent.
+ */
+export interface SceneView {
+  /** Back to the opening frame: sea, sky, the whole boat and the vignette. Everything else hidden. */
+  reset(): void;
+  /** The title logo and the credits. */
+  setTitle(visible: boolean): void;
+  /** The tap prompt under the logo ("Tap to begin", "Tap to play again"), or none. */
+  setPrompt(text: string | null): void;
+  /** The text box with a story page, or neither. */
+  setStoryPage(page: StoryPage | null): void;
+  /** The arrows, cursors and prompt of a challenge, or none. Same spec object again: nothing is rebuilt. */
+  setChallenge(spec: ChallengeSpec | null): void;
+  /** The cursors and the hold ring / press pips for the shown challenge. Cheap to call every frame. */
+  setProgress(progress: ChallengeProgress | null): void;
+  setBackdrop(backdrop: Backdrop, visible: boolean): void;
+  setBoat(boat: Boat): void;
+  setKraken(visible: boolean): void;
+  /** The black overlay (the original's `TelaPreta`) over the world, under the text box. */
+  setBlack(visible: boolean): void;
+  readonly paging: Paging;
+}
+
+export interface GameDeps {
+  /** Settles when the scene is built. A rejection is reported by whoever builds it, not here. */
+  readonly loaded: Promise<unknown>;
+  readonly clock: GameClock;
+  readonly input: InputSource;
+  readonly pad: PadControl;
+  /** The scene. Only called after `loaded` settled (every state after Gate). */
+  readonly scene: () => SceneView;
+  /** The seed of each new game: `?seed=` based in tests and bug reports, random otherwise. */
+  readonly nextSeed: () => number;
+  readonly tuning: Tuning;
+}
