@@ -64,13 +64,53 @@ export interface SceneView {
   readonly paging: Paging;
 }
 
+/** What the start gate loads (main.ts: sprites, font and audio through a LoadPlan, then the scene is built). */
+export interface GateLoader {
+  /**
+   * Loads everything not loaded yet and builds the scene, reporting progress (0..1). Resolves once the scene exists;
+   * rejects if anything failed. Calling it again retries only what failed. Gate never calls it twice at once.
+   */
+  load(onProgress: (fraction: number) => void): Promise<void>;
+  /** Whether the UI font is in. The gate's texts wait for it (or a failure), so they never flash in a fallback font. */
+  readonly fontReady: boolean;
+}
+
+/** The audio engine's side the gate uses (src/core/audio/audio-engine.ts satisfies it). */
+export interface GateAudio {
+  /** Resumes the context. Only works synchronously inside a user gesture's DOM handler. Idempotent. */
+  unlock(): void;
+  /** Starts BGM01 with its fade-in. Once per engine; later calls do nothing. */
+  startMusic(): void;
+}
+
+/** What the gate screen shows. */
+export interface GateScreen {
+  /** The load bar's fill (0..1), or null for no bar. */
+  readonly progress: number | null;
+  /** The flashing-lights warning. */
+  readonly warning: boolean;
+  /** The line under the warning ("Tap to begin", "Couldn't load. Tap to retry"), or none. */
+  readonly prompt: string | null;
+}
+
+/**
+ * The start gate's own view. Separate from SceneView because it shows before the textures and the font the scene is
+ * built from have loaded. Static: nothing animates. Idempotent.
+ */
+export interface GateView {
+  /** Shows the gate screen, or hides it (null). */
+  show(screen: GateScreen | null): void;
+}
+
 export interface GameDeps {
-  /** Settles when the scene is built. A rejection is reported by whoever builds it, not here. */
-  readonly loaded: Promise<unknown>;
+  /** Loads the assets and builds the scene; driven by Gate. */
+  readonly loader: GateLoader;
+  readonly gateView: GateView;
+  readonly audio: GateAudio;
   readonly clock: GameClock;
   readonly input: InputSource;
   readonly pad: PadControl;
-  /** The scene. Only called after `loaded` settled (every state after Gate). */
+  /** The scene. Only called once `loader.load()` resolved (every state after Gate). */
   readonly scene: () => SceneView;
   /** The seed of each new game: `?seed=` based in tests and bug reports, random otherwise. */
   readonly nextSeed: () => number;

@@ -8,6 +8,7 @@ import {
   buttonStyle,
   HINT_STYLE,
   IDLE_STYLE,
+  PAD_GREY,
   PRESSED_STYLE,
   snapToDevicePixels,
 } from "./pad-view-style.ts";
@@ -32,6 +33,14 @@ describe("buttonStyle", () => {
     assert.equal(buttonStyle(true, false), PRESSED_STYLE);
     assert.equal(buttonStyle(false, true), HINT_STYLE);
     assert.equal(buttonStyle(false, false), IDLE_STYLE);
+  });
+});
+
+describe("pad grey", () => {
+  it("draws the idle outline and arrow in #767676, the story's voice grey", () => {
+    assert.equal(PAD_GREY, "#767676");
+    assert.equal(IDLE_STYLE.outline, "#767676");
+    assert.equal(IDLE_STYLE.arrow, "#767676");
   });
 });
 

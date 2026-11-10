@@ -7,7 +7,7 @@
 // - It calls `input.beginEpoch()` on enter and at every phase change inside it.
 // - Its timers live in its own scope, so they die with it; it creates no listeners.
 import { createEnding } from "./ending.ts";
-import { createGate } from "./gate.ts";
+import { createGate, type GateControl } from "./gate.ts";
 import { createRound } from "./round.ts";
 import { createSession, type GameSession } from "./session.ts";
 import { createStory } from "./story.ts";
@@ -21,14 +21,17 @@ export interface Game {
   readonly states: Record<GameStateId, GameState>;
   /** The current game, read by `window.debug`. */
   readonly session: GameSession;
+  /** The start gate: main wires `activate` to the input router's `onActivate`. */
+  readonly gate: GateControl;
 }
 
 export const createGame = (deps: GameDeps): Game => {
   const session = createSession();
+  const gate = createGate(deps);
 
   return {
     states: {
-      gate: createGate(deps),
+      gate,
       title: createTitle(deps, session),
       story: createStory(deps, session),
       transition: createTransition(deps, session),
@@ -36,5 +39,6 @@ export const createGame = (deps: GameDeps): Game => {
       ending: createEnding(deps, session),
     },
     session,
+    gate,
   };
 };

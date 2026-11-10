@@ -308,3 +308,22 @@ describe("PointerMap: queue safety net", () => {
     assert.deepEqual(map.drain(), []);
   });
 });
+
+describe("PointerMap: onAdvance", () => {
+  it("is called once per queued advance, after it is queued, and never for downs, stale or cancelled pointers", () => {
+    const seen: InputEvent[][] = [];
+    const map: PointerMap = new PointerMap(() => seen.push(map.drain()));
+
+    map.pointerDown(1, "up");
+    assert.deepEqual(seen, []);
+    map.pointerUp(1);
+    map.keyDown("left", true);
+    map.keyDown(null, false);
+    map.pointerDown(2, null);
+    map.beginEpoch();
+    map.pointerUp(2);
+    map.pointerDown(3, null);
+    map.pointerCancel(3);
+    assert.deepEqual(seen, [[press("up"), release("up"), ADVANCE], [press("left"), ADVANCE]]);
+  });
+});

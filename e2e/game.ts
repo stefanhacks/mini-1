@@ -51,14 +51,21 @@ export const readCounts = (page: Page) => page.evaluate(() => {
   };
 });
 
-/** Opens the game at Title with `?debug`, the fixed seed and FAST time. */
+/** The start gate's phase, or null before `window.debug` exists. */
+export const readGatePhase = (page: Page) => page.evaluate(() => window.debug?.gate.phase ?? null);
+
+/** Waits for the start gate's "Tap to begin". */
+export const waitForGateReady = async (page: Page) => {
+  // `window.debug` only exists once main.ts has set it up, and the gate is ready once every asset has loaded.
+  await expect.poll(() => readGatePhase(page), OPEN_POLL).toBe("ready");
+};
+
+/** Opens the game with `?debug`, the fixed seed and FAST time, and taps through the start gate (Space) to Title. */
 export const openGame = async (page: Page, query = "") => {
   await page.goto(`/?debug&seed=${SEED}&timescale=${FAST}${query}`);
-  // `window.debug` only exists once main.ts has set it up, and the scene once its assets have loaded.
-  await expect.poll(
-    () => page.evaluate(() => (window.debug?.scene === undefined ? null : window.debug.game.state)),
-    OPEN_POLL,
-  ).toBe("title");
+  await waitForGateReady(page);
+  await page.keyboard.press("Space");
+  await expect.poll(() => page.evaluate(() => window.debug.game.state), OPEN_POLL).toBe("title");
 };
 
 export const waitFor = async (page: Page, check: (game: GameSnapshot) => boolean) => {

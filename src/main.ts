@@ -1,6 +1,7 @@
 import "./style.css";
 import { Application, Assets, UPDATE_PRIORITY, type Texture, type UnresolvedAsset } from "pixi.js";
 import { FONTS, SPRITES, type SpriteKey } from "./assets/manifest.ts";
+import { createAudioEngine } from "./core/audio/audio-engine.ts";
 import { GameClock } from "./core/clock.ts";
 import { createDebugOverlay, drawDebugOverlay, isDebugEnabled } from "./core/debug-overlay.ts";
 import { PlayfieldDisplay } from "./core/display.ts";
@@ -23,23 +24,26 @@ import { randomSeed, seedFromString } from "./game/challenges/rng.ts";
 import { TUNING } from "./game/challenges/tuning.ts";
 import { createFrameStepper } from "./game/frame-step.ts";
 import { createInputRouter } from "./game/input/dom-router.ts";
+import { createLoadPlan } from "./game/load-plan.ts";
+import { createMuteButton } from "./game/mute-button.ts";
 import { computePads } from "./game/input/pad-geometry.ts";
 import { createPadView } from "./game/pad-view.ts";
-import { createScene, type Scene } from "./game/scene.ts";
+import { createGateView, createScene, type Scene } from "./game/scene.ts";
 import { createGame, type GameStateId } from "./game/states/index.ts";
 import { snapshotSession } from "./game/states/session.ts";
 
 const UI_FONT = "Josefin Slab";
 
-// Pixel art: every sprite texture samples nearest. `data` becomes the TextureSource options.
-const loadSprites = async () => {
+// Pixel art: every sprite texture samples nearest. `data` becomes the TextureSource options. Calling it again after a
+// failure retries: Pixi drops a failed asset's cached promise, and the loaded ones resolve from its cache.
+const loadSprites = async (onProgress?: (fraction: number) => void) => {
   const assets = Object.entries(SPRITES).map(([alias, { url }]): UnresolvedAsset => ({
     alias,
     src: url,
     data: { scaleMode: "nearest" },
   }));
 
-  return (await Assets.load<Texture>(assets)) as Record<SpriteKey, Texture>;
+  return (await Assets.load<Texture>(assets, onProgress)) as Record<SpriteKey, Texture>;
 };
 
 // Without `family`, loadWebFont would name the font after its hashed file name.
@@ -191,19 +195,64 @@ layoutPads(layout);
 const clock = new GameClock();
 let scene: Scene | null = null;
 
-// The scene needs the textures and the font. Gate moves on once it is built.
-const sceneBuilt = Promise.all([loadSprites(), loadFont()]).then(([textures]) => {
-  const built = createScene(layers, textures, layout);
+// Audio (M3). Wave 1 wires only what the gate and the mute button need: loading, the begin tap's unlock and music,
+// and mute. Lifecycle, cues and "Tap to continue" come in wave 2.
+const audio = createAudioEngine();
+const muteButton = createMuteButton(layers.ui);
 
-  scene = built;
-  window.debug.scene = built;
-  onLayout(built.relayout);
-
-  return built;
+muteButton.setMuted(audio.muted);
+onLayout((next) => muteButton.setLayout(next));
+muteButton.setLayout(layout);
+router.onMute(() => {
+  audio.setMuted(!audio.muted);
+  muteButton.setMuted(audio.muted);
 });
 
+// The gate's view needs nothing loaded; the scene needs the textures and the font.
+const gateView = createGateView(layers, layout);
+
+onLayout(gateView.relayout);
+
+// Weights are the parts' sizes in KB, roughly, so the bar moves with the bytes.
+let textures: Record<SpriteKey, Texture> | null = null;
+const loads = createLoadPlan({
+  font: { weight: 110, load: loadFont },
+  sprites: {
+    weight: 140,
+    load: async (onProgress) => {
+      textures = await loadSprites(onProgress);
+    },
+  },
+  audio: { weight: 830, load: (onProgress) => audio.load((loaded, total) => onProgress(loaded / total)) },
+});
+
+const loader = {
+  load: async (onProgress: (fraction: number) => void) => {
+    try {
+      await loads.load(onProgress);
+    } catch (error) {
+      // Gate shows "Couldn't load. Tap to retry"; the console gets the reason, as an uncaught error.
+      reportError(error);
+      throw error;
+    }
+
+    if (scene === null && textures !== null) {
+      const built = createScene(layers, textures, layout);
+
+      scene = built;
+      window.debug.scene = built;
+      onLayout(built.relayout);
+    }
+  },
+  get fontReady() {
+    return loads.isLoaded("font");
+  },
+};
+
 const game = createGame({
-  loaded: sceneBuilt,
+  loader,
+  gateView,
+  audio,
   clock,
   input: router,
   pad: padView,
@@ -218,6 +267,9 @@ const game = createGame({
   tuning: TUNING,
 });
 const machine = new StateMachine<GameStateId>(clock, game.states);
+
+// Inside the DOM gesture: Gate's begin tap unlocks audio and starts the music (router-core.ts has the contract).
+router.onActivate(() => game.gate.activate());
 const stepper = createFrameStepper(machine);
 
 // See frame-step.ts: the first frame back runs no game time, so a cancel queued while hidden is applied first.
@@ -235,6 +287,10 @@ window.debug = {
   display,
   onLayout,
   router,
+  audio,
+  get gate() {
+    return { phase: game.gate.phase, progress: game.gate.progress };
+  },
   get layout() {
     return layout;
   },
@@ -289,6 +345,3 @@ app.ticker.add(renderPlayfield, undefined, UPDATE_PRIORITY.NORMAL);
 resizeRenderer();
 
 machine.request("gate");
-
-// A failed load surfaces here as an uncaught error; Gate just stays.
-await sceneBuilt;

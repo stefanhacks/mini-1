@@ -15,7 +15,8 @@ import { createGame, type GameDeps, type GameStateId } from "./index.ts";
 import { snapshotSession } from "./session.ts";
 import { AFTER_ROUND_MS, ENDING_MS, STORY_DEBOUNCE_MS, STORY_PREAMBLE_MS, TRANSITION_MS } from "./timings.ts";
 import { TAP_TO_BEGIN } from "./title.ts";
-import type { Backdrop, Boat, Paging, SceneView } from "./types.ts";
+import { LOAD_FAILED } from "./gate.ts";
+import type { Backdrop, Boat, GateScreen, Paging, SceneView } from "./types.ts";
 
 const FRAME_MS = 16;
 
@@ -99,6 +100,62 @@ class FakeScene implements SceneView {
   }
 }
 
+// The gate's loader: every `load` call gets its own deferred, settled by the test (or at once with `auto`).
+class FakeLoader {
+  calls: ReturnType<typeof deferred>[] = [];
+  progress: ((fraction: number) => void)[] = [];
+  fontReady = true;
+  auto: boolean;
+
+  constructor(auto: boolean) {
+    this.auto = auto;
+  }
+
+  load(onProgress: (fraction: number) => void) {
+    const call = deferred();
+
+    this.calls.push(call);
+    this.progress.push(onProgress);
+
+    if (this.auto) {
+      onProgress(1);
+      call.resolve();
+    }
+
+    return call.promise;
+  }
+
+  get last() {
+    const call = this.calls.at(-1);
+
+    if (call === undefined) {
+      throw new Error("load was never called");
+    }
+
+    return call;
+  }
+}
+
+class FakeGateView {
+  screen: GateScreen | null = null;
+
+  show(screen: GateScreen | null) {
+    this.screen = screen;
+  }
+}
+
+class FakeAudio {
+  log: string[] = [];
+
+  unlock() {
+    this.log.push("unlock");
+  }
+
+  startMusic() {
+    this.log.push("startMusic");
+  }
+}
+
 class FakeInput {
   queue: InputEvent[] = [];
   epochs = 0;
@@ -149,14 +206,19 @@ class FakePad {
 
 const timerCount = (clock: GameClock) => clock.pendingTimers;
 
-const setup = (loaded: Promise<unknown> = Promise.resolve()) => {
+const setup = ({ auto = true } = {}) => {
   const clock = new GameClock();
+  const loader = new FakeLoader(auto);
+  const gateView = new FakeGateView();
+  const audio = new FakeAudio();
   const scene = new FakeScene();
   const input = new FakeInput();
   const pad = new FakePad();
   let seed = 41;
   const deps: GameDeps = {
-    loaded,
+    loader,
+    gateView,
+    audio,
     clock,
     input,
     pad,
@@ -176,13 +238,18 @@ const setup = (loaded: Promise<unknown> = Promise.resolve()) => {
     }
   };
 
-  return { clock, scene, input, pad, game, machine, frame, wait };
+  return { clock, scene, input, pad, game, machine, frame, wait, loader, gateView, audio };
 };
 
 type Setup = ReturnType<typeof setup>;
 
+/** Loads, then taps to begin as the router would: the activation inside the gesture, then the advance. */
 const toTitle = async (t: Setup) => {
   await settle();
+  t.frame();
+  assert.equal(t.game.gate.phase, "ready");
+  t.game.gate.activate();
+  t.input.advance();
   t.frame();
   assert.equal(t.machine.current, "title");
 };
@@ -244,20 +311,106 @@ const playRound = (t: Setup) => {
 };
 
 describe("gate", () => {
-  it("waits for the scene, then requests title on the next frame", async () => {
-    const load = deferred();
-    const t = setup(load.promise);
+  it("shows progress and the warning while loading, then the prompt once loaded", async () => {
+    const t = setup({ auto: false });
 
+    assert.deepEqual(t.gateView.screen, { progress: 0, warning: true, prompt: null });
+    t.loader.progress[0](0.4);
+    t.frame();
+    assert.deepEqual(t.gateView.screen, { progress: 0.4, warning: true, prompt: null });
+
+    t.loader.last.resolve();
+    await settle();
+    assert.equal(t.game.gate.phase, "loading");
+    t.frame();
+    assert.equal(t.game.gate.phase, "ready");
+    assert.deepEqual(t.gateView.screen, { progress: null, warning: true, prompt: TAP_TO_BEGIN });
+    assert.equal(t.scene.black, true);
+    assert.equal(t.machine.current, "gate");
+  });
+
+  it("hides its texts until the font is in", () => {
+    const t = setup({ auto: false });
+
+    t.loader.fontReady = false;
+    t.frame();
+    assert.deepEqual(t.gateView.screen, { progress: 0, warning: false, prompt: null });
+    t.loader.fontReady = true;
+    t.frame();
+    assert.equal(t.gateView.screen?.warning, true);
+  });
+
+  it("drops taps made while loading, and goes to title on a tap once ready", async () => {
+    const t = setup({ auto: false });
+
+    t.input.advance();
+    t.frame();
+    t.input.advance();
+    t.loader.last.resolve();
     await settle();
     t.frame();
     assert.equal(t.machine.current, "gate");
+    assert.deepEqual(t.input.queue, []);
 
-    load.resolve();
-    await settle();
+    t.frame();
     assert.equal(t.machine.current, "gate");
-
+    t.input.advance();
     t.frame();
     assert.equal(t.machine.current, "title");
+    assert.equal(t.gateView.screen, null);
+    assert.equal(t.scene.black, false);
+  });
+
+  it("unlocks audio and starts the music only on the begin tap", async () => {
+    const t = setup({ auto: false });
+
+    t.game.gate.activate();
+    assert.deepEqual(t.audio.log, []);
+
+    t.loader.last.resolve();
+    await settle();
+    t.frame();
+    t.game.gate.activate();
+    assert.deepEqual(t.audio.log, ["unlock", "startMusic"]);
+
+    t.input.advance();
+    t.frame();
+    assert.equal(t.machine.current, "title");
+    t.game.gate.activate();
+    assert.deepEqual(t.audio.log, ["unlock", "startMusic"]);
+  });
+
+  it("shows the failure, and a tap retries the load", async () => {
+    const t = setup({ auto: false });
+
+    t.loader.last.reject(new Error("load failed"));
+    await settle();
+    t.frame();
+    assert.equal(t.game.gate.phase, "failed");
+    assert.deepEqual(t.gateView.screen, { progress: null, warning: true, prompt: LOAD_FAILED });
+
+    t.game.gate.activate();
+    assert.deepEqual(t.audio.log, []);
+    t.input.advance();
+    t.frame();
+    assert.equal(t.loader.calls.length, 2);
+    assert.equal(t.game.gate.phase, "loading");
+    assert.deepEqual(t.gateView.screen, { progress: 0, warning: true, prompt: null });
+
+    t.loader.last.resolve();
+    await settle();
+    t.frame();
+    assert.equal(t.game.gate.phase, "ready");
+  });
+
+  it("shows the failure line even without the font", async () => {
+    const t = setup({ auto: false });
+
+    t.loader.fontReady = false;
+    t.loader.last.reject(new Error("font failed"));
+    await settle();
+    t.frame();
+    assert.deepEqual(t.gateView.screen, { progress: null, warning: true, prompt: LOAD_FAILED });
   });
 
   it("waits while the clock is paused", async () => {
@@ -266,32 +419,22 @@ describe("gate", () => {
     await settle();
     t.clock.paused = true;
     t.frame();
-    assert.equal(t.machine.current, "gate");
+    assert.equal(t.game.gate.phase, "loading");
 
     t.clock.paused = false;
     t.frame();
-    assert.equal(t.machine.current, "title");
+    assert.equal(t.game.gate.phase, "ready");
   });
 
-  it("stays on gate when loading fails, and drains input meanwhile", async () => {
-    const t = setup(Promise.reject(new Error("load failed")));
+  it("does nothing on activation once it was left", async () => {
+    const t = setup();
 
     await settle();
-    t.input.advance();
     t.frame();
-    assert.equal(t.machine.current, "gate");
-    assert.deepEqual(t.input.queue, []);
-  });
-
-  it("requests nothing once it was left before loading finished", async () => {
-    const load = deferred();
-    const t = setup(load.promise);
-
     t.machine.request("ending");
-    load.resolve();
-    await settle();
-    t.frame();
-    assert.equal(t.machine.current, "ending");
+    t.game.gate.activate();
+    assert.deepEqual(t.audio.log, []);
+    assert.equal(t.loader.calls.length, 1);
   });
 });
 

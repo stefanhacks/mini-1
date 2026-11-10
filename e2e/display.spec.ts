@@ -151,7 +151,14 @@ const nextFrame = (page: Page) => page.evaluate(() => new Promise(requestAnimati
 
 /** Waits until the page's layout matches `insets` and its viewport, then returns the state. */
 const settle = async (page: Page, insets: Insets) => {
-  await page.waitForFunction(() => window.debug?.game.state === "title");
+  // On a fresh page, taps through the start gate first.
+  await page.waitForFunction(() => window.debug?.game.state === "title" || window.debug?.gate.phase === "ready");
+
+  if ((await page.evaluate(() => window.debug.game.state)) === "gate") {
+    await page.keyboard.press("Space");
+  }
+
+  await page.waitForFunction(() => window.debug.game.state === "title");
   await expect.poll(async () => {
     const state = await readState(page);
 

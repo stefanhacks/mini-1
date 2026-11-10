@@ -16,7 +16,7 @@ import type { ChallengeKind, ChallengeProgress, ChallengeSpec } from "./challeng
 import type { Direction } from "./direction.ts";
 import type { StoryPage } from "./story/cursor.ts";
 import { segmentLines, STORY_TONE_COLORS, VOICE_GREY } from "./story/script.ts";
-import type { Backdrop, Boat, Paging, SceneView } from "./states/types.ts";
+import type { Backdrop, Boat, GateScreen, GateView, Paging, SceneView } from "./states/types.ts";
 import { placeStoryText, storyLinesPerPage, TEXT_BOX_CENTER } from "./text-box.ts";
 
 type Textures = Readonly<Record<SpriteKey, Texture>>;
@@ -104,6 +104,32 @@ const CREDITS_TEXT: UiTextSpec = {
   fill: WHITE,
 };
 
+const snapTo = (layout: Layout, value: number) => Math.round(value * layout.dpr) / layout.dpr;
+
+/** A ui text for `spec`: centred, in the game's font. */
+const createUiText = (parent: Container, spec: UiTextSpec, text: string, visible = true) => {
+  const result = new Text({
+    text,
+    visible,
+    anchor: { x: 0.5, y: spec.anchorY },
+    style: { fontFamily: FONT, fill: spec.fill, align: "center" },
+    roundPixels: true,
+    label: spec.label,
+  });
+
+  parent.addChild(result);
+
+  return result;
+};
+
+/** Sizes and places a ui text for `layout`: the original's size on the square, at least `spec.min` CSS px. */
+const placeUiText = (text: Text, spec: UiTextSpec, layout: Layout) => {
+  const { x, y } = playfieldToScreen(layout, spec.at);
+
+  text.style.fontSize = Math.max(spec.min, spec.size * layout.scale);
+  text.position.set(snapTo(layout, x), snapTo(layout, y));
+};
+
 export interface Scene extends SceneView {
   /** Follows a new layout: the ui texts, the progress art, and story paging. Call it from `onLayout`. */
   readonly relayout: (layout: Layout) => void;
@@ -182,20 +208,7 @@ export const createScene = (layers: Layers, textures: Textures, initial: Layout)
   const storyText = new Container({ label: "story-text" });
   const storyPieces: Text[] = [];
   const progress = new Graphics({ label: "challenge-progress" });
-  const uiText = (spec: UiTextSpec, text: string, visible = true) => {
-    const result = new Text({
-      text,
-      visible,
-      anchor: { x: 0.5, y: spec.anchorY },
-      style: { fontFamily: FONT, fill: spec.fill, align: "center" },
-      roundPixels: true,
-      label: spec.label,
-    });
-
-    layers.ui.addChild(result);
-
-    return result;
-  };
+  const uiText = (spec: UiTextSpec, text: string, visible = true) => createUiText(layers.ui, spec, text, visible);
 
   layers.ui.addChild(storyText, progress);
 
@@ -215,14 +228,7 @@ export const createScene = (layers: Layers, textures: Textures, initial: Layout)
   let shownProgress: ChallengeProgress | null = null;
   let progressKey = "";
 
-  const snap = (value: number) => Math.round(value * layout.dpr) / layout.dpr;
-
-  const placeUiText = (text: Text, spec: UiTextSpec) => {
-    const { x, y } = playfieldToScreen(layout, spec.at);
-
-    text.style.fontSize = Math.max(spec.min, spec.size * layout.scale);
-    text.position.set(snap(x), snap(y));
-  };
+  const snap = (value: number) => snapTo(layout, value);
 
   const drawStory = () => {
     for (const piece of storyPieces) {
@@ -448,9 +454,9 @@ export const createScene = (layers: Layers, textures: Textures, initial: Layout)
       wrapStyle.fontSize = placement.fontSize;
       wrapStyle.wordWrapWidth = placement.wrapWidth;
       paging = { linesPerPage: storyLinesPerPage(next), measure };
-      placeUiText(challengePrompt, CHALLENGE_PROMPT);
-      placeUiText(tapPrompt, TAP_PROMPT);
-      placeUiText(credits, CREDITS_TEXT);
+      placeUiText(challengePrompt, CHALLENGE_PROMPT, next);
+      placeUiText(tapPrompt, TAP_PROMPT, next);
+      placeUiText(credits, CREDITS_TEXT, next);
       // A shown page was paged for the old layout and could spill out of the box at the new one. It stays hidden until
       // the story state pages it again and shows it (`setStoryPage`, on its next update): a frame without text, never
       // a frame of spilled text.
@@ -464,4 +470,94 @@ export const createScene = (layers: Layers, textures: Textures, initial: Layout)
   scene.relayout(initial);
 
   return scene;
+};
+
+// The start gate (m3-plan, deliverable 2). The original's Load scene showed only "This game contains \nflashing
+// lights." centred on the canvas; the port keeps that text and line break, adds a load bar under it and the tap prompt
+// where Title shows its own, so the begin tap lands on the same spot.
+const GATE_WARNING: UiTextSpec = {
+  label: "gate-warning",
+  at: { x: 250, y: 230 },
+  anchorY: 0.5,
+  size: 20,
+  min: 16,
+  fill: WHITE,
+};
+const GATE_PROMPT: UiTextSpec = { ...TAP_PROMPT, label: "gate-prompt" };
+
+export const GATE_WARNING_TEXT = "This game contains\nflashing lights.";
+
+/** The load bar, in playfield px: centred under the warning. */
+const GATE_BAR = { x: 170, y: 290, width: 160, height: 4 } as const;
+
+export interface GateScene extends GateView {
+  /** Follows a new layout. Call it from `onLayout`. */
+  readonly relayout: (layout: Layout) => void;
+  readonly parts: { readonly warning: Text; readonly bar: Graphics; readonly prompt: Text };
+}
+
+/**
+ * Builds the gate's view into the ui layer, hidden. Needs nothing loaded: the bar is Graphics, and the texts are only
+ * shown once the font is in (Gate decides, see GateLoader.fontReady), except the failure line.
+ */
+export const createGateView = (layers: Layers, initial: Layout): GateScene => {
+  const warning = createUiText(layers.ui, GATE_WARNING, GATE_WARNING_TEXT, false);
+  const prompt = createUiText(layers.ui, GATE_PROMPT, "", false);
+  const bar = new Graphics({ label: "gate-bar", visible: false });
+  let layout = initial;
+  let shown: GateScreen | null = null;
+
+  layers.ui.addChild(bar);
+
+  const drawBar = () => {
+    bar.clear();
+    bar.visible = shown?.progress !== null && shown?.progress !== undefined;
+
+    if (shown === null || shown.progress === null) {
+      return;
+    }
+
+    const snap = (value: number) => snapTo(layout, value);
+    const topLeft = playfieldToScreen(layout, GATE_BAR);
+    const x = snap(topLeft.x);
+    const y = snap(topLeft.y);
+    const width = snap(GATE_BAR.width * layout.scale);
+    // At least 2 CSS px, so it reads on a small square.
+    const height = Math.max(2, snap(GATE_BAR.height * layout.scale));
+    const fill = snap(width * Math.min(Math.max(shown.progress, 0), 1));
+
+    bar.rect(x, y, width, height).fill({ color: VOICE_GREY, alpha: 0.5 });
+
+    if (fill > 0) {
+      bar.rect(x, y, fill, height).fill(WHITE);
+    }
+  };
+
+  const gate: GateScene = {
+    show: (screen) => {
+      if (
+        screen !== null && shown !== null && screen.progress === shown.progress && screen.warning === shown.warning
+        && screen.prompt === shown.prompt
+      ) {
+        return;
+      }
+
+      shown = screen;
+      warning.visible = screen?.warning ?? false;
+      prompt.visible = screen?.prompt !== null && screen?.prompt !== undefined;
+      prompt.text = screen?.prompt ?? "";
+      drawBar();
+    },
+    relayout: (next) => {
+      layout = next;
+      placeUiText(warning, GATE_WARNING, next);
+      placeUiText(prompt, GATE_PROMPT, next);
+      drawBar();
+    },
+    parts: { warning, bar, prompt },
+  };
+
+  gate.relayout(initial);
+
+  return gate;
 };

@@ -1,5 +1,6 @@
 // The shape of `window.debug`: what main.ts exposes for the console, the debug overlay and the e2e tests. Types only.
 import type { Application } from "pixi.js";
+import type { AudioEngine } from "./core/audio/audio-engine.ts";
 import type { GameClock } from "./core/clock.ts";
 import type { PlayfieldDisplay } from "./core/display.ts";
 import type { Layers } from "./core/layers.ts";
@@ -7,6 +8,7 @@ import type { Layout } from "./core/layout.ts";
 import type { StateMachine } from "./core/state-machine.ts";
 import type { InputRouter } from "./game/input/dom-router.ts";
 import type { Scene } from "./game/scene.ts";
+import type { GatePhase } from "./game/states/gate.ts";
 import type { SessionSnapshot } from "./game/states/session.ts";
 import type { GameStateId } from "./game/states/types.ts";
 
@@ -28,6 +30,9 @@ export interface DebugApi {
   readonly layers: Layers;
   readonly display: PlayfieldDisplay;
   readonly router: InputRouter;
+  readonly audio: AudioEngine;
+  /** The start gate's phase and load progress (0..1). */
+  readonly gate: { readonly phase: GatePhase; readonly progress: number };
   /** Subscribes to every new layout; returns the unsubscribe function. */
   readonly onLayout: (listener: (layout: Layout) => void) => () => void;
   readonly layout: Layout;
