@@ -63,7 +63,8 @@ blockContextMenu(gameElement);
 
 const layers = createLayers();
 const display = new PlayfieldDisplay(app.renderer, layers.playfield);
-const overlay = isDebugEnabled() ? createDebugOverlay() : null;
+const debugEnabled = isDebugEnabled();
+const overlay = debugEnabled ? createDebugOverlay() : null;
 
 app.stage.addChild(display.sprite, layers.ui);
 
@@ -153,7 +154,6 @@ onElementResize(gameElement, queueResize);
 onDevicePixelRatioChange(queueResize);
 
 const params = new URLSearchParams(window.location.search);
-const debugEnabled = isDebugEnabled();
 
 // `?debug&timescale=N` multiplies game time, so e2e playthroughs don't wait out the original's ~25 s of pauses. Read
 // only with `?debug`: the one test hook (m2-plan, deliverable 6).
@@ -235,7 +235,6 @@ window.debug = {
   display,
   onLayout,
   router,
-  padView,
   get layout() {
     return layout;
   },
@@ -245,7 +244,11 @@ window.debug = {
   },
   /** Listener counts, for the replay leak test. */
   get counts() {
-    return { layoutListeners: layoutListeners.size, tickerListeners: app.ticker.count };
+    return {
+      pendingTimers: clock.pendingTimers,
+      layoutListeners: layoutListeners.size,
+      tickerListeners: app.ticker.count,
+    };
   },
   get timescale() {
     return timescale;

@@ -1,23 +1,11 @@
 // Drives the game in e2e: reads `window.debug.game` and answers what it shows, by keyboard or by synthetic touch.
 import { expect, type CDPSession, type Page } from "@playwright/test";
 import type { Container } from "pixi.js";
-import type { Layers } from "../src/core/layers.ts";
-import type { Layout } from "../src/core/layout.ts";
+import type { GameSnapshot } from "../src/debug-api.ts";
 import type { Direction } from "../src/game/direction.ts";
 import { computePads, type Pad } from "../src/game/input/pad-geometry.ts";
-import type { GameStateId } from "../src/game/states/types.ts";
-import type { SessionSnapshot } from "../src/game/states/session.ts";
 
-export type GameSnapshot = SessionSnapshot & { readonly state: GameStateId | undefined };
-
-interface Debug {
-  readonly game: GameSnapshot;
-  readonly layout: Layout;
-  readonly layers: Layers;
-  readonly clock: unknown;
-  readonly counts: { readonly layoutListeners: number; readonly tickerListeners: number };
-  readonly setTimescale: (value: number) => void;
-}
+export type { GameSnapshot } from "../src/debug-api.ts";
 
 /** The fixed seed every e2e game starts from. */
 export const SEED = 2018;
@@ -33,28 +21,30 @@ export const SLOW = 0.25;
 
 const POLL = { intervals: [10, 20, 30], timeout: 15_000 };
 
-export const readGame = (page: Page) => page.evaluate(() => (window.debug as unknown as Debug).game);
+// Opening the page builds Pixi, loads the assets and compiles shaders: under CPU contention that alone has taken over
+// 15 s.
+const OPEN_POLL = { intervals: [50, 100, 200], timeout: 45_000 };
 
-export const readLayout = (page: Page) => page.evaluate(() => (window.debug as unknown as Debug).layout);
+export const readGame = (page: Page) => page.evaluate(() => window.debug.game);
+
+export const readLayout = (page: Page) => page.evaluate(() => window.debug.layout);
 
 export const setTimescale = (page: Page, value: number) =>
-  page.evaluate((scale) => (window.debug as unknown as Debug).setTimescale(scale), value);
+  page.evaluate((scale) => window.debug.setTimescale(scale), value);
 
 export const isPadVisible = (page: Page) => page.evaluate(() => {
-  const pad = (window.debug as unknown as Debug).layers.ui.getChildByLabel("pad-view");
+  const pad = window.debug.layers.ui.getChildByLabel("pad-view");
 
   return pad?.visible ?? false;
 });
 
 /** Counts that must not grow from one game to the next. */
 export const readCounts = (page: Page) => page.evaluate(() => {
-  const debug = window.debug as unknown as Debug;
+  const debug = window.debug;
   const count = (container: Container): number =>
     container.children.reduce((sum, child) => sum + 1 + count(child), 0);
 
   return {
-    // Private to TypeScript only: the clock's live timers.
-    timers: (debug.clock as { timers: Map<number, unknown> }).timers.size,
     ...debug.counts,
     playfieldObjects: count(debug.layers.playfield),
     uiObjects: count(debug.layers.ui),
@@ -64,7 +54,11 @@ export const readCounts = (page: Page) => page.evaluate(() => {
 /** Opens the game at Title with `?debug`, the fixed seed and FAST time. */
 export const openGame = async (page: Page, query = "") => {
   await page.goto(`/?debug&seed=${SEED}&timescale=${FAST}${query}`);
-  await expect.poll(async () => (await readGame(page).catch(() => null))?.state, POLL).toBe("title");
+  // `window.debug` only exists once main.ts has set it up, and the scene once its assets have loaded.
+  await expect.poll(
+    () => page.evaluate(() => (window.debug?.scene === undefined ? null : window.debug.game.state)),
+    OPEN_POLL,
+  ).toBe("title");
 };
 
 export const waitFor = async (page: Page, check: (game: GameSnapshot) => boolean) => {
@@ -115,66 +109,100 @@ export const keyboardDriver = async (page: Page): Promise<Driver> => {
   };
 };
 
+export interface TouchPoint {
+  readonly x: number;
+  readonly y: number;
+  readonly id: number;
+}
+
+export type TouchDriver = Driver & {
+  readonly session: CDPSession;
+  /** A new touch point at the centre of `dir`'s button on pad `pad` (default: alternating pads). */
+  point(dir: Direction, pad?: number): Promise<TouchPoint>;
+  /** Touches the given new points down, in one touchStart: one point, or a chord. */
+  down(...points: TouchPoint[]): Promise<void>;
+  /** Lifts only the given points. */
+  up(...points: TouchPoint[]): Promise<void>;
+  /** Moves a point that is down to (x, y). */
+  move(point: TouchPoint, x: number, y: number): Promise<void>;
+  /** Cancels every touch point at once, as the browser does when it takes a gesture over. */
+  cancel(): Promise<void>;
+};
+
 /**
- * Touch through CDP `Input.dispatchTouchEvent`, so holds and cancels are real touch sequences. Each press is a new
- * touch point on a pad button; in landscape, presses alternate between the two pads (owner decision 1). The pads are
- * read once: the tests don't resize while a driver plays.
+ * Touch through CDP `Input.dispatchTouchEvent`, so holds and cancels are real touch sequences. CDP's rules: a
+ * touchStart adds the ids it lists, a touchEnd with points ends only those (with none, it ends all), a touchCancel
+ * cancels all. Each press is a new touch point on a pad button; in landscape, presses alternate between the two pads
+ * (owner decision 1). The pads are read once: the tests don't resize while a driver plays.
  */
-export const touchDriver = async (page: Page) => {
+export const touchDriver = async (page: Page): Promise<TouchDriver> => {
   const session = await page.context().newCDPSession(page);
-  const active = new Map<Direction, { x: number; y: number; id: number }>();
+  // The point each pressed direction is held by, for `release`.
+  const pressed = new Map<Direction, TouchPoint>();
   let nextId = 1;
   let presses = 0;
   let pads: Pad[] | null = null;
 
   await session.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
 
-  const points = () => [...active.values()];
-  const send = (type: "touchStart" | "touchEnd" | "touchCancel", touchPoints: { x: number; y: number; id: number }[]) =>
+  const send = (type: "touchStart" | "touchMove" | "touchEnd" | "touchCancel", touchPoints: TouchPoint[]) =>
     session.send("Input.dispatchTouchEvent", { type, touchPoints });
 
-  const padPoint = async (dir: Direction) => {
-    pads ??= computePads(await readLayout(page)).filter((pad) => pad.size > 0);
+  const point = async (dir: Direction, pad?: number): Promise<TouchPoint> => {
+    pads ??= computePads(await readLayout(page)).filter((each) => each.size > 0);
 
-    const button = pads[presses++ % pads.length].buttons[dir];
+    const button = pads[(pad ?? presses++) % pads.length].buttons[dir];
 
     return { x: button.x + button.width / 2, y: button.y + button.height / 2, id: nextId++ };
   };
 
-  const driver: Driver & { readonly session: CDPSession; cancel(): Promise<void> } = {
+  return {
     session,
+    point,
+    down: async (...points) => {
+      await send("touchStart", points);
+    },
+    up: async (...points) => {
+      await send("touchEnd", points);
+    },
+    move: async (moved, x, y) => {
+      await send("touchMove", [{ ...moved, x, y }]);
+    },
     advance: async () => {
       const { square } = await readLayout(page);
-      const point = { x: square.x + square.width / 2, y: square.y + square.height / 4, id: nextId++ };
+      const tap = { x: square.x + square.width / 2, y: square.y + square.height / 4, id: nextId++ };
 
-      await send("touchStart", [...points(), point]);
-      await send("touchEnd", points());
+      await send("touchStart", [tap]);
+      await send("touchEnd", [tap]);
     },
     press: async (dir) => {
-      active.set(dir, await padPoint(dir));
-      await send("touchStart", points());
+      const held = await point(dir);
+
+      pressed.set(dir, held);
+      await send("touchStart", [held]);
     },
     release: async (dir) => {
-      active.delete(dir);
-      await send("touchEnd", points());
+      const held = pressed.get(dir);
+
+      if (held !== undefined) {
+        pressed.delete(dir);
+        await send("touchEnd", [held]);
+      }
     },
     tapAll: async (dirs) => {
-      const taps = [];
+      const taps: TouchPoint[] = [];
 
       for (const dir of dirs) {
-        taps.push(await padPoint(dir));
+        taps.push(await point(dir));
       }
 
-      await Promise.all(taps.flatMap((point) => [send("touchStart", [point]), send("touchEnd", [])]));
+      await Promise.all(taps.flatMap((tap) => [send("touchStart", [tap]), send("touchEnd", [tap])]));
     },
-    // Every touch point is cancelled at once, as the browser does when it takes a gesture over.
     cancel: async () => {
-      active.clear();
+      pressed.clear();
       await send("touchCancel", []);
     },
   };
-
-  return driver;
 };
 
 const pageKey = (game: GameSnapshot) => `${game.state}:${game.part}:${game.page?.line}:${game.page?.page}`;
@@ -222,7 +250,8 @@ export const answerChallenge = async (page: Page, driver: Driver) => {
     return;
   }
 
-  const dirs = spec.kind === "sequence" ? spec.directions : Array.from({ length: 10 }, () => spec.direction);
+  const presses = challenge.progress.kind === "many" ? challenge.progress.target : 0;
+  const dirs = spec.kind === "sequence" ? spec.directions : Array.from({ length: presses }, () => spec.direction);
 
   await setTimescale(page, SLOW);
   await driver.tapAll(dirs);

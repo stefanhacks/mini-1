@@ -23,11 +23,13 @@ export const createTitle = (deps: GameDeps, session: GameSession): GameState => 
     session.round = null;
     session.cursor = null;
 
+    const view = scene();
+
     pad.setVisible(false);
     pad.setHint(null);
-    scene().reset();
-    scene().setTitle(true);
-    scene().setPrompt(TAP_TO_BEGIN);
+    view.reset();
+    view.setTitle(true);
+    view.setPrompt(TAP_TO_BEGIN);
   },
   update: (_deltaMS, machine) => {
     if (deps.input.drain().some((event) => event.kind === "advance")) {

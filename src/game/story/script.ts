@@ -29,13 +29,19 @@ export interface StorySegment {
 }
 
 /**
- * The original's colours per tone: the label is `<#464646>`, the sentence `<color=white>`. A whisper lives in the
- * talker string, so it is the label grey too.
+ * The voice's grey: speaker labels, whispers and the challenge prompt. The original's `#464646` was too dark to read
+ * on the night sea, so it is lifted to `#767676` (owner decision, M2 review). One constant, so they stay the same.
+ */
+export const VOICE_GREY = 0x767676;
+
+/**
+ * The colours per tone. The original's label is `<#464646>` (now VOICE_GREY), the sentence `<color=white>`. A whisper
+ * lives in the talker string, so it is the label grey too.
  */
 export const STORY_TONE_COLORS: Readonly<Record<StoryTone, number>> = {
-  speaker: 0x464646,
+  speaker: VOICE_GREY,
   speech: 0xffffff,
-  whisper: 0x464646,
+  whisper: VOICE_GREY,
 };
 
 const mate = (text: string): StoryLine => ({ speaker: "First Mate", text, whisper: false });

@@ -1,6 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import type { Container, Text } from "pixi.js";
-import { rectToScreen, type Insets } from "../src/core/layout.ts";
+import { rectToScreen, type Insets, type Rect } from "../src/core/layout.ts";
 import type { Direction } from "../src/game/direction.ts";
 import { STORY_PARTS } from "../src/game/story/script.ts";
 import { storyLinesPerPage, TEXT_BOX_RECT } from "../src/game/text-box.ts";
@@ -30,6 +29,27 @@ test.describe.configure({ timeout: 90_000 });
 // cheaper, and every round trip to the page with them. The presets keep their viewport, touch and user agent. The
 // spill check below keeps the real DPR.
 test.use({ deviceScaleFactor: 1 });
+
+/** The story text's bounds on screen and how many rows it shows, or null when it is hidden. */
+const readStoryText = (page: Page) => page.evaluate(() => {
+  const story = window.debug.scene?.parts.storyText;
+
+  if (story === undefined || !story.visible) {
+    return null;
+  }
+
+  const pieces = story.children.filter((child) => child.visible);
+  const { x, y, width, height } = story.getBounds();
+
+  return { bounds: { x, y, width, height }, rows: new Set(pieces.map((piece) => piece.y)).size };
+});
+
+const expectInside = (inner: Rect, outer: Rect) => {
+  expect(inner.x).toBeGreaterThanOrEqual(outer.x);
+  expect(inner.x + inner.width).toBeLessThanOrEqual(outer.x + outer.width);
+  expect(inner.y).toBeGreaterThanOrEqual(outer.y);
+  expect(inner.y + inner.height).toBeLessThanOrEqual(outer.y + outer.height);
+};
 
 const watchErrors = (page: Page) => {
   const problems: string[] = [];
@@ -126,7 +146,7 @@ test("a touchcancel during a Hold releases it", async ({ page }) => {
   await waitFor(page, (now) => now.challenge?.progress.kind === "hold" && !now.challenge.progress.held);
   expect(fraction(await readGame(page))).toBe(0);
   const held = await page.evaluate(
-    (dir) => (window.debug.router as { isHeld(d: string): boolean }).isHeld(dir),
+    (dir) => window.debug.router.isHeld(dir),
     spec.direction,
   );
 
@@ -136,6 +156,169 @@ test("a touchcancel during a Hold releases it", async ({ page }) => {
   await setTimescale(page, FAST);
   await page.waitForTimeout(600);
   expect((await readGame(page)).challenge?.index).toBe(game.challenge?.index);
+});
+
+test("a resize mid-story never shows a page paged for the old layout", async ({ page }) => {
+  const driver = await keyboardDriver(page);
+
+  await openGame(page);
+  await driver.advance();
+  // The first line is the longest of part 0: at a 200 px square it takes several pages of one line.
+  await waitFor(page, (game) => game.page !== null);
+
+  const longest = (await readGame(page)).page?.text ?? "";
+
+  expect(longest.length).toBeGreaterThan(60);
+
+  // Resizes the renderer as a resize event would, synchronously, and reads the text before any frame runs: the old
+  // page must not be drawn at the new size. 600×400 leaves a 200 px square between the 200 px bands.
+  const before = await page.evaluate(() => {
+    const { app, scene } = window.debug;
+
+    app.renderer.resize(600, 400, app.renderer.resolution);
+
+    const story = scene?.parts.storyText;
+    const bounds = story?.getBounds();
+
+    return {
+      visible: story?.visible ?? false,
+      bounds: bounds ? { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } : null,
+      layout: window.debug.layout,
+    };
+  });
+  const box = rectToScreen(before.layout, TEXT_BOX_RECT);
+
+  expect(before.layout.square.width).toBe(200);
+
+  if (before.visible && before.bounds !== null) {
+    expectInside(before.bounds, box);
+  }
+
+  // On the next update the story state pages the line again and shows the current page, inside the box.
+  await expect.poll(async () => (await readStoryText(page)) !== null).toBe(true);
+
+  const after = await readStoryText(page);
+
+  if (after === null) {
+    throw new Error("unreachable");
+  }
+
+  expectInside(after.bounds, box);
+  expect(after.rows).toBeLessThanOrEqual(storyLinesPerPage(before.layout));
+});
+
+test.describe("with both landscape pads", () => {
+  test("hand a Hold between thumbs, cancel one pad, chord, and slide across", async ({ page, isMobile }) => {
+    test.skip(!isMobile, "two thumbs on two pads: the phone presets, turned landscape");
+
+    const size = page.viewportSize() ?? { width: 0, height: 0 };
+
+    await page.setViewportSize({ width: Math.max(size.width, size.height), height: Math.min(size.width, size.height) });
+
+    const driver = await touchDriver(page);
+
+    await openGame(page);
+    expect((await readLayout(page)).zones).toHaveLength(2);
+
+    const game = await reachChallenge(page, driver, "hold");
+    const spec = game.challenge?.spec;
+
+    if (spec?.kind !== "hold") {
+      throw new Error("no Hold in round 0");
+    }
+
+    const dir = spec.direction;
+    const other: Direction = dir === "up" ? "down" : "up";
+    const hold = async () => {
+      const now = await readGame(page);
+
+      return now.challenge?.progress.kind === "hold" ? now.challenge.progress : null;
+    };
+    const isHeld = (which: Direction) => page.evaluate((d) => window.debug.router.isHeld(d), which);
+
+    // Records the pointer ids the browser gives the touches, to cancel one of them on its own below.
+    await page.evaluate(() => {
+      const ids: { id: number; x: number }[] = [];
+
+      document.querySelector("#game > canvas")?.addEventListener("pointerdown", (event) => {
+        ids.push({ id: (event as PointerEvent).pointerId, x: (event as PointerEvent).clientX });
+      });
+      (window as unknown as { pointerIds: typeof ids }).pointerIds = ids;
+    });
+    await setTimescale(page, SLOW);
+
+    // A chord inside one touchStart: the Hold's direction on one pad, another on the other. Both count.
+    const chordA = await driver.point(dir, 0);
+    const chordB = await driver.point(other, 1);
+
+    await driver.down(chordA, chordB);
+    await expect.poll(async () => [await isHeld(dir), await isHeld(other), (await hold())?.held]).toEqual([
+      true,
+      true,
+      true,
+    ]);
+    await driver.up(chordA, chordB);
+    await expect.poll(async () => (await hold())?.held).toBe(false);
+
+    // A slide across the playfield to the other pad keeps the direction the touch went down on.
+    const slide = await driver.point(dir, 0);
+    const target = await driver.point(other, 1);
+
+    await driver.down(slide);
+    await expect.poll(async () => (await hold())?.held).toBe(true);
+
+    for (const step of [0.25, 0.5, 0.75, 1]) {
+      await driver.move(slide, slide.x + (target.x - slide.x) * step, slide.y + (target.y - slide.y) * step);
+    }
+
+    expect([await isHeld(dir), await isHeld(other), (await hold())?.held]).toEqual([true, false, true]);
+    await driver.up(slide);
+    await expect.poll(async () => (await hold())?.held).toBe(false);
+
+    // A cancel of one pad while the other holds the same direction keeps it held. CDP can only cancel every touch at
+    // once, so the browser's pointercancel for one pointer is sent synthetically to the canvas.
+    const kept = await driver.point(dir, 0);
+    const cancelled = await driver.point(dir, 1);
+
+    await driver.down(kept);
+    await driver.down(cancelled);
+    await expect.poll(async () => (await hold())?.held).toBe(true);
+    await page.evaluate((x) => {
+      const ids = (window as unknown as { pointerIds: { id: number; x: number }[] }).pointerIds;
+      const pointer = [...ids].reverse().find((each) => Math.abs(each.x - x) < 1);
+
+      if (pointer === undefined) {
+        throw new Error("no pointer at the cancelled touch");
+      }
+
+      document.querySelector("#game > canvas")?.dispatchEvent(new PointerEvent("pointercancel", {
+        pointerId: pointer.id,
+        pointerType: "touch",
+        bubbles: true,
+      }));
+    }, cancelled.x);
+    await page.waitForTimeout(100);
+    expect([await isHeld(dir), (await hold())?.held]).toEqual([true, true]);
+    await driver.up(kept, cancelled);
+    await expect.poll(async () => (await hold())?.held).toBe(false);
+
+    // A Hold handed from one thumb to the other keeps running, and completes.
+    const first = await driver.point(dir, 0);
+    const second = await driver.point(dir, 1);
+
+    await driver.down(first);
+    await expect.poll(async () => ((await hold())?.fraction ?? 0) > 0.05).toBe(true);
+    await driver.down(second);
+    await driver.up(first);
+
+    const handed = await hold();
+
+    expect(handed?.held).toBe(true);
+    expect(handed?.fraction ?? 0).toBeGreaterThan(0.05);
+    await setTimescale(page, FAST);
+    await waitFor(page, (now) => now.challenge?.index !== game.challenge?.index || now.phase !== "play");
+    await driver.up(second);
+  });
 });
 
 test.describe("at the smallest square", () => {
@@ -165,21 +348,17 @@ test.describe("at the smallest square", () => {
     expect(linesPerPage).toBeGreaterThanOrEqual(1);
 
     const checkPage = async () => {
-      const text = await page.evaluate(() => {
-        const story = (window.debug.scene as { parts: { storyText: Container } }).parts.storyText;
-        const pieces = story.children.filter((child) => child.visible) as Text[];
-        const { x, y, width, height } = story.getBounds();
-
-        return { bounds: { x, y, width, height }, rows: new Set(pieces.map((piece) => piece.y)).size };
-      });
+      const text = await readStoryText(page);
 
       pages += 1;
+
+      if (text === null) {
+        throw new Error("a story page is shown without its text");
+      }
+
       expect(text.rows).toBeGreaterThanOrEqual(1);
       expect(text.rows).toBeLessThanOrEqual(linesPerPage);
-      expect(text.bounds.x).toBeGreaterThanOrEqual(box.x);
-      expect(text.bounds.x + text.bounds.width).toBeLessThanOrEqual(box.x + box.width);
-      expect(text.bounds.y).toBeGreaterThanOrEqual(box.y);
-      expect(text.bounds.y + text.bounds.height).toBeLessThanOrEqual(box.y + box.height);
+      expectInside(text.bounds, box);
     };
 
     await playGame(page, await keyboardDriver(page), checkPage);

@@ -44,6 +44,11 @@ export class GameClock {
     return this.elapsed;
   }
 
+  /** How many timers are scheduled and not yet fired or cancelled, across every scope. For leak checks. */
+  get pendingTimers(): number {
+    return this.timers.size;
+  }
+
   /**
    * Advances game time by `deltaMS` and fires every timer that falls due, in chronological order (ties fire in
    * scheduling order). Timers scheduled by a callback also fire in this tick if they are due within it. If a callback

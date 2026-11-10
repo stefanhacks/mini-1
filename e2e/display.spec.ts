@@ -1,26 +1,18 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
-import type { Application, Container, Sprite, Text } from "pixi.js";
-import type { PlayfieldDisplay } from "../src/core/display.ts";
-import type { Layers } from "../src/core/layers.ts";
+import type { Container, Sprite } from "pixi.js";
 import {
   computeLayout,
   ZERO_INSETS,
   PLAYFIELD_SIZE,
   type Insets,
-  type Layout,
   type Rect,
 } from "../src/core/layout.ts";
 import { renderTextureScale } from "../src/core/render-scale.ts";
 import { floorToDevicePixels } from "../src/core/viewport.ts";
+import type { DebugApi } from "../src/debug-api.ts";
 
-interface Debug {
-  readonly app: Application;
-  readonly display: PlayfieldDisplay;
-  readonly layers: Layers;
-  readonly layout: Layout;
-  readonly scene?: { readonly parts: { readonly tapPrompt: Text; readonly credits: Text } };
-  readonly game: { readonly state?: string };
-}
+// The resize test parks the first render texture on `window.debug` to compare it later.
+type ResizeDebug = DebugApi & { firstTexture?: unknown };
 
 // Faked notches, set through the probe's CSS variables: a portrait iPhone and the same phone turned landscape.
 const FAKE_INSETS: Record<"portrait" | "landscape", Insets> = {
@@ -36,7 +28,7 @@ const EPSILON_DIGITS = 6;
 
 // Everything the assertions need, as plain data.
 const readState = (page: Page) => page.evaluate(() => {
-  const debug = window.debug as unknown as Debug;
+  const debug = window.debug;
   const { app, display, layers } = debug;
   const toRect = (container: Container) => {
     const { x, y, width, height } = container.getBounds();
@@ -82,7 +74,7 @@ type State = Awaited<ReturnType<typeof readState>>;
  */
 const readArt = (page: Page, rects: readonly Rect[], ownResize?: { width: number; height: number }) =>
   page.evaluate(({ rects, ownResize }) => {
-    const { app, display } = window.debug as unknown as Debug;
+    const { app, display } = window.debug;
 
     if (ownResize) {
       app.renderer.resize(ownResize.width, ownResize.height, app.renderer.resolution);
@@ -159,7 +151,7 @@ const nextFrame = (page: Page) => page.evaluate(() => new Promise(requestAnimati
 
 /** Waits until the page's layout matches `insets` and its viewport, then returns the state. */
 const settle = async (page: Page, insets: Insets) => {
-  await page.waitForFunction(() => (window.debug as unknown as Debug | undefined)?.game.state === "title");
+  await page.waitForFunction(() => window.debug?.game.state === "title");
   await expect.poll(async () => {
     const state = await readState(page);
 
@@ -291,7 +283,7 @@ test("resizes the same render texture when k changes, already drawn when the res
   const small = await settle(page, ZERO_INSETS);
 
   await page.evaluate(() => {
-    const debug = window.debug as unknown as Debug & { firstTexture?: unknown };
+    const debug = window.debug as ResizeDebug;
 
     debug.firstTexture = debug.display.renderTexture;
   });
@@ -320,7 +312,7 @@ test("resizes the same render texture when k changes, already drawn when the res
   expectDisplay(again, ZERO_INSETS);
   expectSharpArt(await readArt(page, [TITLE_RECT, BOAT_RECT]), small.k);
   expect(await page.evaluate(() => {
-    const debug = window.debug as unknown as Debug & { firstTexture?: unknown };
+    const debug = window.debug as ResizeDebug;
 
     return debug.firstTexture === debug.display.renderTexture;
   })).toBe(true);
@@ -346,7 +338,7 @@ test.describe("at a fractional device pixel ratio", () => {
 
     const canvas = await page.evaluate(() => {
       const element = document.querySelector<HTMLCanvasElement>("#game > canvas");
-      const { app } = window.debug as unknown as Debug;
+      const { app } = window.debug;
 
       if (!element) {
         throw new Error("no canvas");

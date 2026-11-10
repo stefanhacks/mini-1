@@ -147,8 +147,7 @@ class FakePad {
   }
 }
 
-// The clock's live timers. `timers` is private to TypeScript only.
-const timerCount = (clock: GameClock) => (clock as unknown as { timers: Map<number, unknown> }).timers.size;
+const timerCount = (clock: GameClock) => clock.pendingTimers;
 
 const setup = (loaded: Promise<unknown> = Promise.resolve()) => {
   const clock = new GameClock();

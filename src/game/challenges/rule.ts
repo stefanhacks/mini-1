@@ -64,8 +64,9 @@ export interface RuleContext {
  *   already held by another source (dual pads, keyboard + pad). Never sent for key repeat. The router aggregates
  *   sources; the rules never see source ids.
  * - `release(dir)`: `dir` is no longer held by ANY source. Sent only on that held → not held edge.
- * - `cancelAll()`: every source was dropped at once (pointercancel of the last source, blur, visibilitychange). It
- *   means "nothing is held any more"; equivalent to a release of every held direction.
+ * - `cancelAll()`: every source was dropped at once (blur, the page hidden, or an overflowing queue). It means
+ *   "nothing is held any more"; equivalent to a release of every held direction. A pointercancel or a lost capture
+ *   lets only that pointer go, so it gives `release(dir)` if it was the direction's last holder, never `cancelAll()`.
  * - Sources that were already down before the challenge began are not reported as presses. A rule only knows about
  *   presses it received itself: Hold needs a press after the challenge began, whatever was held before.
  *

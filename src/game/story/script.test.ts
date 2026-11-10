@@ -72,7 +72,7 @@ describe("line segments", () => {
     assert.deepEqual(lineSegments(captainLine, 11, 17), [{ tone: "speech", text: "\"Men! " }]);
     assert.deepEqual(lineSegments(captainLine, 1, 8), [{ tone: "speaker", text: "Captain" }]);
     assert.deepEqual(lineSegments(whisperLine, 0, 5), [{ tone: "whisper", text: "\"... " }]);
-    assert.equal(STORY_TONE_COLORS.speaker, 0x464646);
+    assert.equal(STORY_TONE_COLORS.speaker, 0x767676);
     assert.equal(STORY_TONE_COLORS.speech, 0xffffff);
     assert.equal(STORY_TONE_COLORS.whisper, STORY_TONE_COLORS.speaker);
   });

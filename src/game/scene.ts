@@ -15,7 +15,7 @@ import { PLAYFIELD_SIZE, playfieldToScreen, type Layout, type Point } from "../c
 import type { ChallengeKind, ChallengeProgress, ChallengeSpec } from "./challenges/rule.ts";
 import type { Direction } from "./direction.ts";
 import type { StoryPage } from "./story/cursor.ts";
-import { segmentLines, STORY_TONE_COLORS } from "./story/script.ts";
+import { segmentLines, STORY_TONE_COLORS, VOICE_GREY } from "./story/script.ts";
 import type { Backdrop, Boat, Paging, SceneView } from "./states/types.ts";
 import { placeStoryText, storyLinesPerPage, TEXT_BOX_CENTER } from "./text-box.ts";
 
@@ -23,8 +23,6 @@ type Textures = Readonly<Record<SpriteKey, Texture>>;
 
 const FONT = "Josefin Slab";
 const WHITE = 0xffffff;
-// The original's label grey, also ArrowText's colour.
-const GREY = 0x464646;
 
 /**
  * The arrow row (`UI/ArrowSpot`, canvas y −160). KeyManager spawns arrow i at world x `−⌊n/2⌋·0.2 + i·0.2` (integer
@@ -64,8 +62,10 @@ const RING_RADIUS = 18;
 
 interface UiTextSpec {
   readonly label: string;
-  /** Where the text's anchor goes, in playfield px. */
+  /** Where the text's anchor goes, in playfield px. The anchor is the text's centre horizontally. */
   readonly at: Point;
+  /** The anchor's height on the text: 0 at its top, 1 at its bottom. */
+  readonly anchorY: number;
   /** The original's font size, in art px. */
   readonly size: number;
   /** The smallest font size in CSS px, whatever the square's scale. */
@@ -73,20 +73,36 @@ interface UiTextSpec {
   readonly fill: number;
 }
 
-// Texts the original drew top-aligned in their rect: anchored at their top centre.
-// `ArrowText`: 200×50 at canvas (0, −145), Top, 20 px, grey.
+// `ArrowText`: 200×50 at canvas (0, −145), Top, 20 px, grey; its text ended just above the arrows. The port anchors it
+// at its bottom, just above the hold ring, so a font clamped up to `min` on a small square grows upward, away from the
+// arrows, the ring and the pips.
 const CHALLENGE_PROMPT: UiTextSpec = {
   label: "challenge-prompt",
-  at: { x: 250, y: 370 },
+  at: { x: 250, y: ARROW_ROW.y - RING_RADIUS - 4 },
+  anchorY: 1,
   size: 20,
   min: 16,
-  fill: GREY,
+  fill: VOICE_GREY,
 };
-// `PressAnyKey`: 110×20 at canvas (0, −150), 16 px, white. It was right-aligned in its rect; the port's wording is
-// shorter, so it is centred.
-const TAP_PROMPT: UiTextSpec = { label: "tap-prompt", at: { x: 250, y: 390 }, size: 16, min: 16, fill: WHITE };
+// `PressAnyKey`: 110×20 at canvas (0, −150), Top, 16 px, white. It was right-aligned in its rect; the port's wording
+// is shorter, so it is centred.
+const TAP_PROMPT: UiTextSpec = {
+  label: "tap-prompt",
+  at: { x: 250, y: 390 },
+  anchorY: 0,
+  size: 16,
+  min: 16,
+  fill: WHITE,
+};
 // `CopyRight`: 150×20 at canvas (0, −233), Top, 12 px, white.
-const CREDITS_TEXT: UiTextSpec = { label: "credits", at: { x: 250, y: 473 }, size: 12, min: 12, fill: WHITE };
+const CREDITS_TEXT: UiTextSpec = {
+  label: "credits",
+  at: { x: 250, y: 473 },
+  anchorY: 0,
+  size: 12,
+  min: 12,
+  fill: WHITE,
+};
 
 export interface Scene extends SceneView {
   /** Follows a new layout: the ui texts, the progress art, and story paging. Call it from `onLayout`. */
@@ -152,7 +168,8 @@ export const createScene = (layers: Layers, textures: Textures, initial: Layout)
 
   // Top.
   const textBox = sprite(layers.top, "textBox", TEXT_BOX_CENTER.x, TEXT_BOX_CENTER.y);
-  const arrows = new Container({ label: "arrows" });
+  // Built hidden, as `setChallenge(null)` leaves them: the first Title must look like every replay's.
+  const arrows = new Container({ label: "arrows", visible: false });
   const arrowSprites: Sprite[] = [];
   const cursorSprites: Sprite[] = [];
 
@@ -165,10 +182,11 @@ export const createScene = (layers: Layers, textures: Textures, initial: Layout)
   const storyText = new Container({ label: "story-text" });
   const storyPieces: Text[] = [];
   const progress = new Graphics({ label: "challenge-progress" });
-  const uiText = (spec: UiTextSpec, text: string) => {
+  const uiText = (spec: UiTextSpec, text: string, visible = true) => {
     const result = new Text({
       text,
-      anchor: { x: 0.5, y: 0 },
+      visible,
+      anchor: { x: 0.5, y: spec.anchorY },
       style: { fontFamily: FONT, fill: spec.fill, align: "center" },
       roundPixels: true,
       label: spec.label,
@@ -181,7 +199,7 @@ export const createScene = (layers: Layers, textures: Textures, initial: Layout)
 
   layers.ui.addChild(storyText, progress);
 
-  const challengePrompt = uiText(CHALLENGE_PROMPT, "");
+  const challengePrompt = uiText(CHALLENGE_PROMPT, "", false);
   const tapPrompt = uiText(TAP_PROMPT, "");
   const credits = uiText(CREDITS_TEXT, CREDITS);
 
@@ -219,6 +237,7 @@ export const createScene = (layers: Layers, textures: Textures, initial: Layout)
     }
 
     const placement = placeStoryText(layout);
+    const { whisper } = page;
     const lines = segmentLines(page.segments, measure(page.text));
     const top = placement.anchor.y - (lines.length * placement.lineHeight) / 2;
     const left = placement.anchor.x - placement.wrapWidth / 2;
@@ -246,7 +265,7 @@ export const createScene = (layers: Layers, textures: Textures, initial: Layout)
       });
       const width = texts.reduce((sum, { width: pieceWidth }) => sum + pieceWidth, 0);
       // Normal lines are left-aligned in the text rect, whispers centred (TextManager.cs: TMP Left and Center).
-      let x = page?.whisper ? placement.anchor.x - width / 2 : left;
+      let x = whisper ? placement.anchor.x - width / 2 : left;
 
       for (const { text, width: pieceWidth } of texts) {
         text.position.set(snap(x), snap(top + row * placement.lineHeight));
@@ -328,7 +347,7 @@ export const createScene = (layers: Layers, textures: Textures, initial: Layout)
   };
 
   const scene: Scene = {
-    reset() {
+    reset: () => {
       scene.setTitle(false);
       scene.setPrompt(null);
       scene.setStoryPage(null);
@@ -339,19 +358,19 @@ export const createScene = (layers: Layers, textures: Textures, initial: Layout)
       scene.setKraken(false);
       scene.setBlack(false);
     },
-    setTitle(visible) {
+    setTitle: (visible) => {
       logo.visible = visible;
       credits.visible = visible;
     },
-    setPrompt(text) {
+    setPrompt: (text) => {
       tapPrompt.visible = text !== null;
       tapPrompt.text = text ?? "";
     },
-    setStoryPage(next) {
+    setStoryPage: (next) => {
       page = next;
       drawStory();
     },
-    setChallenge(spec) {
+    setChallenge: (spec) => {
       if (spec === challenge) {
         return;
       }
@@ -394,7 +413,7 @@ export const createScene = (layers: Layers, textures: Textures, initial: Layout)
         arrows.setChildIndex(cursor, 0);
       }
     },
-    setProgress(next) {
+    setProgress: (next) => {
       const key = keyOf(next);
 
       if (key === progressKey) {
@@ -405,24 +424,24 @@ export const createScene = (layers: Layers, textures: Textures, initial: Layout)
       shownProgress = next;
       drawProgress();
     },
-    setBackdrop(backdrop: Backdrop, visible) {
+    setBackdrop: (backdrop: Backdrop, visible) => {
       (backdrop === "pillars" ? pillars : tentacles).visible = visible;
     },
-    setBoat(state: Boat) {
+    setBoat: (state: Boat) => {
       boat.visible = state === "whole";
       brokenBoat.visible = state === "broken";
     },
-    setKraken(visible) {
+    setKraken: (visible) => {
       krakenTail.visible = visible;
       krakenBody.visible = visible;
     },
-    setBlack(visible) {
+    setBlack: (visible) => {
       black.visible = visible;
     },
     get paging() {
       return paging;
     },
-    relayout(next) {
+    relayout: (next) => {
       const placement = placeStoryText(next);
 
       layout = next;
@@ -432,7 +451,10 @@ export const createScene = (layers: Layers, textures: Textures, initial: Layout)
       placeUiText(challengePrompt, CHALLENGE_PROMPT);
       placeUiText(tapPrompt, TAP_PROMPT);
       placeUiText(credits, CREDITS_TEXT);
-      drawStory();
+      // A shown page was paged for the old layout and could spill out of the box at the new one. It stays hidden until
+      // the story state pages it again and shows it (`setStoryPage`, on its next update): a frame without text, never
+      // a frame of spilled text.
+      storyText.visible = false;
       drawProgress();
     },
     parts: { textBox, storyText, challengePrompt, progress, tapPrompt, credits, logo, arrows },

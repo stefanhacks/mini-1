@@ -70,7 +70,7 @@ export const createPadView = (parent: Container): PadView => {
   };
 
   return {
-    setPads(nextPads, nextDpr = 1) {
+    setPads: (nextPads, nextDpr = 1) => {
       pads = nextPads;
       dpr = nextDpr;
 
@@ -84,13 +84,13 @@ export const createPadView = (parent: Container): PadView => {
 
       redraw();
     },
-    setVisible(visible) {
+    setVisible: (visible) => {
       root.visible = visible;
     },
-    setDimmed(dimmed) {
+    setDimmed: (dimmed) => {
       root.alpha = dimmed ? DIMMED_ALPHA : 1;
     },
-    update(isHeld) {
+    update: (isHeld) => {
       const next = heldMask(isHeld);
 
       if (next !== held) {
@@ -98,13 +98,13 @@ export const createPadView = (parent: Container): PadView => {
         redraw();
       }
     },
-    setHint(dir) {
+    setHint: (dir) => {
       if (dir !== hint) {
         hint = dir;
         redraw();
       }
     },
-    destroy() {
+    destroy: () => {
       root.destroy({ children: true });
       views.length = 0;
       pads = [];
