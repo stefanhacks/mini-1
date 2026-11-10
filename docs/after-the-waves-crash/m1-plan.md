@@ -123,6 +123,12 @@ All approved:
    - The compass pad is sized `min(200, zone width, zone height)`, and placed toward the bottom of a tall portrait zone.
    - The API differs slightly from the plan text: `computeLayout(screen)` returns `{ orientation, safe, square, scale, zones, dpr, sideDevicePx }`, and the mapping functions are `playfieldToScreen(layout, point)` and `screenToPlayfield(layout, point)`.
 2. **DPR cap:** 3.
+   - The render scale k is capped at 6 (a 3000² render texture). The canvas size is floored to whole device pixels, so fractional DPRs like 2.625 aren't resampled a second time.
+   - **Story text pagination (owner decision after the M1 review):**
+     - Keep the 16 px minimum font size, and never let text spill out of the box.
+     - Each page shows `storyLinesPerPage(layout)` lines: as many as fit from the text top to the box bottom (95 art px). That's 2 lines from about a 211 px square, 1 below.
+     - Pages break at sentence boundaries where possible, and a tap advances. M4 implements this.
+   - **Whole art pixels:** playfield positions must sit on whole art pixels. Half pixels tear rows at odd k; the boat moves from y 309.5 to 310.
 3. **`@playwright/test`:** pinned to 1.63.
 
 ## How the work runs
