@@ -15,10 +15,8 @@ import { createStoryView } from "./scene/story-view.ts";
 import { createTitleCard } from "./scene/title-card.ts";
 import { createWorld } from "./scene/world.ts";
 
-export { CHALLENGE_PROMPTS } from "./scene/challenge-model.ts";
-export { createContinuePrompt, TAP_TO_CONTINUE, type ContinuePromptScene } from "./scene/continue-prompt.ts";
-export { createGateView, GATE_WARNING_TEXT, type GateScene } from "./scene/gate-view.ts";
-export { ARROW_ROW, ARROW_SPACING, arrowX, CURSOR_OFFSET } from "./scene/positions.ts";
+export { createContinuePrompt } from "./scene/continue-prompt.ts";
+export { createGateView } from "./scene/gate-view.ts";
 
 export interface Scene extends SceneView {
   /** Follows a new layout: the ui texts, the progress art, and story paging. Call it from `onLayout`. */

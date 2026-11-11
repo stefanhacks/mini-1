@@ -12,7 +12,7 @@ import type { LayoutBus } from "./layout-bus.ts";
 import { countChildren, removeChildrenAddedSince } from "./scene-rollback.ts";
 
 /** Each part's share of the load bar: its size in KB, roughly, so the bar moves with the bytes. */
-export const LOAD_WEIGHTS = { font: 110, sprites: 140, audio: 830 } as const;
+const LOAD_WEIGHTS = { font: 110, sprites: 140, audio: 830 } as const;
 
 // Pixel art: every sprite texture samples nearest. `data` becomes the TextureSource options. Calling it again after a
 // failure retries: Pixi drops a failed asset's cached promise, and the loaded ones resolve from its cache.

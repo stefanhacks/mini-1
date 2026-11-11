@@ -1,5 +1,5 @@
-// The fx layer: the black overlay and the vignette. M4 adds the flash and the lightning bolts here. Written by Claude
-// Code.
+// The fx layer: the black overlay and the vignette. M4 adds the flash and the lightning bolts here.
+// Written by Claude Code.
 import { Graphics, Sprite } from "pixi.js";
 import { SPRITES } from "../../assets/manifest.ts";
 import type { Layers } from "../../core/layers.ts";

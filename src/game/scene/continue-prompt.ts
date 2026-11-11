@@ -1,6 +1,6 @@
 // "Tap to continue" (m3-plan, deliverable 5): audio needs a tap to resume. Minimal and static (the pause overlay is
-// M5): white text on a black box at the playfield's centre, over everything. Moved from scene.ts. Written by Claude
-// Code.
+// M5): white text on a black box at the playfield's centre, over everything.
+// Written by Claude Code.
 import { Container, Graphics } from "pixi.js";
 import type { Layers } from "../../core/layers.ts";
 import { snapToDevicePixels, type Layout } from "../../core/layout.ts";

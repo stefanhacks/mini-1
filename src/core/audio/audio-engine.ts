@@ -551,46 +551,24 @@ export const createAudioEngine = (
   const mustFinishBy = (track: OverlayTrack | null): number =>
     track?.plan?.mode === "once" ? Math.max(track.startAt, ...[...track.voices].map((voice) => voice.end)) : -Infinity;
 
-  /**
-   * Withdraws the track asked for last if its bar hasn't come yet, so a new request replaces it and the one before
-   * plays on. Returns false when that pending track is already for `part`: nothing to change.
-   */
-  const withdrawPending = (part: number | null, now: number): boolean => {
-    if (overlay === null || !isPending(overlay, now)) {
-      return true;
-    }
-
-    if (overlay.part === part) {
-      return false;
-    }
-
-    cancelPending(overlay);
+  /** Withdraws `pending`, the track asked for last whose bar hasn't come: the one before it plays on. */
+  const withdrawPending = (pending: OverlayTrack) => {
+    cancelPending(pending);
     overlay = outgoing;
     outgoing = null;
-
-    return true;
   };
 
   /** Whether `base` already plays `part` (or nothing plays and `part` is none). */
   const alreadyPlaying = (base: OverlayTrack | null, part: number | null, now: number) =>
     base === null ? part === null : base.part === part && isLive(base, now);
 
-  /** Stops `base` at `time` (a one-shot plays out) and makes a new track for `part` from `time` the current one. */
-  const handOver = (base: OverlayTrack | null, part: number | null, plan: OverlayPlan | null, time: number,
-    barAnchor: number): OverlayTrack => {
+  /** Stops `base` at the new track's start (a one-shot plays out) and makes the new track the current one. */
+  const handOver = (base: OverlayTrack | null, next: Pick<OverlayTrack, "part" | "plan" | "startAt" | "nextIndex">) => {
     if (base !== null && base.plan?.mode !== "once") {
-      stopTrack(base, time);
+      stopTrack(base, next.startAt);
     }
 
-    const track: OverlayTrack = {
-      part,
-      plan,
-      startAt: time,
-      stopAt: Infinity,
-      nextIndex: barIndexAtOrAfter(time, barAnchor, bar),
-      voices: new Set(),
-      upBefore: overlayUp,
-    };
+    const track: OverlayTrack = { ...next, stopAt: Infinity, voices: new Set(), upBefore: overlayUp };
 
     overlay = track;
     outgoing = base;
@@ -629,8 +607,12 @@ export const createAudioEngine = (
 
     const now = ctx.currentTime;
 
-    if (!withdrawPending(part, now)) {
-      return;
+    if (overlay !== null && isPending(overlay, now)) {
+      if (overlay.part === part) {
+        return;
+      }
+
+      withdrawPending(overlay);
     }
 
     const base = overlay;
@@ -641,7 +623,8 @@ export const createAudioEngine = (
 
     const plan = overlayForPart(part);
     const time = changeBarTime(now, anchor, bar, mustFinishBy(base));
-    const track = handOver(base, part, plan, time, anchor);
+    const nextIndex = barIndexAtOrAfter(time, anchor, bar);
+    const track = handOver(base, { part, plan, startAt: time, nextIndex });
 
     if (plan === null) {
       silenceOverlay(time);

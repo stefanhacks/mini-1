@@ -39,7 +39,7 @@ export interface GestureWiring {
 /**
  * Registers the mute toggle, then the activation hooks: Gate's before the lifecycle's. They run inside the DOM gesture
  * (router-core.ts has the contract): Gate's begin tap unlocks audio and starts the music, and any later tap unlocks
- * audio again when it needs a gesture ("Tap to continue"). Call it once the machine exists. Returns the unsubscribes.
+ * audio again when it needs a gesture ("Tap to continue"). Call it once the machine exists.
  */
 export const wireGestures = ({ router, audio, muteButton, lifecycle, machine, gate }: GestureWiring) => {
   // Unlocks audio when it needs a gesture: any tap or key once Gate is left (at the gate the begin tap's unlock and its
@@ -50,14 +50,12 @@ export const wireGestures = ({ router, audio, muteButton, lifecycle, machine, ga
     }
   };
 
-  return [
-    router.onMute(() => {
-      audio.setMuted(!audio.muted);
-      muteButton.setMuted(audio.muted);
-      // A mute tap or the M key is a gesture too: it may resume audio, without counting as an activation.
-      continueAudio();
-    }),
-    router.onActivate(() => gate.activate()),
-    router.onActivate(continueAudio),
-  ];
+  router.onMute(() => {
+    audio.setMuted(!audio.muted);
+    muteButton.setMuted(audio.muted);
+    // A mute tap or the M key is a gesture too: it may resume audio, without counting as an activation.
+    continueAudio();
+  });
+  router.onActivate(() => gate.activate());
+  router.onActivate(continueAudio);
 };

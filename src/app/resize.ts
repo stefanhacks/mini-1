@@ -16,8 +16,8 @@ import { createLayoutBus } from "./layout-bus.ts";
 import type { Stage } from "./stage.ts";
 
 /**
- * Starts following #game's size. `renderPlayfield` is the guarded render pass (main.ts). Returns the layout bus,
- * `resizeRenderer` (call it once at startup) and `stop`, which removes every listener.
+ * Starts following #game's size. `renderPlayfield` is the guarded render pass (main.ts). Returns the layout bus
+ * and `resizeRenderer` (call it once at startup).
  */
 export const wireResize = (
   { app, gameElement, display, overlay }: Pick<Stage, "app" | "gameElement" | "display" | "overlay">,
@@ -66,19 +66,11 @@ export const wireResize = (
   };
 
   const queueResize = createResizeQueue(resizeRenderer);
-  const removers = [
-    onWindowResize(queueResize),
-    onVisualViewportResize(queueResize),
-    onElementResize(gameElement, queueResize),
-    onDevicePixelRatioChange(queueResize),
-    () => {
-      app.renderer.off("resize", onRendererResize);
-    },
-  ];
 
-  return {
-    layouts,
-    resizeRenderer,
-    stop: () => removers.forEach((remove) => remove()),
-  };
+  onWindowResize(queueResize);
+  onVisualViewportResize(queueResize);
+  onElementResize(gameElement, queueResize);
+  onDevicePixelRatioChange(queueResize);
+
+  return { layouts, resizeRenderer };
 };

@@ -1,5 +1,5 @@
-// Where the scene's pieces go. Pure TypeScript with no Pixi import, so it runs under `node --test`. Written by Claude
-// Code.
+// Where the scene's pieces go. Pure TypeScript with no Pixi import, so it runs under `node --test`.
+// Written by Claude Code.
 //
 // Positions come from the original Main.unity (canvas centre origin, y up) converted to playfield px (top-left origin,
 // y down): playfield = (250 + x, 250 − y). The converted numbers are kept as they were. Draw order follows the
@@ -117,9 +117,6 @@ export const CREDITS_TEXT: UiTextSpec = {
   min: 12,
   fill: WHITE,
 };
-
-/** The credits line (`UI/Title/CopyRight`). */
-export const CREDITS = "©the Stefan & Nied";
 
 // The start gate (m3-plan, deliverable 2). The original's Load scene showed only "This game contains \nflashing
 // lights." centred on the canvas; the port keeps that text and line break, adds a load bar under it and the tap prompt

@@ -26,8 +26,8 @@ export const createTitle = (deps: GameDeps, session: GameSession): GameState => 
   let enteredAt = 0;
 
   /**
-   * Ambient lightning after the intro's strikes, from its own RNG stream. Draws the first delay now (at the enter, as
-   * before the split: the draw order is part of a seed's replay) and returns what starts the strikes.
+   * Ambient lightning after the intro's strikes, from its own RNG stream. Draws the first delay now, at the enter (the
+   * draw order is part of a seed's replay), and returns what starts the strikes.
    */
   const scheduleAmbient = (scope: TimerScope, cues: CuePlayer) => {
     const rng = createRng((session.seed ^ AMBIENT_SALT) >>> 0);

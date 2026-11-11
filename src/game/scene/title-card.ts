@@ -4,8 +4,11 @@ import type { Sprite, Text } from "pixi.js";
 import type { Layers } from "../../core/layers.ts";
 import type { Layout } from "../../core/layout.ts";
 import { addArtSprite, type Textures } from "./art-sprite.ts";
-import { CREDITS, CREDITS_TEXT, LOGO_AT, TAP_PROMPT } from "./positions.ts";
+import { CREDITS_TEXT, LOGO_AT, TAP_PROMPT } from "./positions.ts";
 import { createUiText, placeUiText } from "./ui-text.ts";
+
+/** The credits line (`UI/Title/CopyRight`). */
+export const CREDITS = "©the Stefan & Nied";
 
 export interface TitleCardView {
   readonly logo: Sprite;

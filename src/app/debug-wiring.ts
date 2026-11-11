@@ -39,8 +39,9 @@ export interface DebugWiring {
  * `debug.display.render`...). `scene` and `error` are getters: nothing writes into `window.debug`.
  */
 export const createDebugApi = (wiring: DebugWiring): DebugApi => {
-  const { app, clock, machine, layers, display, layouts, router, audio } = wiring;
-  const { cueLog, lifecycle, game, timescale, loading, errors } = wiring;
+  const {
+    app, clock, machine, layers, display, layouts, router, audio, cueLog, lifecycle, game, timescale, loading, errors,
+  } = wiring;
 
   return {
     app,

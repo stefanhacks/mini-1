@@ -77,7 +77,8 @@ export const createChallengeView = (layers: Layers, textures: Textures, initial:
     progress.clear();
   };
 
-  // Every cursor in the pool is set, shown or not, as the scene always did.
+  // Every cursor in the pool is set, shown or not: a pair shown by a later challenge keeps this texture until its
+  // first setProgress.
   const updateCursors = (current: ChallengeProgress) => {
     for (let i = 0; i < cursorSprites.length; i++) {
       cursorSprites[i].texture = textures[cursorKey(i, current)];

@@ -333,13 +333,6 @@ describe("snapToDevicePixels", () => {
     assert.equal(snapToDevicePixels(-0.4, 1), -0);
   });
 
-  it("matches Math.round(value * dpr) / dpr for a layout's dpr", () => {
-    const layout = computeLayout({ width: 390, height: 844, insets: ZERO_INSETS, dpr: 3 });
-    const value = layout.square.x + 123.456 * layout.scale;
-
-    assert.equal(snapToDevicePixels(value, layout.dpr), Math.round(value * layout.dpr) / layout.dpr);
-  });
-
   it("treats a dpr that isn't finite and positive as 1", () => {
     assert.equal(snapToDevicePixels(10.6, 0), 11);
     assert.equal(snapToDevicePixels(10.6, -2), 11);

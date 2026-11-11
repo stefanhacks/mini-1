@@ -82,6 +82,7 @@ export const createRound = (deps: GameDeps, session: GameSession): GameState => 
       pad.setVisible(true);
       pad.setDimmed(false);
       session.phase = "play";
+
       const context = ruleContext(clock, scope, tuning, () => winRound(scope, machine));
 
       session.round = new Round(specs, context, showChallenge);

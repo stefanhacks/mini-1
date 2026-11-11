@@ -41,10 +41,4 @@ export const startFrameLoop = ({ ticker, stepper, padView, router, audio, timesc
   // After the game logic (same priority, added later) and before Pixi renders the stage (LOW). Outside the game-logic
   // guard: a halted game keeps its last frame on screen.
   ticker.add(renderPlayfield, undefined, UPDATE_PRIORITY.NORMAL);
-
-  return () => {
-    ticker.remove(stepGame);
-    ticker.remove(tickAudio);
-    ticker.remove(renderPlayfield);
-  };
 };

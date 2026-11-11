@@ -1,5 +1,6 @@
 // The start gate's view (m3-plan, deliverable 2): the flashing-lights warning, the load bar and the tap prompt, in the
-// ui layer. Moved from scene.ts. Written by Claude Code.
+// ui layer.
+// Written by Claude Code.
 import { CanvasTextMetrics, Graphics, type Text } from "pixi.js";
 import type { Layers } from "../../core/layers.ts";
 import { playfieldToScreen, snapToDevicePixels, type Layout, type Rect } from "../../core/layout.ts";

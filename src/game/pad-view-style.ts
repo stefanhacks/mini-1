@@ -6,9 +6,6 @@ import { snapToDevicePixels, type Rect } from "../core/layout.ts";
 import type { Direction } from "./direction.ts";
 import { VOICE_GREY } from "./story/script.ts";
 
-// Moved to core/layout.ts (the one device-pixel snap); re-exported for the pad view and its tests.
-export { snapToDevicePixels };
-
 /** Gap between a button's art rect and its drawn body, as a share of the button side, so neighbours don't touch. */
 export const BUTTON_INSET_RATIO = 0.06;
 

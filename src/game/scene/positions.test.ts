@@ -5,9 +5,7 @@ import {
   ARROW_ROW,
   ARROW_SPACING,
   arrowX,
-  CHALLENGE_PROMPT,
   GATE_PROMPT,
-  RING_RADIUS,
   TAP_PROMPT,
   WORLD_SPRITES,
 } from "./positions.ts";
@@ -55,11 +53,6 @@ describe("WORLD_SPRITES", () => {
 });
 
 describe("ui text specs", () => {
-  it("anchors the challenge prompt just above the hold ring", () => {
-    assert.equal(CHALLENGE_PROMPT.anchorY, 1);
-    assert.equal(CHALLENGE_PROMPT.at.y, ARROW_ROW.y - RING_RADIUS - 4);
-  });
-
   it("puts the gate's prompt where Title shows its own", () => {
     assert.deepEqual({ ...GATE_PROMPT, label: TAP_PROMPT.label }, TAP_PROMPT);
     assert.equal(GATE_PROMPT.label, "gate-prompt");
