@@ -65,7 +65,7 @@ These were checked against `node_modules/pixi.js` and the Unity project. Items 1
 | Item | Size | Days | Main risks |
 |---|---|---|---|
 | **Sprites**: 28 PNGs, 143 KB, single sprites, pivots flipped from Unity's y-up | S | 0.25–0.5 | `eye_*` dropped. No PNG optimiser is installed. |
-| **Animations**: 20 curve clips, through a ~100-line Hermite evaluator that uses Unity's `inSlope`/`outSlope` and hand-copied keyframe tables. No tween library. | M | 2–3 | Unity RectTransform units must be converted per parent chain. `SeaAnimTrês` stretches vertically. The boat rotates ±7°, so slight shimmer. |
+| **Animations**: 20 curve clips, through a ~100-line Hermite evaluator that uses Unity's `inSlope`/`outSlope` and hand-copied keyframe tables. No tween library. | M | 2–3 | Unity RectTransform units must be converted per parent chain. `SeaAnimTrês` does *not* stretch (its `m_SizeDelta.y` is constant and a SpriteRenderer ignores it; corrected in M4). The boat rotates ±7°, so slight shimmer. |
 | **Particles**: rain (kill at the sea line and spawn a splash; no physics), splash, bubbles, on `ParticleContainer`/`Particle` | M | 1.5–2.5 | All look-tuning, with no reference capture. `boundsArea` must be set. |
 | **Font**: `JosefinSlab-Regular.ttf` (110 KB, 53 KB gzip, OFL). Drop the 544 KB TMP SDF asset. | S | 0.25–0.5 | A woff2 subset (15–30 KB) needs fonttools, which isn't installed. The TTF is fine for a first version. |
 | **Audio transcode**: ffmpeg (installed) to mono AAC `.m4a`, encoding each loop as `[tail guard | loop | head guard]` so loops stay seamless however a decoder trims padding. Commit the outputs and the script. | S | 0.5 | Safari's AAC trimming is unverified; the guard bands cover it |

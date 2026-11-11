@@ -52,7 +52,7 @@ M4 removes the M2/M3 stopgaps listed above.
 
 ### 1. Animation runtime (`src/core/anim/`, pure, unit tested)
 
-- **Hermite evaluator:** it uses Unity's `inSlope`/`outSlope` and tangent modes (clamped auto 136, linear 34, constant 5/65), as 04 measured. About 100 lines, no tween library.
+- **Hermite evaluator:** it uses Unity's `inSlope`/`outSlope` and tangent modes (ClampedAuto 136, legacy Auto 34, broken tangents with one linear side 65/5; no constant tangents — corrected by the M4 clip review, 04 had them wrong), as 04 measured. About 100 lines, no tween library.
 - **Clip data, generated, not hand-copied:** `scripts/import-anims.mjs` reads the 20 curve clips from the Unity checkout (YAML) and writes `src/assets/anims.ts`. Same pattern as `import-assets.sh`: rerun to regenerate, outputs committed.
   - Per clip: length, loop flag, curves per property (position x/y, rotation z, scale, alpha), and events.
   - `PillarsSwitch` stays unused. `ChangeText` is dropped (it had no visible effect, 01).
@@ -91,7 +91,7 @@ M4 removes the M2/M3 stopgaps listed above.
 ### 4. Scene motion and fades
 
 - **Ambient loops:**
-  - the three sea strips (`SeaAnim`, `SeaAnimDois`, `SeaAnimTrês`: slide and bob, and the back strip's vertical stretch);
+  - the three sea strips (`SeaAnim`, `SeaAnimDois`, `SeaAnimTrês`: slide and bob, (the back strip's `m_SizeDelta.y` is constant 0 and a SpriteRenderer ignores it: no vertical stretch, leave that channel unbound));
   - the clouds (`Clouds.anim`, 10 s scroll);
   - the boat (`Barco.anim`, 2.6 s bob and ±7° tilt; slight rotation shimmer is accepted, 04).
 - **Title:**
@@ -174,6 +174,29 @@ M4 removes the M2/M3 stopgaps listed above.
 | 0c, review | **Goblin Scribe: Code Review** | The refactor is behaviour-neutral (same tests, same e2e counts, a spot-check of screenshots), reads well, and follows `CLAUDE.md` style. |
 
 Then waves 1–2 as planned.
+
+## Notes for wave 2 (from the wave-1 clip review)
+
+- **Sea:** use the clips' x as they are (225 sliding to 193), without widening the strips.
+  - The art repeats every 32 px, so the loop is seamless.
+  - The 25–57 px right-edge gap is in the original too, and the vignette is fully opaque black there (x ≥ 441–447 on the sea rows), so it was never visible.
+  - Add a test that the vignette stays above the world and covers the gap.
+- **Bolt:** placement stays as built. In the 500×500 WebGL canvas, `Screen.height/2` is the canvas top, and the x ranges are the original's.
+- **Animator transitions aren't in the clip data**, and they changed the original's timing. TelaPreta, PillarsAnimator and the GameManager's Inicio each start from an empty looping state, with exit time 0.75 and a 0.25 s blend. So the original faded up to about 1 s late, at an effectively random point.
+  - **Proposed deterministic delays:**
+    - the ending's fade to black starts at **8.5 s** and is fully black by 9.5 s, before FimFinal at 10 s, as the original's typical case;
+    - the backdrop FadeIn and the title's Inicio start **on the trigger**, with no extra wait.
+  - Wave 2 records whichever it uses in `timings.ts`.
+- **Which clips play on which object** (the TARGETS listings are over-inclusive):
+  - **Logo:** no pulse. `IdleOn` was never triggered on it.
+  - **PressAnyKey (our tap prompt):** TMPFadeIn for 1 s, then the TMPIdle loop (alpha 1 → 0.647).
+  - **Credits:** FadeIn only.
+  - **TMPScaler (1 → 1.005):** plays on the story text (HistoryText), not on the box sprite or the title texts.
+- **Ending card:** the title and credits animators run at speed 0.5, so their fades take 2 s.
+- **End poses that persist:**
+  - the kraken body ends at (216, 224), 15 px above its Main.unity spot;
+  - the thrown boat ends at playfield (255, 199) until FimFinal.
+- **The original's 1 s load fade** (LoaderScreen) is dropped: the gate covers that moment.
 
 ## Owner request: trim the tests (after wave 2)
 
