@@ -4,7 +4,7 @@ import { Round } from "../challenges/round.ts";
 import { ruleContext } from "../challenges/rule.ts";
 import type { InputEvent } from "../input/pointer-map.ts";
 import type { GameSession } from "./session.ts";
-import { AFTER_ROUND_MS } from "./timings.ts";
+import { AFTER_ROUND_MS, FADE } from "./timings.ts";
 import type { Backdrop, GameDeps, GameState, GameStateId } from "./types.ts";
 
 /** The backdrop each round reveals when won: pillars after the first, tentacles after the second. */
@@ -15,8 +15,8 @@ const BACKDROPS: readonly (Backdrop | null)[] = ["pillars", "tentacles", null];
  *
  * Every update drains the input queue and feeds the round through an explicit switch: press, release and cancel go to
  * the challenge, advance is dropped (challenges/ must not import input/). Once the last challenge is done the arrows
- * go, the pad dims, the round's backdrop appears at once (M4 fades it in over the wait, as the original starts its
- * fade there) and AFTER_ROUND_MS later the next story part starts. Events after that are dropped.
+ * go, the pad dims, the round's backdrop starts its 1 s fade-in on the win (the original triggers its `FadeIn` there)
+ * and AFTER_ROUND_MS later the next story part starts. Events after that are dropped.
  */
 export const createRound = (deps: GameDeps, session: GameSession): GameState => {
   const { clock, input, pad, scene, tuning } = deps;
@@ -31,7 +31,7 @@ export const createRound = (deps: GameDeps, session: GameSession): GameState => 
     pad.setHint(spec !== null && spec.kind !== "sequence" ? spec.direction : null);
   };
 
-  /** The last challenge is done: the arrows go, the pad dims, the backdrop shows, and the next story part follows. */
+  /** The last challenge is done: the arrows go, the pad dims, the backdrop fades in, and the next part follows. */
   const winRound = (scope: TimerScope, machine: StateMachine<GameStateId>) => {
     const backdrop = BACKDROPS[session.part] ?? null;
     const view = scene();
@@ -43,7 +43,7 @@ export const createRound = (deps: GameDeps, session: GameSession): GameState => 
     view.setChallenge(null);
 
     if (backdrop !== null) {
-      view.setBackdrop(backdrop, true);
+      view.setBackdrop(backdrop, true, FADE);
     }
 
     scope.after(AFTER_ROUND_MS, () => {

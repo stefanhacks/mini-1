@@ -1,6 +1,9 @@
 // A challenge's arrows and cursors (top layer), its hold ring or press pips and its prompt (ui layer). The arrow and
-// cursor sprites are a pool of pairs: hidden and reused, never destroyed. Written by Claude Code.
+// cursor sprites are a pool of pairs, each arrow with its pulse overlay: hidden and reused, never destroyed.
+// Written by Claude Code.
 import { Container, Graphics, Sprite, type Text } from "pixi.js";
+import { CLIPS } from "../../assets/anims.ts";
+import type { ClipHandle, ClipPlayer } from "../../core/anim/player.ts";
 import { placeOnArtGrid, type Layers } from "../../core/layers.ts";
 import type { Layout } from "../../core/layout.ts";
 import type { ChallengeProgress, ChallengeSpec } from "../challenges/rule.ts";
@@ -23,11 +26,27 @@ export interface ChallengeView {
   readonly relayout: (layout: Layout) => void;
 }
 
-export const createChallengeView = (layers: Layers, textures: Textures, initial: Layout): ChallengeView => {
+/**
+ * The pulse of a Hold or a Many arrow. Each arrow prefab (Assets/Prefabs/arrow_*.prefab) carries two children, "hold"
+ * and "many", drawing the arrow's own sprite over it, their animators disabled; KeyManager enables the "hold" one
+ * (`ArrowHold`: fading in from 1.5× down to the arrow) on a Hold arrow and the "many" one (`ArrowMany`: growing to
+ * 1.35× as it fades out) on a Many arrow. A disabled child draws an exact copy of the opaque arrow on top of it, which
+ * changes nothing (the art's alpha is 0 or 1), so the port keeps one overlay per arrow, shown only while it pulses.
+ */
+const PULSES = { hold: CLIPS.arrowHold, many: CLIPS.arrowMany } as const;
+
+export const createChallengeView = (
+  layers: Layers,
+  textures: Textures,
+  initial: Layout,
+  clips: ClipPlayer,
+): ChallengeView => {
   // Built hidden, as `setChallenge(null)` leaves them: the first Title must look like every replay's.
   const arrows = new Container({ label: "arrows", visible: false });
   const arrowSprites: Sprite[] = [];
   const cursorSprites: Sprite[] = [];
+  const pulseSprites: Sprite[] = [];
+  let pulse: ClipHandle | null = null;
 
   layers.top.addChild(arrows);
 
@@ -42,14 +61,42 @@ export const createChallengeView = (layers: Layers, textures: Textures, initial:
   let shownProgress: ChallengeProgress | null = null;
   let shownKey = "";
 
-  /** Grows the pool to `count` pairs, each cursor appended before its arrow. */
+  /** Grows the pool to `count` pairs, each cursor appended before its arrow, and the arrow's pulse after it. */
   const ensureArrowPairs = (count: number) => {
     while (arrowSprites.length < count) {
       const cursor = new Sprite({ texture: textures.cursorEmpty, anchor: 0.5, label: "cursor" });
 
       cursorSprites.push(arrows.addChild(cursor));
       arrowSprites.push(arrows.addChild(new Sprite({ texture: textures.arrowUp, anchor: 0.5, label: "arrow" })));
+      pulseSprites.push(arrows.addChild(new Sprite({
+        texture: textures.arrowUp,
+        anchor: 0.5,
+        label: "arrow-pulse",
+        visible: false,
+      })));
     }
+  };
+
+  /** Stops the pulse, if any: its overlay hidden, back at scale 1. */
+  const stopPulse = () => {
+    pulse?.stop();
+    pulse = null;
+
+    for (const sprite of pulseSprites) {
+      sprite.visible = false;
+      sprite.scale.set(1);
+    }
+  };
+
+  /** Pulses arrow 0, the only one of a Hold or a Many, over the arrow and on its texture and place. */
+  const startPulse = (kind: keyof typeof PULSES) => {
+    const [arrow] = arrowSprites;
+    const [sprite] = pulseSprites;
+
+    sprite.texture = arrow.texture;
+    sprite.position.copyFrom(arrow.position);
+    sprite.visible = true;
+    pulse = clips.play(PULSES[kind], { node: sprite });
   };
 
   /** Shows pair `index` as arrow `dir` in a row of `count`, the cursor under it. */
@@ -112,6 +159,7 @@ export const createChallengeView = (layers: Layers, textures: Textures, initial:
 
       challenge = spec;
       resetProgress();
+      stopPulse();
       arrows.visible = spec !== null;
       prompt.visible = spec !== null;
       prompt.text = spec === null ? "" : CHALLENGE_PROMPTS[spec.kind];
@@ -133,6 +181,10 @@ export const createChallengeView = (layers: Layers, textures: Textures, initial:
       // Cursors and arrows were added in pairs; draw every cursor first, as their sortingOrder (0 under 1).
       for (const cursor of cursorSprites) {
         arrows.setChildIndex(cursor, 0);
+      }
+
+      if (spec !== null && spec.kind !== "sequence") {
+        startPulse(spec.kind);
       }
     },
     setProgress: (next) => {

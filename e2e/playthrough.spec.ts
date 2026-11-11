@@ -368,20 +368,39 @@ test.describe("at the smallest square", () => {
   });
 });
 
-test("replays twice without growing timers, listeners or display objects", async ({ page }, testInfo) => {
+/** Sea front, mid and back, two cloud sprites and the whole boat (scene/world.ts), plus the prompt's pulse. */
+const TITLE_CLIPS = 7;
+
+/**
+ * Waits for Title's prompt, then for the clips playing to come down to TITLE_CLIPS, at real time: the six ambient loops
+ * and the prompt's pulse, once the fade-ins are over and between ambient strikes (a strike plays two clips for 0.67 s
+ * every 7–10 s). A leaked clip keeps the count above it for good.
+ */
+const expectTitleClips = async (page: Page) => {
+  await waitFor(page, (game) => game.state === "title" && game.phase === "prompt");
+  await setTimescale(page, 1);
+  await expect.poll(() => page.evaluate(() => window.debug.anim.active), { timeout: 15_000 }).toBe(TITLE_CLIPS);
+  await setTimescale(page, FAST);
+};
+
+test("replays twice without growing timers, listeners, display objects or clips", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop-chrome", "leaks don't depend on the device; three games are slow");
 
   const driver = await keyboardDriver(page);
 
   await openGame(page);
+  await expectTitleClips(page);
   await playGame(page, driver);
 
   const first = await readCounts(page);
 
+  await expectTitleClips(page);
   await playGame(page, driver);
   expect(await readCounts(page)).toEqual(first);
+  await expectTitleClips(page);
   await playGame(page, driver);
   expect(await readCounts(page)).toEqual(first);
+  await expectTitleClips(page);
 
   const game = await readGame(page);
 

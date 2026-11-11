@@ -1,5 +1,7 @@
 // The game flow's waits, in ms of game time, from the original GameManager.cs, its Main.unity overrides and the
-// animation events in Troca.anim and Fim.anim. M2 cuts instantly at each; M4 adds the tweens between them.
+// animation events in Troca.anim, Inicio.anim and Fim.anim. The fades between them play in the scene (SceneView's
+// `Fade`), on the same clock.
+import type { Fade } from "./types.ts";
 
 /** Story part 0's preamble: 1.25 s, a thunder strike (STORY_PREAMBLE_CUES), 1.25 s more, then the first line. */
 export const STORY_PREAMBLE_MS = 2500;
@@ -22,22 +24,59 @@ export const WHISPER_MS_PER_CHAR = 100;
 /** Transition (`Troca.anim`): the thunder at 167 ms (TRANSITION_CUES), the round at 500 ms. */
 export const TRANSITION_MS = 500;
 
-/** After the last challenge of a round: the backdrop appears, and the next story part starts after this. */
+/**
+ * After the last challenge of a round (`afterGamePlayDelay`): the backdrop fades in from the win, and the next story
+ * part starts after this.
+ */
 export const AFTER_ROUND_MS = 1250;
 
-/** The ending (`Fim.anim`, then GameManager's GameEnd), from the end of story part 3. */
+/**
+ * The ending (`Fim.anim`, then GameManager's GameEnd), from the end of story part 3. Each phase starts its fade at its
+ * time (see ANIMATOR DELAYS below for `black`).
+ */
 export const ENDING_MS = {
-  /** `FimBarco`: the broken boat is thrown up (M4: an animation only). */
+  /** `FimBarco` (0.583 s): the broken boat is thrown up (`BarcoQuebradoJogadoCima`, 1.67 s; its end pose stays). */
   thrown: 583,
-  /** `FimKraken`: the kraken appears (and roars, M3). */
+  /** `FimKraken`: the kraken's body and tail fade in (`FadeKrakenA`/`B`, 1 s, the body rising), with its roar. */
   kraken: 1500,
-  /** `FimFade`: fade to black (the event is at 8.017 s; the plan rounds it to 8 s). */
-  black: 8000,
-  /** `FimFinal`: the scene is cleared and the empty sea comes back. */
+  /**
+   * Black fades in (`FadeIn` on `TelaPreta`, 1 s), fully black at 9.5 s. `FimFade` is at 8.017 s, but TelaPreta's
+   * animator only leaves its empty Idle state at exit time 0.75 with a 0.25 s blend, so the original faded up to about
+   * 1 s late at a random point. 8.5 s is its typical case, fully black before `FimFinal` (m4-plan, Notes for wave 2).
+   */
+  black: 8500,
+  /** `FimFinal`: the kraken, the broken boat and the backdrops go; black fades out (`FadeOut`, 1 s) to the sea. */
   sea: 10000,
-  /** `endGameDelay` (3.5 s in Main.unity) later: the logo and the credits, and in this port "Tap to play again". */
+  /**
+   * `endGameDelay` (3.5 s in Main.unity) later: the logo and the credits fade in at ENDING_CARD_SPEED, and in this port
+   * "Tap to play again" with them.
+   */
   card: 13500,
 } as const;
+
+/**
+ * GameEnd sets the logo's and the credits' animators to speed 0.5, so the card's fades take 2 s. "Tap to play again"
+ * (new in this port) fades in with them, at the same speed.
+ */
+export const ENDING_CARD_SPEED = 0.5;
+
+/** A fade at the clips' own speed. */
+export const FADE: Fade = { speed: 1 };
+
+/** The ending card's fades (ENDING_CARD_SPEED). */
+export const CARD_FADE: Fade = { speed: ENDING_CARD_SPEED };
+
+// ANIMATOR DELAYS. The original started most fades through Animator transitions, which the clip data doesn't carry.
+// TelaPreta, PillarsAnimator and GameManager's Inicio each leave an empty state with exit time 0.75 and a 0.25 s
+// blend, so those fades began up to about 1 s after their trigger, at an effectively random point. The port picks one
+// deterministic time for each (m4-plan, Notes for wave 2):
+// - the ending's fade to black: ENDING_MS.black, 8.5 s (the typical case, so black is full before FimFinal);
+// - the backdrop's FadeIn after a won round: on the win, no delay (it then runs 1 s of the AFTER_ROUND_MS wait);
+// - Title's exit (`Inicio`): on the accepted tap, no delay (TITLE_EXIT_MS);
+// - story part 3's black FadeIn, the ending's FadeOut of it and FimFinal's FadeOut: on their trigger, no delay (the
+//   same TelaPreta transitions; the port treats them as the backdrop's);
+// - the title texts (TMPAnimator) and the logo (LogoAnimator) leave their states with no exit time: no delay in the
+//   original either.
 
 // Cues: the moments a state's timeline strikes, as named events at ms from the state's enter, on the game clock.
 // states/cues.ts plays each cue's sound (cue → SFX) and, for a strike, the bolt and the flash (`SceneView.strike`);
@@ -71,6 +110,20 @@ export const TITLE_CUES: readonly Cue[] = [
 ];
 
 /**
+ * The end of Title's intro (`entranceWarmUp + 2 × entrancePreambleDelay + entranceDelay + entrancePressKeyDelay`):
+ * the credits fade in (`FadeIn`) and the tap prompt too (`TMPFadeIn`, then the `TMPIdle` pulse). Title accepts the tap
+ * only from here (`titleAnimationOver`), as the original took no key before it.
+ */
+export const TITLE_PROMPT_MS = 7250;
+
+/**
+ * Title's exit (`Inicio.anim`, 1 s): its `Inicio` event at 0 s fades the logo, the credits and the prompt out
+ * (`FadeOut`, `TMPFadeOut`, 1 s each), and its `FimInicio` event at 1 s starts the story. It starts on the tap (see
+ * ANIMATOR DELAYS). Ambient lightning goes on meanwhile: the original's `CheckForThunder` runs until `FimInicio`.
+ */
+export const TITLE_EXIT_MS = 1000;
+
+/**
  * Title's ambient lightning, as GameManager's `CheckForThunder`: a timer counts up from the end of the intro (7.25 s,
  * when the credits and "Press Any Key" appear) and strikes when it reaches `interval`, then restarts from a new value.
  * It starts at a whole number of seconds in [`first`), and restarts at one in [`next`) (Unity's
@@ -78,8 +131,8 @@ export const TITLE_CUES: readonly Cue[] = [
  * apart.
  */
 export const TITLE_AMBIENT = {
-  /** When the timer starts counting (`entranceWarmUp + 2 × entrancePreambleDelay + entranceDelay + PressKeyDelay`). */
-  from: 7250,
+  /** When the timer starts counting: the end of the intro. */
+  from: TITLE_PROMPT_MS,
   /** `thunderInterval`. */
   interval: 10000,
   /** `Random.Range(3, 6)` s: the timer's start value (`Start()`). */
@@ -90,13 +143,6 @@ export const TITLE_AMBIENT = {
 
 /** `Flash.anim`'s `DoingFlash` event: the flash peaks, and the logo appears, this long after `title-reveal`. */
 export const TITLE_REVEAL_FLASH_MS = 250;
-
-/**
- * Title ignores taps this long after it appears, as Story's debounce, so the tap that ended the last game can't also
- * start the next. A stopgap: M4 replaces it by showing and accepting Title's prompt only after its 7.25 s intro
- * (owner decision 6).
- */
-export const TITLE_DEBOUNCE_MS = 500;
 
 /** Story part 0's preamble strike (`firstTimePreamblePreambleDelay`). Other parts have none. */
 export const STORY_PREAMBLE_CUES: readonly Cue[] = [{ at: 1250, name: "lightning" }];

@@ -45,8 +45,7 @@ const toTypingPage = async (page: Page) => {
   const driver = await keyboardDriver(page);
 
   await openGame(page);
-  // Lets Title's debounce pass at FAST time, then plays the preamble and the typing at real time.
-  await page.waitForTimeout(100);
+  // Title's intro runs at FAST time (leaveTitle), then its exit fade, the preamble and the typing at real time.
   await setTimescale(page, 1);
   await leaveTitle(page, driver);
   await waitFor(page, (game) => game.page !== null);

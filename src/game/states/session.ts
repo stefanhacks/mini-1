@@ -8,10 +8,15 @@ import { LIGHTNING_SALT } from "../lightning.ts";
 import type { StoryCursor } from "../story/cursor.ts";
 import type { Typewriter } from "../story/typewriter.ts";
 
-/** The current state's phase ("" before the first game): what e2e and the unit tests wait on. */
+/**
+ * The current state's phase ("" before the first game): what e2e and the unit tests wait on. Title's are `title` (the
+ * intro), `prompt` (taps count) and `leaving` (the exit fade).
+ */
 export type SessionPhase =
   | ""
   | "title"
+  | "prompt"
+  | "leaving"
   | "preamble"
   | "page"
   | "transition"

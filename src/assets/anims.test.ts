@@ -88,7 +88,7 @@ describe("anims.ts: first keys against the M2 positions", () => {
     assert.deepEqual({ x, y: sky.at.y + clouds1.offset.y }, staticAt("clouds"));
   });
 
-  it("puts the sea strips at M2's heights, but 25 px left of M2's placeholder x", () => {
+  it("puts the sea strips where WORLD_SPRITES starts them: the clips' first keys", () => {
     const strips = [
       ["Stage/Sea/Back", "seaAnimTres", "seaB"],
       ["Stage/Sea/Mid", "seaAnimDois", "seaM"],
@@ -102,9 +102,9 @@ describe("anims.ts: first keys against the M2 positions", () => {
 
       assert.equal(y, staticAt(label).y, label);
       // Every sea clip starts at x −25 and slides to −57: one 32 px period of the strip's art, so the loop is seamless.
-      // M2 kept the placeholder's centred 250; the clip's first frame moves the strip to 225.
+      // M2 kept the placeholder's centred 250; M4's table starts the strips at the clip's 225.
       assert.equal(x, 225, label);
-      assert.equal(staticAt(label).x, 250, label);
+      assert.equal(staticAt(label).x, x, label);
     }
   });
 

@@ -158,8 +158,7 @@ test("story part 0's preamble and the Transition strike too", async ({ page }, t
   const driver = await keyboardDriver(page);
 
   await openAtRealTime(page, false);
-  // Past Title's 500 ms tap debounce, and out before its first strike at 2 s.
-  await page.waitForTimeout(600);
+  // The intro runs at FAST time (leaveTitle), the tap, the exit fade and the rest at real time.
   await leaveTitle(page, driver);
   // At real time throughout: a faster clock would sample the 0.5 s flash in a few coarse frames.
   await readStory(page, driver);

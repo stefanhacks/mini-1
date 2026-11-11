@@ -213,18 +213,25 @@ export const touchDriver = async (page: Page): Promise<TouchDriver> => {
 };
 
 /**
- * Advances from Title to story part 0. Title drops taps for its first 500 ms of game time (TITLE_DEBOUNCE_MS), so one
- * that changes nothing is sent again.
+ * Advances from Title to story part 0. Title takes a tap only once its prompt is up, at the end of its 7.25 s intro,
+ * then fades out for 1 s before the story starts. The intro runs at FAST time at least (nothing in it is answered),
+ * then the tap is sent at the test's own time scale, again if it changed nothing.
  */
 export const leaveTitle = async (page: Page, driver: Driver) => {
+  const scale = await page.evaluate(() => window.debug.timescale);
+
+  await setTimescale(page, Math.max(scale, FAST));
+  await waitFor(page, (game) => game.state !== "title" || game.phase !== "title");
+  await setTimescale(page, scale);
   await expect.poll(async () => {
-    if ((await readGame(page)).state === "title") {
+    if ((await readGame(page)).phase === "prompt") {
       await driver.advance();
       await page.waitForTimeout(15);
     }
 
-    return (await readGame(page)).state;
-  }, POLL).not.toBe("title");
+    return (await readGame(page)).phase;
+  }, POLL).not.toBe("prompt");
+  await waitFor(page, (game) => game.state !== "title");
 };
 
 const pageKey = (game: GameSnapshot) => `${game.state}:${game.part}:${game.page?.line}:${game.page?.page}`;

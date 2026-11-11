@@ -1,6 +1,7 @@
 // The game's scene: every sprite and text built once, shown and hidden per scene state. The states drive it through
-// SceneView (states/types.ts); M2 cuts instantly, M4 adds the tweens. Composition only: each part lives in scene/,
-// the positions and draw order in scene/positions.ts.
+// SceneView (states/types.ts), as cuts or fades; the parts play the original's clips on the app's clip player (the
+// fades through one scene/fades.ts, the ambient loops and the strikes on their own handles). Composition only: each
+// part lives in scene/, the positions and draw order in scene/positions.ts.
 //
 // The parts are built in draw order, each appending to its layers: world → fx → story → challenge → title. That gives
 // fx: bolt, black, vignette, flash; top: text box, arrows, logo; ui: story text, challenge progress, challenge prompt,
@@ -12,6 +13,7 @@ import type { Layout } from "../core/layout.ts";
 import type { SceneView } from "./states/types.ts";
 import type { Textures } from "./scene/art-sprite.ts";
 import { createChallengeView } from "./scene/challenge-view.ts";
+import { createFades } from "./scene/fades.ts";
 import { createFx } from "./scene/fx.ts";
 import { createLightning, watchReducedMotion } from "./scene/lightning.ts";
 import { createStoryView } from "./scene/story-view.ts";
@@ -22,7 +24,7 @@ export { createContinuePrompt } from "./scene/continue-prompt.ts";
 export { createGateView } from "./scene/gate-view.ts";
 
 export interface Scene extends SceneView {
-  /** The app's animation clips (M4 wave 2 plays them on the parts); the frame loop syncs it. */
+  /** The app's animation clips, played on the parts; the frame loop syncs it. */
   readonly clips: ClipPlayer;
   /** Follows a new layout: the ui texts, the progress art, and story paging. Call it from `onLayout`. */
   readonly relayout: (layout: Layout) => void;
@@ -42,9 +44,10 @@ export interface Scene extends SceneView {
 }
 
 /**
- * Builds the whole scene into the layers, hidden but for the opening frame (see `reset`). Needs the textures and the
- * font loaded. `clips` is the app's player, which the frame loop syncs; the default one is never synced (tests).
- * `reducedMotion` is read at each strike: it caps the flash.
+ * Builds the whole scene into the layers, hidden but for the opening frame (see `reset`), and starts the ambient
+ * loops, last, so a build that throws leaves no clip behind. Needs the textures and the font loaded. `clips` is the
+ * app's player, which the frame loop syncs; the default one is never synced (tests). `reducedMotion` is read at each
+ * strike: it caps the flash.
  */
 export const createScene = (
   layers: Layers,
@@ -53,11 +56,12 @@ export const createScene = (
   clips: ClipPlayer = createClipPlayer(),
   reducedMotion: () => boolean = watchReducedMotion(),
 ): Scene => {
-  const world = createWorld(layers, textures);
-  const fx = createFx(layers, textures);
+  const fades = createFades(clips);
+  const world = createWorld(layers, textures, clips, fades);
+  const fx = createFx(layers, textures, fades);
   const story = createStoryView(layers, textures, initial);
-  const challenge = createChallengeView(layers, textures, initial);
-  const title = createTitleCard(layers, textures);
+  const challenge = createChallengeView(layers, textures, initial, clips);
+  const title = createTitleCard(layers, textures, fades);
   const lightning = createLightning({
     bolt: fx.bolt,
     flash: fx.flash,
@@ -80,25 +84,26 @@ export const createScene = (
       scene.setBoat("whole");
       scene.setKraken(false);
       scene.setBlack(false);
+      world.resetPoses();
     },
-    setTitle: (visible) => {
+    setTitle: (visible, fade) => {
       // Hidden, the logo stays hidden: a reveal still pending (Title left before its flash peaked) is dropped.
       if (!visible) {
         lightning.cancelReveal();
       }
 
-      title.setTitle(visible);
+      title.setTitle(visible, fade);
     },
-    setCredits: (visible) => title.setCredits(visible),
+    setCredits: (visible, fade) => title.setCredits(visible, fade),
     strike: (kind, rng) => lightning.strike(kind, rng),
-    setPrompt: (text) => title.setPrompt(text),
+    setPrompt: (text, fade) => title.setPrompt(text, fade),
     setStoryPage: (page, revealed) => story.setPage(page, revealed),
     setChallenge: (spec) => challenge.setChallenge(spec),
     setProgress: (progress) => challenge.setProgress(progress),
-    setBackdrop: (backdrop, visible) => world.setBackdrop(backdrop, visible),
+    setBackdrop: (backdrop, visible, fade) => world.setBackdrop(backdrop, visible, fade),
     setBoat: (state) => world.setBoat(state),
-    setKraken: (visible) => world.setKraken(visible),
-    setBlack: (visible) => fx.setBlack(visible),
+    setKraken: (visible, fade) => world.setKraken(visible, fade),
+    setBlack: (visible, fade) => fx.setBlack(visible, fade),
     // Forwarded, never copied: a new object after every relayout.
     get paging() {
       return story.paging;
@@ -124,6 +129,7 @@ export const createScene = (
 
   scene.reset();
   scene.relayout(initial);
+  world.startAmbient();
 
   return scene;
 };

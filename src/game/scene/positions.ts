@@ -24,20 +24,23 @@ export interface WorldSprite {
 
 /**
  * The world layer, back to front: array order is draw order. Stage/Background holds the backdrops at canvas
- * (9.6, −29); the kraken is Stage/Monster at (−8, −9). The sea and clouds keep the placeholder's static positions (M4
- * animates them).
+ * (9.6, −29); the kraken is Stage/Monster at (−8, −9). The sea strips, the clouds and the boat play their ambient loops
+ * from the first frame (world.ts): their rows hold the loops' first poses. Stage/Sky carries two cloud sprites, the
+ * second 500 px right of the first, scrolled in as the first scrolls out.
  */
 export const WORLD_SPRITES = [
   { label: "tentacles", key: "backgroundTentacles", at: { x: 255.6, y: 279 }, sortingOrder: -30 },
   { label: "pillars", key: "backgroundPillars", at: { x: 256.6, y: 279 }, sortingOrder: -29 },
-  { label: "seaB", key: "seaB", at: { x: 250, y: 389 }, sortingOrder: -25 },
+  // The sea strips at their clips' first x (SeaAnim*, −25 from the anchor).
+  { label: "seaB", key: "seaB", at: { x: 225, y: 389 }, sortingOrder: -25 },
   { label: "kraken-tail", key: "monsterB", at: { x: 362, y: 254 }, sortingOrder: -19 },
   // On whole art pixels, the original's 309.5 is 310 (see layers.ts).
   { label: "boat", key: "boat", at: { x: 250, y: 310 }, sortingOrder: -16 },
-  { label: "seaM", key: "seaM", at: { x: 250, y: 399 }, sortingOrder: -15 },
+  { label: "seaM", key: "seaM", at: { x: 225, y: 399 }, sortingOrder: -15 },
   { label: "clouds", key: "clouds", at: { x: 250, y: 73 }, sortingOrder: -10 },
+  { label: "clouds-2", key: "clouds", at: { x: 750, y: 73 }, sortingOrder: -10 },
   { label: "kraken-body", key: "monsterA", at: { x: 216, y: 239 }, sortingOrder: -9 },
-  { label: "seaF", key: "seaF", at: { x: 250, y: 409 }, sortingOrder: -5 },
+  { label: "seaF", key: "seaF", at: { x: 225, y: 409 }, sortingOrder: -5 },
   // Barco Quebrado: its sprite sits 35 below the object, at canvas (0, −44).
   { label: "broken-boat", key: "boatFlipped", at: { x: 250, y: 294 }, sortingOrder: -2 },
 ] as const satisfies readonly WorldSprite[];

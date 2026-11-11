@@ -2,11 +2,14 @@
 // `TelaPreta` and the vignette (−1), then the white flash (0). The world below tops out at −2 (the broken boat), and
 // the text box (0) and the logo (15) are in `top`, above. Written by Claude Code.
 import { Graphics, Sprite } from "pixi.js";
+import { CLIPS } from "../../assets/anims.ts";
 import { SPRITES } from "../../assets/manifest.ts";
 import type { Layers } from "../../core/layers.ts";
 import { PLAYFIELD_SIZE } from "../../core/layout.ts";
 import { BOLT_KEYS } from "../lightning.ts";
+import type { Fade } from "../states/types.ts";
 import type { Textures } from "./art-sprite.ts";
+import { faded, type Fades } from "./fades.ts";
 import { BLACK, WHITE } from "./palette.ts";
 import { PLAYFIELD_CENTER, VIGNETTE_SCALE } from "./positions.ts";
 
@@ -17,11 +20,11 @@ export interface FxView {
   readonly vignette: Sprite;
   /** Hidden at alpha 0 until a strike. */
   readonly flash: Graphics;
-  /** The black overlay (the original's `TelaPreta`) over the world, under the text box. */
-  readonly setBlack: (visible: boolean) => void;
+  /** The black overlay (the original's `TelaPreta`, `FadeIn`/`FadeOut`) over the world, under the text box. */
+  readonly setBlack: (visible: boolean, fade?: Fade) => void;
 }
 
-export const createFx = (layers: Layers, textures: Textures): FxView => {
+export const createFx = (layers: Layers, textures: Textures, fades: Fades): FxView => {
   const [firstBolt] = BOLT_KEYS;
   const bolt = new Sprite({
     texture: textures[firstBolt],
@@ -57,8 +60,12 @@ export const createFx = (layers: Layers, textures: Textures): FxView => {
     black,
     vignette,
     flash,
-    setBlack: (visible) => {
-      black.visible = visible;
+    setBlack: (visible, fade) => {
+      if (visible) {
+        fades.show(black, faded(fade, CLIPS.fadeIn));
+      } else {
+        fades.hide(black, faded(fade, CLIPS.fadeOut));
+      }
     },
   };
 };

@@ -45,6 +45,7 @@ describe("WORLD_SPRITES", () => {
       "boat",
       "seaM",
       "clouds",
+      "clouds-2",
       "kraken-body",
       "seaF",
       "broken-boat",

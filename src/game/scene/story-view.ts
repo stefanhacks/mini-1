@@ -2,6 +2,10 @@
 // in one container: shown pieces are restyled and reused, the rest hidden, never destroyed. A page is laid out whole,
 // then only its first `revealed` characters show (the typewriter, as TMP's visible character count), so wrapping and
 // centring never move while it types. Written by Claude Code.
+//
+// Not ported: the original's `TMPScaler` pulse on HistoryText (scale 1 → 1.005 → 1 over 1.6 s). The text is a
+// texture in the ui layer, and any scale off 1 resamples it: checked at DPR 2 and 3 (M4 wave 2), even 1.0025 visibly
+// softened the stems (about 17–40% more grey edge pixels), and the pulse is too small to see anyway.
 import { CanvasTextMetrics, Container, Text, TextStyle, type Sprite } from "pixi.js";
 import type { Layers } from "../../core/layers.ts";
 import { snapToDevicePixels, type Layout } from "../../core/layout.ts";

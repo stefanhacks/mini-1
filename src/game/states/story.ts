@@ -7,6 +7,7 @@ import { drainAdvanced, hidePad } from "./common.ts";
 import { createCuePlayer } from "./cues.ts";
 import type { GameSession } from "./session.ts";
 import {
+  FADE,
   STORY_DEBOUNCE_MS,
   STORY_PREAMBLE_CUES,
   STORY_PREAMBLE_MS,
@@ -24,7 +25,8 @@ export const LAST_PART = STORY_PARTS.length - 1;
  * - Each part asks for its music overlay as it begins (the engine starts it on the next bar), as the original's
  *   `PlayOverlay` at the start of `Historia`.
  * - Part 0 opens with the original's 2.5 s preamble, the text box hidden, and its strike at 1.25 s.
- * - The last part is read over the black overlay, as the original fades `TelaPreta` in when it starts typing it.
+ * - The last part is read over the black overlay, which fades in (`TelaPreta` FadeIn, 1 s) as it starts, as the
+ *   original's does when it starts typing it.
  * - Each page is typed on game time (story/typewriter.ts): about a character a frame, whispers 100 ms a character.
  * - An advance while typing completes the page (M2 owner decision 5). Once complete, an advance shows the next page,
  *   then the next line, but only STORY_DEBOUNCE_MS after the page was complete. Each new page begins an input epoch,
@@ -71,7 +73,7 @@ export const createStory = (deps: GameDeps, session: GameSession): GameState => 
     session.phase = "page";
 
     if (session.part === LAST_PART) {
-      view.setBlack(true);
+      view.setBlack(true, FADE);
     }
 
     showPage();

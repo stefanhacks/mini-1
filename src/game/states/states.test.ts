@@ -16,14 +16,16 @@ import { createGame, type GameDeps, type GameStateId } from "./index.ts";
 import { snapshotSession } from "./session.ts";
 import {
   AFTER_ROUND_MS,
+  ENDING_CARD_SPEED,
   ENDING_MS,
   STORY_DEBOUNCE_MS,
   STORY_PREAMBLE_MS,
   TITLE_AMBIENT,
   TITLE_CUES,
+  TITLE_EXIT_MS,
+  TITLE_PROMPT_MS,
   TYPE_MS_PER_CHAR,
   WHISPER_MS_PER_CHAR,
-  TITLE_DEBOUNCE_MS,
   TRANSITION_MS,
 } from "./timings.ts";
 import { AMBIENT_SALT, TAP_TO_BEGIN } from "./title.ts";
@@ -31,7 +33,7 @@ import { ambientDelay } from "./cues.ts";
 import { createRng, type Rng } from "../challenges/rng.ts";
 import { drawStrike, LIGHTNING_SALT, type Strike, type StrikeKind } from "../lightning.ts";
 import { LOAD_FAILED } from "./gate.ts";
-import type { Backdrop, Boat, CueEvent, GateScreen, Paging, SceneView } from "./types.ts";
+import type { Backdrop, Boat, CueEvent, Fade, GateScreen, Paging, SceneView } from "./types.ts";
 
 const FRAME_MS = 16;
 
@@ -50,7 +52,17 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 
+/** A scene call that shows or hides something, with its game time and fade speed (0 for a cut). */
+interface SceneCall {
+  readonly at: number;
+  readonly call: string;
+  readonly speed: number;
+}
+
 class FakeScene implements SceneView {
+  /** The calls that show or hide something (not the cuts of `reset`), in order. */
+  calls: SceneCall[] = [];
+  readonly clock: GameClock;
   logo = false;
   credits = false;
   /** Every strike, drawn as the real scene draws it. */
@@ -66,6 +78,21 @@ class FakeScene implements SceneView {
   kraken = false;
   black = false;
   paging: Paging = { linesPerPage: 2, measure: fixedWidthMeasure(30) };
+
+  constructor(clock: GameClock) {
+    this.clock = clock;
+  }
+
+  private note(call: string, fade?: Fade) {
+    this.calls.push({ at: this.clock.now, call, speed: fade?.speed ?? 0 });
+  }
+
+  /** The calls from `from` (game ms) on, as "call@ms from `from`" with their speed when faded. */
+  callsSince(from: number) {
+    return this.calls
+      .filter((call) => call.at >= from)
+      .map(({ at, call, speed }) => `${call}@${at - from}${speed === 0 ? "" : ` ×${speed}`}`);
+  }
 
   reset() {
     this.logo = false;
@@ -86,12 +113,14 @@ class FakeScene implements SceneView {
     return this.logo && this.credits;
   }
 
-  setTitle(visible: boolean) {
+  setTitle(visible: boolean, fade?: Fade) {
+    this.note(`title ${visible}`, fade);
     this.logo = visible;
     this.credits = visible;
   }
 
-  setCredits(visible: boolean) {
+  setCredits(visible: boolean, fade?: Fade) {
+    this.note(`credits ${visible}`, fade);
     this.credits = visible;
   }
 
@@ -104,7 +133,8 @@ class FakeScene implements SceneView {
     }
   }
 
-  setPrompt(text: string | null) {
+  setPrompt(text: string | null, fade?: Fade) {
+    this.note(`prompt ${text}`, fade);
     this.prompt = text;
   }
 
@@ -121,7 +151,9 @@ class FakeScene implements SceneView {
     this.progress = progress;
   }
 
-  setBackdrop(backdrop: Backdrop, visible: boolean) {
+  setBackdrop(backdrop: Backdrop, visible: boolean, fade?: Fade) {
+    this.note(`${backdrop} ${visible}`, fade);
+
     if (visible) {
       this.backdrops.add(backdrop);
     } else {
@@ -130,14 +162,17 @@ class FakeScene implements SceneView {
   }
 
   setBoat(boat: Boat) {
+    this.note(`boat ${boat}`);
     this.boat = boat;
   }
 
-  setKraken(visible: boolean) {
+  setKraken(visible: boolean, fade?: Fade) {
+    this.note(`kraken ${visible}`, fade);
     this.kraken = visible;
   }
 
-  setBlack(visible: boolean) {
+  setBlack(visible: boolean, fade?: Fade) {
+    this.note(`black ${visible}`, fade);
     this.black = visible;
   }
 }
@@ -263,7 +298,7 @@ const setup = ({ auto = true } = {}) => {
   const loader = new FakeLoader(auto);
   const gateView = new FakeGateView();
   const audio = new FakeAudio();
-  const scene = new FakeScene();
+  const scene = new FakeScene(clock);
   const input = new FakeInput();
   const pad = new FakePad();
   let seed = 41;
@@ -307,6 +342,17 @@ const toTitle = async (t: Setup) => {
   t.input.advance();
   t.frame();
   assert.equal(t.machine.current, "title");
+};
+
+/** From the start of Title: waits for the prompt, taps, and waits out the exit fade into story part 0. */
+const leaveTitle = (t: Setup) => {
+  t.wait(TITLE_PROMPT_MS);
+  assert.equal(t.game.session.phase, "prompt");
+  t.input.advance();
+  t.frame();
+  assert.equal(t.game.session.phase, "leaving");
+  t.wait(TITLE_EXIT_MS);
+  assert.equal(t.machine.current, "story");
 };
 
 /**
@@ -517,34 +563,82 @@ describe("gate", () => {
 });
 
 describe("title", () => {
-  it("starts a new game, shows the title frame and ignores presses", async () => {
+  it("starts a new game with the title frame bare: no logo, credits or prompt until their times", async () => {
     const t = setup();
 
     await toTitle(t);
     assert.equal(t.game.session.games, 1);
     assert.equal(t.game.session.seed, 42);
     assert.equal(t.game.session.rounds.length, 3);
-    // The logo waits for its reveal strike.
-    assert.equal(t.scene.logo, false);
-    assert.equal(t.scene.credits, true);
-    assert.equal(t.scene.prompt, TAP_TO_BEGIN);
+    assert.equal(t.game.session.phase, "title");
+    // The logo waits for its reveal strike; the credits and the prompt for the end of the intro.
+    assert.deepEqual([t.scene.logo, t.scene.credits, t.scene.prompt], [false, false, null]);
     assert.equal(t.pad.visible, false);
+
+    t.wait(TITLE_CUES[2].at + FRAME_MS);
+    assert.deepEqual([t.scene.logo, t.scene.credits, t.scene.prompt], [true, false, null]);
+  });
+
+  it("fades the credits and the prompt in at 7.25 s, and takes no tap before", async () => {
+    const t = setup();
+
+    await toTitle(t);
+
+    const enteredAt = t.clock.now;
 
     t.input.press("up");
     t.frame();
-    assert.equal(t.machine.current, "title");
 
-    // A tap within the debounce is dropped (the stopgap until M4 gates the prompt behind the intro).
+    // Taps all through the intro, the last one a frame before its end: each is dropped.
+    while (t.clock.now - enteredAt < TITLE_PROMPT_MS - FRAME_MS) {
+      t.input.advance();
+      t.frame();
+    }
+
+    assert.equal(t.machine.current, "title");
+    assert.equal(t.game.session.phase, "title");
+    assert.deepEqual(t.scene.callsSince(enteredAt), []);
+
+    t.frame();
+    assert.equal(t.game.session.phase, "prompt");
+    assert.deepEqual(t.scene.callsSince(enteredAt), [
+      `credits true@${TITLE_PROMPT_MS} ×1`,
+      `prompt ${TAP_TO_BEGIN}@${TITLE_PROMPT_MS} ×1`,
+    ]);
+    assert.deepEqual([t.scene.credits, t.scene.prompt], [true, TAP_TO_BEGIN]);
+
+    // A key held down before the prompt doesn't count: the prompt began an input epoch.
+    assert.equal(t.machine.current, "title");
+  });
+
+  it("fades everything out over Inicio's 1 s on the tap, dropping taps meanwhile, then starts story 0", async () => {
+    const t = setup();
+
+    await toTitle(t);
+    t.wait(TITLE_PROMPT_MS + 300);
+
     t.input.advance();
     t.frame();
-    assert.equal(t.machine.current, "title");
 
-    t.wait(TITLE_DEBOUNCE_MS);
-    t.input.advance();
+    // The frame's clock tick comes before the state's update: the tap counts at this frame's time.
+    const tappedAt = t.clock.now;
+
+    assert.equal(t.game.session.phase, "leaving");
+    assert.deepEqual(t.scene.callsSince(tappedAt), ["title false@0 ×1", "prompt null@0 ×1"]);
+
+    // More taps while it fades change nothing, and the story waits for the fade's end (`FimInicio`).
+    while (t.clock.now - tappedAt < TITLE_EXIT_MS - FRAME_MS) {
+      t.input.advance();
+      t.frame();
+      assert.equal(t.machine.current, "title");
+    }
+
     t.frame();
     assert.equal(t.machine.current, "story");
-    assert.equal(t.scene.title, false);
-    assert.equal(t.scene.prompt, null);
+    assert.equal(t.game.session.part, 0);
+    assert.equal(t.game.session.phase, "preamble");
+    assert.equal(t.scene.callsSince(tappedAt).filter((call) => call.startsWith("title")).length, 2);
+    assert.deepEqual([t.scene.title, t.scene.prompt], [false, null]);
   });
 });
 
@@ -553,9 +647,7 @@ describe("story", () => {
     const t = setup();
 
     await toTitle(t);
-    t.wait(TITLE_DEBOUNCE_MS);
-    t.input.advance();
-    t.frame();
+    leaveTitle(t);
     t.wait(STORY_PREAMBLE_MS - 2 * FRAME_MS);
     t.input.advance();
     t.frame();
@@ -572,9 +664,7 @@ describe("story", () => {
     const t = setup();
 
     await toTitle(t);
-    t.wait(TITLE_DEBOUNCE_MS);
-    t.input.advance();
-    t.frame();
+    leaveTitle(t);
     t.wait(STORY_PREAMBLE_MS);
     assert.equal(t.game.session.phase, "page");
 
@@ -708,9 +798,7 @@ describe("story", () => {
     const t = setup();
 
     await toTitle(t);
-    t.wait(TITLE_DEBOUNCE_MS);
-    t.input.advance();
-    t.frame();
+    leaveTitle(t);
     t.wait(STORY_PREAMBLE_MS);
 
     const before = t.game.session.cursor?.pageCount ?? 0;
@@ -733,9 +821,7 @@ describe("a full game", () => {
 
     for (let game = 1; game <= 3; game++) {
       assert.equal(t.game.session.games, game);
-      t.wait(TITLE_DEBOUNCE_MS);
-      t.input.advance();
-      t.frame();
+      leaveTitle(t);
       t.wait(STORY_PREAMBLE_MS);
 
       for (let part = 0; part < STORY_PARTS.length; part++) {
@@ -791,14 +877,69 @@ describe("a full game", () => {
   });
 });
 
+describe("ending", () => {
+  it("plays Fim's phases in order on the clock, the black from 8.5 s, then the card at half speed", async () => {
+    const t = setup();
+
+    await toTitle(t);
+    leaveTitle(t);
+    t.wait(STORY_PREAMBLE_MS);
+
+    for (let part = 0; part < STORY_PARTS.length; part++) {
+      if (part === STORY_PARTS.length - 1) {
+        // The last part is read on black, which fades in as it starts.
+        assert.deepEqual(t.scene.calls.at(-1)?.call, "black true");
+        assert.equal(t.scene.calls.at(-1)?.speed, 1);
+      }
+
+      readPart(t);
+
+      if (part < STORY_PARTS.length - 1) {
+        playRound(t);
+      }
+    }
+
+    assert.equal(t.machine.current, "ending");
+
+    const enteredAt = t.clock.now;
+    const phases: string[] = [];
+
+    while (t.clock.now - enteredAt <= ENDING_MS.card) {
+      if (phases.at(-1) !== t.game.session.phase) {
+        phases.push(t.game.session.phase);
+      }
+
+      t.frame();
+    }
+
+    phases.push(t.game.session.phase);
+
+    assert.deepEqual(phases, ["boat", "thrown", "kraken", "black", "sea", "card"]);
+    assert.deepEqual(t.scene.callsSince(enteredAt), [
+      "black false@0 ×1",
+      "boat broken@0",
+      `boat thrown@${ENDING_MS.thrown}`,
+      `kraken true@${ENDING_MS.kraken} ×1`,
+      "black true@8500 ×1",
+      `kraken false@${ENDING_MS.sea}`,
+      `boat none@${ENDING_MS.sea}`,
+      `pillars false@${ENDING_MS.sea}`,
+      `tentacles false@${ENDING_MS.sea}`,
+      `black false@${ENDING_MS.sea} ×1`,
+      `title true@${ENDING_MS.card} ×${ENDING_CARD_SPEED}`,
+      `prompt ${TAP_TO_PLAY_AGAIN}@${ENDING_MS.card} ×${ENDING_CARD_SPEED}`,
+    ]);
+    // Fully black (1 s FadeIn) before FimFinal.
+    assert.ok(ENDING_MS.black + 1000 <= ENDING_MS.sea);
+  });
+});
+
 describe("round", () => {
   const toRound = async () => {
     const t = setup();
 
     await toTitle(t);
-    t.wait(TITLE_DEBOUNCE_MS);
-    t.input.advance();
-    t.frame();
+    leaveTitle(t);
     t.wait(STORY_PREAMBLE_MS);
     readPart(t);
     t.wait(TRANSITION_MS);
@@ -833,6 +974,22 @@ describe("round", () => {
     assert.deepEqual(t.scene.progress, { kind: "sequence", pointer: 0, length: 3 });
   });
 
+  it("fades the round's backdrop in from the win, then starts the next part after the wait", async () => {
+    const t = await toRound();
+
+    while (t.game.session.phase === "play") {
+      answer(t);
+    }
+
+    const wonAt = t.scene.calls.at(-1)?.at ?? NaN;
+
+    assert.deepEqual(t.scene.calls.at(-1), { at: wonAt, call: "pillars true", speed: 1 });
+    t.wait(AFTER_ROUND_MS - (t.clock.now - wonAt) - FRAME_MS);
+    assert.equal(t.machine.current, "round");
+    t.wait(2 * FRAME_MS);
+    assert.equal(t.machine.current, "story");
+  });
+
   it("hints the direction of a Hold and releases it on cancel", async () => {
     const t = await toRound();
 
@@ -858,9 +1015,7 @@ describe("frame stepper", () => {
     const t = setup();
 
     await toTitle(t);
-    t.wait(TITLE_DEBOUNCE_MS);
-    t.input.advance();
-    t.frame();
+    leaveTitle(t);
     t.wait(STORY_PREAMBLE_MS);
     readPart(t);
     t.wait(TRANSITION_MS);
@@ -957,6 +1112,7 @@ describe("cues", () => {
 
     t.input.advance();
     t.frame();
+    t.wait(TITLE_EXIT_MS);
     assert.equal(t.machine.current, "story");
     t.wait(30_000);
     assert.equal(cuesOf(t, "title").length, fired, "no Title cue after Title");
@@ -974,10 +1130,11 @@ describe("cues", () => {
     t.wait(TITLE_CUES[2].at - TITLE_CUES[1].at);
     assert.equal(t.scene.logo, true, "the reveal shows the logo");
 
+    t.wait(TITLE_PROMPT_MS - TITLE_CUES[2].at);
     t.input.advance();
     t.frame();
     assert.equal(t.scene.logo, false);
-    t.wait(STORY_PREAMBLE_MS);
+    t.wait(TITLE_EXIT_MS + STORY_PREAMBLE_MS);
 
     // The same draws, in the same order, from seed ^ LIGHTNING_SALT, apart from the rounds' and the ambient's.
     const rng = createRng((seed ^ LIGHTNING_SALT) >>> 0);
@@ -1004,7 +1161,7 @@ describe("cues", () => {
     const t = setup();
 
     await toTitle(t);
-    t.wait(TITLE_DEBOUNCE_MS);
+    t.wait(500);
     // Replay to game 2 the quick way: a new Title enter starts a new game with the next seed.
     t.machine.request("title");
     t.frame();
@@ -1017,17 +1174,25 @@ describe("cues", () => {
     assert.notDeepEqual(expectedAmbient(42, 4), expectedAmbient(43, 4));
   });
 
-  it("drops Title's pending cues when it is left early", async () => {
+  it("drops Title's pending ambient strike when it is left, and goes on striking through the exit fade", async () => {
     const t = setup();
 
     await toTitle(t);
-    t.wait(1000);
+
+    const [first] = expectedAmbient(t.game.session.seed, 1);
+
+    // Tapped so that the exit ends just after the first ambient strike: it fires while Title fades out.
+    t.wait(first - TITLE_EXIT_MS + FRAME_MS);
     t.input.advance();
     t.frame();
-    t.wait(STORY_PREAMBLE_MS);
-    assert.deepEqual(cuesOf(t, "title"), []);
-    assert.deepEqual(cuesOf(t, "story"), [{ name: "lightning", at: 1250 }]);
-    assert.deepEqual(t.audio.sfx, ["thunderclap"]);
+    t.wait(TITLE_EXIT_MS);
+    assert.equal(t.machine.current, "story");
+    assert.deepEqual(cuesOf(t, "title").at(-1), { name: "lightning", at: first });
+
+    const fired = cuesOf(t, "title").length;
+
+    t.wait(30_000);
+    assert.equal(cuesOf(t, "title").length, fired);
   });
 
   it("keeps one Title timer pending at any time, so the leak check can read it whenever", async () => {
@@ -1061,10 +1226,11 @@ describe("cues", () => {
     await toTitle(t);
 
     for (let game = 1; game <= 2; game++) {
-      t.wait(TITLE_DEBOUNCE_MS);
+      t.wait(TITLE_PROMPT_MS);
       t.cues.length = 0;
       t.input.advance();
       t.frame();
+      t.wait(TITLE_EXIT_MS);
       assert.deepEqual(t.audio.parts.slice(-1), [0], "Story 0 asks for part 0's music, on replay too");
       t.wait(STORY_PREAMBLE_MS);
 
