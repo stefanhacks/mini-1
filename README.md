@@ -16,6 +16,7 @@ Node 22 (see `.nvmrc`).
 | `npm run typecheck` | `tsc` |
 | `npm run lint` | ESLint |
 | `npm run check` | Typecheck, lint and build, in that order |
+| `npm run anims -- <unity-checkout>` | Regenerate `src/assets/anims.ts` from the original Unity project's clips (`--check` only compares) |
 
 ## Deploys
 

@@ -5,6 +5,7 @@
 // The parts are built in draw order, each appending to its layers: world → fx → story → challenge → title. That gives
 // top: text box, arrows, logo; ui: story text, challenge progress, challenge prompt, tap prompt, credits.
 import type { Graphics, Sprite, Container, Text } from "pixi.js";
+import { createClipPlayer, type ClipPlayer } from "../core/anim/player.ts";
 import type { Layers } from "../core/layers.ts";
 import type { Layout } from "../core/layout.ts";
 import type { SceneView } from "./states/types.ts";
@@ -19,6 +20,8 @@ export { createContinuePrompt } from "./scene/continue-prompt.ts";
 export { createGateView } from "./scene/gate-view.ts";
 
 export interface Scene extends SceneView {
+  /** The app's animation clips (M4 wave 2 plays them on the parts); the frame loop syncs it. */
+  readonly clips: ClipPlayer;
   /** Follows a new layout: the ui texts, the progress art, and story paging. Call it from `onLayout`. */
   readonly relayout: (layout: Layout) => void;
   /** The display objects, labelled, for tests and the debug overlay. */
@@ -36,9 +39,14 @@ export interface Scene extends SceneView {
 
 /**
  * Builds the whole scene into the layers, hidden but for the opening frame (see `reset`). Needs the textures and the
- * font loaded.
+ * font loaded. `clips` is the app's player, which the frame loop syncs; the default one is never synced (tests).
  */
-export const createScene = (layers: Layers, textures: Textures, initial: Layout): Scene => {
+export const createScene = (
+  layers: Layers,
+  textures: Textures,
+  initial: Layout,
+  clips: ClipPlayer = createClipPlayer(),
+): Scene => {
   const world = createWorld(layers, textures);
   const fx = createFx(layers, textures);
   const story = createStoryView(layers, textures, initial);
@@ -46,6 +54,7 @@ export const createScene = (layers: Layers, textures: Textures, initial: Layout)
   const title = createTitleCard(layers, textures);
 
   const scene: Scene = {
+    clips,
     reset: () => {
       scene.setTitle(false);
       scene.setPrompt(null);
@@ -59,7 +68,7 @@ export const createScene = (layers: Layers, textures: Textures, initial: Layout)
     },
     setTitle: (visible) => title.setTitle(visible),
     setPrompt: (text) => title.setPrompt(text),
-    setStoryPage: (page) => story.setPage(page),
+    setStoryPage: (page, revealed) => story.setPage(page, revealed),
     setChallenge: (spec) => challenge.setChallenge(spec),
     setProgress: (progress) => challenge.setProgress(progress),
     setBackdrop: (backdrop, visible) => world.setBackdrop(backdrop, visible),

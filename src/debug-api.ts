@@ -48,6 +48,8 @@ export interface DebugApi {
   readonly layout: Layout;
   readonly game: GameSnapshot;
   readonly counts: DebugCounts;
+  /** The clip player: how many animation clips are playing. */
+  readonly anim: { readonly active: number };
   readonly timescale: number;
   /** Changes the time scale. Does nothing without `?debug`. */
   readonly setTimescale: (value: number) => void;

@@ -1,6 +1,7 @@
 // `window.debug`: what the console, the debug overlay and the e2e tests read (debug-api.ts has the shape).
 // Written by Claude Code.
 import type { Application } from "pixi.js";
+import type { ClipPlayer } from "../core/anim/player.ts";
 import type { AudioEngine } from "../core/audio/audio-engine.ts";
 import type { GameClock } from "../core/clock.ts";
 import type { PlayfieldDisplay } from "../core/display.ts";
@@ -32,6 +33,7 @@ export interface DebugWiring {
   readonly timescale: Timescale;
   readonly loading: { readonly scene: Scene | null };
   readonly errors: ErrorSink;
+  readonly clips: Pick<ClipPlayer, "active">;
 }
 
 /**
@@ -41,6 +43,7 @@ export interface DebugWiring {
 export const createDebugApi = (wiring: DebugWiring): DebugApi => {
   const {
     app, clock, machine, layers, display, layouts, router, audio, cueLog, lifecycle, game, timescale, loading, errors,
+    clips,
   } = wiring;
 
   return {
@@ -75,6 +78,10 @@ export const createDebugApi = (wiring: DebugWiring): DebugApi => {
         layoutListeners: layouts.listenerCount,
         tickerListeners: app.ticker.count,
       };
+    },
+    /** The animation clips playing. */
+    get anim() {
+      return { active: clips.active };
     },
     get timescale() {
       return timescale.value;

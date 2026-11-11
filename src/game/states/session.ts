@@ -5,6 +5,7 @@ import type { Round } from "../challenges/round.ts";
 import type { ChallengeProgress, ChallengeSpec } from "../challenges/rule.ts";
 import type { Tuning } from "../challenges/tuning.ts";
 import type { StoryCursor } from "../story/cursor.ts";
+import type { Typewriter } from "../story/typewriter.ts";
 
 /** The current state's phase ("" before the first game): what e2e and the unit tests wait on. */
 export type SessionPhase =
@@ -35,6 +36,8 @@ export interface GameSession {
   round: Round | null;
   /** The story cursor, while in Story. */
   cursor: StoryCursor | null;
+  /** The typing of the shown story page, while in Story. */
+  typewriter: Typewriter | null;
 }
 
 export const createSession = (): GameSession => ({
@@ -45,6 +48,7 @@ export const createSession = (): GameSession => ({
   phase: "",
   round: null,
   cursor: null,
+  typewriter: null,
 });
 
 /**
@@ -58,6 +62,7 @@ export const startNewGame = (session: GameSession, seed: number, tuning: Tuning)
   session.part = 0;
   session.round = null;
   session.cursor = null;
+  session.typewriter = null;
 };
 
 export interface SessionSnapshot {
@@ -78,6 +83,10 @@ export interface SessionSnapshot {
     readonly page: number;
     readonly text: string;
     readonly whisper: boolean;
+    /** How many of the page's characters show (the typewriter). */
+    readonly revealed: number;
+    /** Whether the page is typed out (or was completed by a tap). */
+    readonly typed: boolean;
   } | null;
 }
 
@@ -85,6 +94,7 @@ export interface SessionSnapshot {
 export const snapshotSession = (session: GameSession): SessionSnapshot => {
   const rule = session.round?.current;
   const page = session.cursor?.page ?? null;
+  const typewriter = session.typewriter;
 
   return {
     seed: session.seed,
@@ -95,7 +105,14 @@ export const snapshotSession = (session: GameSession): SessionSnapshot => {
       ? { index: session.round.index, count: session.round.specs.length, spec: rule.spec, progress: rule.progress }
       : null,
     page: session.cursor && page
-      ? { line: session.cursor.lineIndex, page: session.cursor.pageIndex, text: page.text, whisper: page.whisper }
+      ? {
+        line: session.cursor.lineIndex,
+        page: session.cursor.pageIndex,
+        text: page.text,
+        whisper: page.whisper,
+        revealed: typewriter?.revealed ?? page.text.length,
+        typed: typewriter?.done ?? true,
+      }
       : null,
   };
 };

@@ -108,7 +108,12 @@ export default tseslint.config(
     },
   },
   {
-    files: ["eslint.config.mjs"],
+    files: ["eslint.config.mjs", "scripts/**/*.mjs"],
     ...tseslint.configs.disableTypeChecked,
+  },
+  {
+    // Node scripts (scripts/import-anims.mjs): plain JavaScript, run by Node, not bundled.
+    files: ["scripts/**/*.mjs"],
+    languageOptions: { globals: { process: "readonly", console: "readonly" } },
   },
 );

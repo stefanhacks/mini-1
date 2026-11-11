@@ -52,8 +52,12 @@ export interface SceneView {
   setTitle(visible: boolean): void;
   /** The tap prompt under the logo ("Tap to begin", "Tap to play again"), or none. */
   setPrompt(text: string | null): void;
-  /** The text box with a story page, or neither. */
-  setStoryPage(page: StoryPage | null): void;
+  /**
+   * The text box with a story page, or neither. Only the page's first `revealed` characters show (all by default):
+   * the typewriter. The page is laid out whole, so typing never moves what already shows. Calling it again with the
+   * same page object and a new count is cheap (the story state does every frame while typing).
+   */
+  setStoryPage(page: StoryPage | null, revealed?: number): void;
   /** The arrows, cursors and prompt of a challenge, or none. Same spec object again: nothing is rebuilt. */
   setChallenge(spec: ChallengeSpec | null): void;
   /** The cursors and the hold ring / press pips for the shown challenge. Cheap to call every frame. */

@@ -2,6 +2,7 @@
 // Written by Claude Code.
 import { Assets, type Texture, type UnresolvedAsset } from "pixi.js";
 import { FONTS, SPRITES, type SpriteKey } from "../assets/manifest.ts";
+import type { ClipPlayer } from "../core/anim/player.ts";
 import type { AudioEngine } from "../core/audio/audio-engine.ts";
 import type { Layers } from "../core/layers.ts";
 import { createLoadPlan } from "../game/load-plan.ts";
@@ -37,6 +38,8 @@ export interface GameLoaderDeps {
   /** The gate's view needs nothing loaded: it only refreshes its texts once the font is in. */
   readonly gateView: { refreshFont(): void };
   readonly audio: Pick<AudioEngine, "load">;
+  /** The app's clip player, handed to the scene. */
+  readonly clips?: ClipPlayer;
   /** What loads the sprites and the font and builds the scene: Pixi's, unless a unit test passes fakes. */
   readonly assets?: LoaderAssets;
 }
@@ -49,7 +52,7 @@ export interface LoaderAssets {
 
 const PIXI_ASSETS: LoaderAssets = { loadSprites, loadFont, createScene };
 
-export const createGameLoader = ({ layers, layouts, gateView, audio, assets = PIXI_ASSETS }: GameLoaderDeps) => {
+export const createGameLoader = ({ layers, layouts, gateView, audio, clips, assets = PIXI_ASSETS }: GameLoaderDeps) => {
   let textures: Record<SpriteKey, Texture> | null = null;
   let scene: Scene | null = null;
 
@@ -82,7 +85,7 @@ export const createGameLoader = ({ layers, layouts, gateView, audio, assets = PI
     const before = countChildren(parents);
 
     try {
-      const built = assets.createScene(layers, loaded, layouts.current);
+      const built = assets.createScene(layers, loaded, layouts.current, clips);
 
       layouts.onLayout(built.relayout);
 

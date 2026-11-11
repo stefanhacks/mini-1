@@ -153,3 +153,28 @@ export const segmentLines = (segments: readonly StorySegment[], lines: readonly 
     return result;
   });
 };
+
+/**
+ * Where each wrapped line (`measure(text)`) starts in `text`, matched back the way `segmentLines` does: the whitespace
+ * dropped at a break is skipped, then the line's characters are matched in order. So a line's character `i` is
+ * `text[starts[line] + i]`, which is how the typewriter's count maps onto the drawn lines.
+ */
+export const lineStarts = (text: string, lines: readonly string[]): number[] => {
+  let position = 0;
+
+  return lines.map((line) => {
+    while (position < text.length && /\s/.test(text[position])) {
+      position += 1;
+    }
+
+    const start = position;
+
+    for (const char of line) {
+      if (text[position] === char) {
+        position += 1;
+      }
+    }
+
+    return start;
+  });
+};

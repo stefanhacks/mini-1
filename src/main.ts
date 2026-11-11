@@ -14,6 +14,7 @@ import { createSeeder, createTimescale, readLaunchOptions } from "./app/launch-o
 import { wirePageLifecycle } from "./app/page-lifecycle.ts";
 import { wireResize } from "./app/resize.ts";
 import { createStage } from "./app/stage.ts";
+import { createClipPlayer } from "./core/anim/player.ts";
 import { GameClock } from "./core/clock.ts";
 import { StateMachine } from "./core/state-machine.ts";
 import { TUNING } from "./game/challenges/tuning.ts";
@@ -37,6 +38,8 @@ const nextSeed = createSeeder(launch.seed);
 
 const { router, padView } = wireInput(stage, layouts);
 const clock = new GameClock();
+// The animation clips, on game time: the frame loop syncs them after each step, the scene plays them.
+const clips = createClipPlayer(clock);
 const { audio, lifecycle, muteButton } = wireAudio(layers, layouts);
 const cueLog = createCueLog(() => clock.now);
 
@@ -45,7 +48,7 @@ const gateView = createGateView(layers, layouts.current);
 
 layouts.onLayout(gateView.relayout);
 
-const loading = createGameLoader({ layers, layouts, gateView, audio });
+const loading = createGameLoader({ layers, layouts, gateView, audio, clips });
 const game = createGame({
   loader: loading.loader,
   gateView,
@@ -70,8 +73,11 @@ wirePageLifecycle(stepper, lifecycle);
 
 window.debug = createDebugApi({
   app, clock, machine, layers, display, layouts, router, audio, cueLog, lifecycle, game, timescale, loading, errors,
+  clips,
 });
 
-startFrameLoop({ ticker: app.ticker, stepper, padView, router, audio, timescale, errors, renderPlayfield });
+startFrameLoop({
+  ticker: app.ticker, stepper, padView, router, audio, timescale, clock, clips, errors, renderPlayfield,
+});
 resizeRenderer();
 machine.request("gate");

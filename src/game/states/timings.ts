@@ -4,8 +4,20 @@
 /** Story part 0's preamble: 1.25 s, a thunder strike (STORY_PREAMBLE_CUES), 1.25 s more, then the first line. */
 export const STORY_PREAMBLE_MS = 2500;
 
-/** Taps are ignored this long after a page appears, so a double tap can't skip one unread (02, Progression taps). */
+/**
+ * Taps are ignored this long after a page is complete (typed out, or completed by a tap), so a double tap can't skip
+ * one unread (02, Progression taps; M2 owner decision 5).
+ */
 export const STORY_DEBOUNCE_MS = 200;
+
+/**
+ * Typing speed of a normal line: one character per 60 Hz frame. The original's `typingSpeed` was 0.01 s, but each
+ * `WaitForSeconds` resumes at most once a frame, so it typed about one character per frame (04, correction 9).
+ */
+export const TYPE_MS_PER_CHAR = 1000 / 60;
+
+/** Typing speed of a whisper: `typingSpeed × modifier` (0.01 s × 10 in TextManager.prefab), a frame cap far below. */
+export const WHISPER_MS_PER_CHAR = 100;
 
 /** Transition (`Troca.anim`): the thunder at 167 ms (TRANSITION_CUES), the round at 500 ms. */
 export const TRANSITION_MS = 500;

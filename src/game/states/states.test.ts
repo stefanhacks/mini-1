@@ -20,6 +20,8 @@ import {
   STORY_DEBOUNCE_MS,
   STORY_PREAMBLE_MS,
   TITLE_AMBIENT,
+  TYPE_MS_PER_CHAR,
+  WHISPER_MS_PER_CHAR,
   TITLE_DEBOUNCE_MS,
   TRANSITION_MS,
 } from "./timings.ts";
@@ -50,6 +52,8 @@ class FakeScene implements SceneView {
   title = false;
   prompt: string | null = null;
   page: StoryPage | null = null;
+  /** The characters of `page` shown: Infinity for all. */
+  revealed = Infinity;
   challenge: ChallengeSpec | null = null;
   progress: ChallengeProgress | null = null;
   backdrops = new Set<Backdrop>();
@@ -62,6 +66,7 @@ class FakeScene implements SceneView {
     this.title = false;
     this.prompt = null;
     this.page = null;
+    this.revealed = Infinity;
     this.challenge = null;
     this.progress = null;
     this.backdrops.clear();
@@ -78,8 +83,9 @@ class FakeScene implements SceneView {
     this.prompt = text;
   }
 
-  setStoryPage(page: StoryPage | null) {
+  setStoryPage(page: StoryPage | null, revealed = Infinity) {
     this.page = page;
+    this.revealed = revealed;
   }
 
   setChallenge(spec: ChallengeSpec | null) {
@@ -278,11 +284,19 @@ const toTitle = async (t: Setup) => {
   assert.equal(t.machine.current, "title");
 };
 
-/** Reads the current story part to its end, a page per advance, waiting out the debounce each time. */
+/**
+ * Reads the current story part to its end, a page per advance: a tap completes a page still typing, then the next one,
+ * after the debounce, advances.
+ */
 const readPart = (t: Setup) => {
   let pages = 0;
 
   while (t.machine.current === "story") {
+    if (t.game.session.typewriter?.done === false) {
+      t.input.advance();
+      t.frame();
+    }
+
     t.wait(STORY_DEBOUNCE_MS);
     t.input.advance();
     t.frame();
@@ -291,6 +305,21 @@ const readPart = (t: Setup) => {
   }
 
   return pages;
+};
+
+/** Reads one story page: completes it if it still types, then advances after the debounce. */
+const readPage = (t: Setup) => {
+  const page = t.scene.page;
+
+  if (t.game.session.typewriter?.done === false) {
+    t.input.advance();
+    t.frame();
+  }
+
+  t.wait(STORY_DEBOUNCE_MS);
+  t.input.advance();
+  t.frame();
+  assert.notEqual(t.scene.page, page);
 };
 
 /** Answers the current challenge the way a player would, a frame per input. */
@@ -511,7 +540,8 @@ describe("story", () => {
     assert.equal((t.scene.page as StoryPage | null)?.text.startsWith("[First Mate]: "), true);
   });
 
-  it("ignores advances within the debounce after a page appears", async () => {
+  /** From Title to part 0's first page, just shown. */
+  const toFirstPage = async () => {
     const t = setup();
 
     await toTitle(t);
@@ -519,19 +549,132 @@ describe("story", () => {
     t.input.advance();
     t.frame();
     t.wait(STORY_PREAMBLE_MS);
+    assert.equal(t.game.session.phase, "page");
 
+    return t;
+  };
+
+  it("types a page at about a character a frame, label first", async () => {
+    const t = await toFirstPage();
+    const page = t.scene.page;
+    const typewriter = t.game.session.typewriter;
+
+    assert.ok(page !== null && typewriter !== null);
+    assert.ok(t.scene.revealed >= 1 && t.scene.revealed < 10, `just begun: ${t.scene.revealed}`);
+    assert.ok(page.text.length > 40);
+
+    const before = t.scene.revealed;
+
+    t.wait(20 * FRAME_MS);
+    // 20 frames of 16 ms: 320 ms at 1000/60 ms a character is 19.2 characters, 19 or 20 with the time carried in.
+    assert.ok([19, 20].includes(t.scene.revealed - before), `typed ${t.scene.revealed - before}`);
+    assert.equal(t.scene.page, page);
+
+    t.wait(page.text.length * TYPE_MS_PER_CHAR);
+    assert.equal(t.scene.revealed, page.text.length);
+    assert.equal(snapshotSession(t.game.session).page?.typed, true);
+  });
+
+  it("completes the page on a tap while typing, and advances on the next tap after the debounce", async () => {
+    const t = await toFirstPage();
     const first = t.scene.page;
 
+    assert.ok(first !== null);
     t.input.advance();
     t.frame();
-    assert.equal(t.scene.page, first);
+    assert.equal(t.scene.page, first, "the tap completes, it doesn't advance");
+    assert.equal(t.scene.revealed, first.text.length);
+    assert.equal(snapshotSession(t.game.session).page?.page, 0);
 
-    t.wait(STORY_DEBOUNCE_MS);
+    t.wait(STORY_DEBOUNCE_MS - 2 * FRAME_MS);
+    t.input.advance();
+    t.frame();
+    assert.equal(t.scene.page, first, "a tap within the debounce after completion is dropped");
+
+    t.wait(2 * FRAME_MS);
     t.input.advance();
     t.input.advance();
     t.frame();
     assert.notEqual(t.scene.page, first);
     assert.equal(snapshotSession(t.game.session).page?.page, 1, "a double tap shows one page, not two");
+    assert.ok(t.scene.revealed < (t.scene.page?.text.length ?? 0), "the next page types again");
+  });
+
+  it("starts the debounce when typing ends on its own", async () => {
+    const t = await toFirstPage();
+    const first = t.scene.page;
+
+    assert.ok(first !== null);
+    t.wait(first.text.length * TYPE_MS_PER_CHAR);
+    assert.equal(snapshotSession(t.game.session).page?.typed, true);
+    t.input.advance();
+    t.frame();
+    assert.equal(t.scene.page, first, "a tap right after typing ended is within the debounce");
+
+    t.wait(STORY_DEBOUNCE_MS);
+    t.input.advance();
+    t.frame();
+    assert.notEqual(t.scene.page, first);
+  });
+
+  it("types a whisper at 100 ms a character, and stops with the clock", async () => {
+    const t = await toFirstPage();
+
+    // Part 0's fourth line is the first whisper.
+    while (t.scene.page?.whisper !== true) {
+      readPage(t);
+    }
+
+    const whisper = t.scene.page;
+    const start = t.scene.revealed;
+
+    t.wait(10 * WHISPER_MS_PER_CHAR);
+    assert.equal(t.scene.revealed - start, 10);
+
+    t.clock.paused = true;
+    t.wait(1000);
+    assert.equal(t.scene.revealed - start, 10, "paused game time types nothing");
+    t.clock.paused = false;
+
+    t.wait(whisper.text.length * WHISPER_MS_PER_CHAR);
+    assert.equal(t.scene.revealed, whisper.text.length);
+  });
+
+  it("keeps what shows when the layout changes mid-typing, and types on", async () => {
+    const t = await toFirstPage();
+
+    t.wait(10 * FRAME_MS);
+
+    const shown = t.scene.revealed;
+
+    t.scene.paging = { linesPerPage: 10, measure: fixedWidthMeasure(100) };
+    t.frame();
+    assert.equal(t.game.session.cursor?.pageCount, 1);
+    assert.equal(t.scene.page?.text, "[First Mate]: \"Captain! This wind is too strong! We're gonna lose the sails!\"");
+    assert.ok(t.scene.revealed >= shown && t.scene.revealed <= shown + 1, "never typed again from 0");
+    assert.equal(snapshotSession(t.game.session).page?.typed, false);
+
+    t.wait(10 * FRAME_MS);
+    assert.ok(t.scene.revealed > shown + 5, "typing goes on");
+  });
+
+  it("completes the page when a relayout cuts it to what already shows", async () => {
+    const t = await toFirstPage();
+
+    t.wait(30 * FRAME_MS);
+    assert.ok(t.scene.revealed > 20);
+    t.scene.paging = { linesPerPage: 1, measure: fixedWidthMeasure(16) };
+    t.frame();
+
+    const page = t.scene.page;
+
+    assert.ok(page !== null && page.text.length <= 16);
+    assert.equal(t.scene.revealed, page.text.length);
+    assert.equal(snapshotSession(t.game.session).page?.typed, true);
+    t.wait(STORY_DEBOUNCE_MS);
+    t.input.advance();
+    t.frame();
+    assert.notEqual(t.scene.page, page, "one tap advances a page completed by the relayout");
   });
 
   it("pages again when the paging changes, from the current page", async () => {

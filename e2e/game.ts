@@ -230,8 +230,8 @@ export const leaveTitle = async (page: Page, driver: Driver) => {
 const pageKey = (game: GameSnapshot) => `${game.state}:${game.part}:${game.page?.line}:${game.page?.page}`;
 
 /**
- * Reads the current story part to its end. `onPage` runs on every page as it is shown. An advance inside the debounce
- * is dropped by the game, so one that changes nothing is sent again.
+ * Reads the current story part to its end. `onPage` runs on every page as it is shown. An advance while the page types
+ * only completes it, and one inside the debounce is dropped, so one that changes nothing is sent again.
  */
 export const readStory = async (page: Page, driver: Driver, onPage?: (game: GameSnapshot) => Promise<void>) => {
   await waitFor(page, (game) => game.state !== "story" || game.page !== null);
