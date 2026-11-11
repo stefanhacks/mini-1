@@ -16,6 +16,12 @@ export const countChildren = (parents: readonly ChildParent[]) => parents.map((p
  */
 export const removeChildrenAddedSince = (parents: readonly ChildParent[], counts: readonly number[]) => {
   parents.forEach((parent, index) => {
+    // Pixi's removeChildren(begin) throws a RangeError when nothing was added after `begin` on a non-empty parent,
+    // which would hide the build's own error from the report.
+    if (parent.children.length <= (counts[index] ?? 0)) {
+      return;
+    }
+
     for (const child of parent.removeChildren(counts[index])) {
       child.destroy({ children: true });
     }
