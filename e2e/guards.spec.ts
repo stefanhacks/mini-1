@@ -112,14 +112,15 @@ test("a game-logic throw halts the game once, suspends audio and keeps rendering
 
   await nextFrames(page, 2);
   expect(await hashPlayfield(page)).toBe(frozen);
+  // The boat, not the logo: the logo is hidden until Title's reveal at 5.5 s.
   await page.evaluate(() => {
-    const logo = window.debug.scene?.parts.logo;
+    const boat = window.debug.layers.world.getChildByLabel("boat");
 
-    if (logo === undefined) {
+    if (boat === null) {
       throw new Error("no scene");
     }
 
-    logo.x += 8;
+    boat.x += 8;
   });
   await nextFrames(page, 2);
   expect(await hashPlayfield(page)).not.toBe(frozen);

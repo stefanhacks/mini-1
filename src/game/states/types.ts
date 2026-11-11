@@ -4,10 +4,12 @@
 import type { WorldSfxKey } from "../../core/audio/audio-engine.ts";
 import type { GameClock } from "../../core/clock.ts";
 import type { State } from "../../core/state-machine.ts";
+import type { Rng } from "../challenges/rng.ts";
 import type { ChallengeProgress, ChallengeSpec } from "../challenges/rule.ts";
 import type { Tuning } from "../challenges/tuning.ts";
 import type { Direction } from "../direction.ts";
 import type { InputEvent } from "../input/pointer-map.ts";
+import type { StrikeKind } from "../lightning.ts";
 import type { StoryPage } from "../story/cursor.ts";
 import type { Measure } from "../story/paging.ts";
 import type { CueName } from "./timings.ts";
@@ -48,8 +50,15 @@ export type Boat = "whole" | "broken" | "none";
 export interface SceneView {
   /** Back to the opening frame: sea, sky, the whole boat and the vignette. Everything else hidden. */
   reset(): void;
-  /** The title logo and the credits. */
+  /** The title logo and the credits. Hiding them drops a logo reveal still pending from `strike`. */
   setTitle(visible: boolean): void;
+  /** The credits alone: Title shows them at once, the logo only at its reveal. */
+  setCredits(visible: boolean): void;
+  /**
+   * A lightning strike (`DoTheThunder`): the bolt and the flash, drawn from `rng` (the game's lightning stream). A
+   * `title-reveal` also shows the logo at the flash's peak (TITLE_REVEAL_FLASH_MS later). A strike cuts the one before.
+   */
+  strike(kind: StrikeKind, rng: Rng): void;
   /** The tap prompt under the logo ("Tap to begin", "Tap to play again"), or none. */
   setPrompt(text: string | null): void;
   /**
@@ -133,8 +142,8 @@ export interface GameDeps {
   readonly gateView: GateView;
   readonly audio: GameAudio;
   /**
-   * Called on every cue, right after its sound was asked for, inside the clock tick that reached it. app/cue-log.ts
-   * logs it for `window.debug`; M4 hangs the visuals here.
+   * Called on every cue, right after its sound and (for a strike) `SceneView.strike`, inside the clock tick that
+   * reached it. app/cue-log.ts logs it for `window.debug`.
    */
   readonly onCue: (event: CueEvent) => void;
   readonly clock: GameClock;

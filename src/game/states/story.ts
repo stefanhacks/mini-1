@@ -80,7 +80,7 @@ export const createStory = (deps: GameDeps, session: GameSession): GameState => 
   /** Part 0's preamble: the text box waits STORY_PREAMBLE_MS, with its strike. */
   const startPreamble = (scope: TimerScope) => {
     session.phase = "preamble";
-    createCuePlayer(deps, "story").schedule(scope, STORY_PREAMBLE_CUES);
+    createCuePlayer(deps, session, "story").schedule(scope, STORY_PREAMBLE_CUES);
     scope.after(STORY_PREAMBLE_MS, startText);
   };
 

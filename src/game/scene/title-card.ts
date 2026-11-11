@@ -1,4 +1,5 @@
-// The title card: the logo (top layer), the tap prompt and the credits (ui layer). M4's intro and fades hook in here.
+// The title card: the logo (top layer), the tap prompt and the credits (ui layer). On Title the logo shows only at
+// the reveal's flash peak (scene/lightning.ts). M4's fades hook in here.
 // Written by Claude Code.
 import type { Sprite, Text } from "pixi.js";
 import type { Layers } from "../../core/layers.ts";
@@ -16,6 +17,8 @@ export interface TitleCardView {
   readonly credits: Text;
   /** The logo and the credits. */
   readonly setTitle: (visible: boolean) => void;
+  readonly setLogo: (visible: boolean) => void;
+  readonly setCredits: (visible: boolean) => void;
   /** The tap prompt ("Tap to begin", "Tap to play again"), or none. */
   readonly setPrompt: (text: string | null) => void;
   /** Follows a new layout: the prompt and the credits. */
@@ -33,6 +36,12 @@ export const createTitleCard = (layers: Layers, textures: Textures): TitleCardVi
     credits,
     setTitle: (visible) => {
       logo.visible = visible;
+      credits.visible = visible;
+    },
+    setLogo: (visible) => {
+      logo.visible = visible;
+    },
+    setCredits: (visible) => {
       credits.visible = visible;
     },
     setPrompt: (text) => {

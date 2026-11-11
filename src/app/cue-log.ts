@@ -6,7 +6,7 @@ import type { CueEvent } from "../game/states/types.ts";
 export const CUE_LOG_SIZE = 64;
 
 export interface CueLog {
-  /** `GameDeps.onCue`: logs `event` with the game clock's time. M4 hangs the visuals next to it. */
+  /** `GameDeps.onCue`: logs `event` with the game clock's time. */
   readonly onCue: (event: CueEvent) => void;
   /** Copies of the logged cues, oldest first. */
   readonly entries: () => CueLogEntry[];

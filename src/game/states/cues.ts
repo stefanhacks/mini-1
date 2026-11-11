@@ -1,8 +1,10 @@
-// Cues on a state's timeline: each plays its sound and is reported through `GameDeps.onCue`. Pure TypeScript.
-// Written by Claude Code.
+// Cues on a state's timeline: each plays its sound, strikes if it is lightning, and is reported through
+// `GameDeps.onCue`. Pure TypeScript. Written by Claude Code.
 import type { WorldSfxKey } from "../../core/audio/audio-engine.ts";
 import type { TimerScope } from "../../core/clock.ts";
 import type { Rng } from "../challenges/rng.ts";
+import { isStrike } from "../lightning.ts";
+import type { GameSession } from "./session.ts";
 import { TITLE_AMBIENT, type Cue, type CueName } from "./timings.ts";
 import type { GameDeps, GameStateId } from "./types.ts";
 
@@ -15,14 +17,24 @@ export const CUE_SFX: Readonly<Record<CueName, WorldSfxKey>> = {
 
 /**
  * A state's cue player. Create it in `enter`: cue times (`CueEvent.at`) count from then. Its timers live on the state's
- * scope, so they die with the state (and wait while the clock is paused).
+ * scope, so they die with the state (and wait while the clock is paused). A strike draws from the game's lightning
+ * stream (`session.lightning`): a CueEvent has no payload, and the draws are game state, replayed by the seed.
  */
-export const createCuePlayer = (deps: Pick<GameDeps, "audio" | "onCue" | "clock">, state: GameStateId) => {
-  const { audio, onCue, clock } = deps;
+export const createCuePlayer = (
+  deps: Pick<GameDeps, "audio" | "onCue" | "clock" | "scene">,
+  session: Pick<GameSession, "lightning">,
+  state: GameStateId,
+) => {
+  const { audio, onCue, clock, scene } = deps;
   const enteredAt = clock.now;
 
   const fire = (name: CueName) => {
     audio.playSfx(CUE_SFX[name]);
+
+    if (isStrike(name)) {
+      scene().strike(name, session.lightning);
+    }
+
     onCue({ name, state, at: clock.now - enteredAt });
   };
 

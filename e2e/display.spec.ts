@@ -159,6 +159,13 @@ const settle = async (page: Page, insets: Insets) => {
   }
 
   await page.waitForFunction(() => window.debug.game.state === "title");
+  // The logo shows at the reveal's flash peak (5.5 s into Title, at real time here); the art checks read it, after
+  // the flash is gone.
+  await page.waitForFunction(() => {
+    const parts = window.debug.scene?.parts;
+
+    return parts !== undefined && parts.logo.visible && !parts.flash.visible;
+  }, undefined, { timeout: 15_000 });
   await expect.poll(async () => {
     const state = await readState(page);
 

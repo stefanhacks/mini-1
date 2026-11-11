@@ -17,7 +17,7 @@ export const createTransition = (deps: GameDeps, session: GameSession): GameStat
       pad.setDimmed(true);
       pad.setHint(null);
       session.phase = "transition";
-      createCuePlayer(deps, "transition").schedule(scope, TRANSITION_CUES);
+      createCuePlayer(deps, session, "transition").schedule(scope, TRANSITION_CUES);
       scope.after(TRANSITION_MS, () => machine.request("round"));
     },
     update: () => {

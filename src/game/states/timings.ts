@@ -40,17 +40,17 @@ export const ENDING_MS = {
 } as const;
 
 // Cues: the moments a state's timeline strikes, as named events at ms from the state's enter, on the game clock.
-// M3 plays each cue's sound (states/cues.ts maps cue → SFX); M4 hangs the visuals (bolt, flash, logo reveal, kraken
-// fade) on the same events through `GameDeps.onCue`.
+// states/cues.ts plays each cue's sound (cue → SFX) and, for a strike, the bolt and the flash (`SceneView.strike`);
+// `GameDeps.onCue` reports it (the cue log).
 
 /**
- * - `lightning`: a strike (`DoTheThunder`): bolt and flash in M4, a thunderclap now.
+ * - `lightning`: a strike (`DoTheThunder`): bolt, flash and a thunderclap.
  * - `title-reveal`: Title's big strike, with a thunderclap. The cue marks the strike; the logo appears
  *   TITLE_REVEAL_FLASH_MS later, at the flash's peak.
  * - `kraken`: the kraken appears (`FimKraken`), with its roar.
  *
- * A CueEvent carries no payload: M4's random bolt sprite, position and orientation (`DoTheThunder`'s draws) need an
- * RNG of their own.
+ * A CueEvent carries no payload: a strike's bolt sprite, position and mirror (`DoTheThunder`'s draws) come from the
+ * game's lightning RNG (`GameSession.lightning`, lightning.ts).
  */
 export type CueName = "lightning" | "title-reveal" | "kraken";
 

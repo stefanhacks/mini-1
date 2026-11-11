@@ -20,6 +20,7 @@ import {
   STORY_DEBOUNCE_MS,
   STORY_PREAMBLE_MS,
   TITLE_AMBIENT,
+  TITLE_CUES,
   TYPE_MS_PER_CHAR,
   WHISPER_MS_PER_CHAR,
   TITLE_DEBOUNCE_MS,
@@ -27,7 +28,8 @@ import {
 } from "./timings.ts";
 import { AMBIENT_SALT, TAP_TO_BEGIN } from "./title.ts";
 import { ambientDelay } from "./cues.ts";
-import { createRng } from "../challenges/rng.ts";
+import { createRng, type Rng } from "../challenges/rng.ts";
+import { drawStrike, LIGHTNING_SALT, type Strike, type StrikeKind } from "../lightning.ts";
 import { LOAD_FAILED } from "./gate.ts";
 import type { Backdrop, Boat, CueEvent, GateScreen, Paging, SceneView } from "./types.ts";
 
@@ -49,7 +51,10 @@ const deferred = () => {
 };
 
 class FakeScene implements SceneView {
-  title = false;
+  logo = false;
+  credits = false;
+  /** Every strike, drawn as the real scene draws it. */
+  strikes: Strike[] = [];
   prompt: string | null = null;
   page: StoryPage | null = null;
   /** The characters of `page` shown: Infinity for all. */
@@ -63,7 +68,8 @@ class FakeScene implements SceneView {
   paging: Paging = { linesPerPage: 2, measure: fixedWidthMeasure(30) };
 
   reset() {
-    this.title = false;
+    this.logo = false;
+    this.credits = false;
     this.prompt = null;
     this.page = null;
     this.revealed = Infinity;
@@ -75,8 +81,27 @@ class FakeScene implements SceneView {
     this.black = false;
   }
 
+  /** Logo and credits both. */
+  get title() {
+    return this.logo && this.credits;
+  }
+
   setTitle(visible: boolean) {
-    this.title = visible;
+    this.logo = visible;
+    this.credits = visible;
+  }
+
+  setCredits(visible: boolean) {
+    this.credits = visible;
+  }
+
+  // The real scene shows the logo at the flash's peak, 250 ms later; the fake shows it at once.
+  strike(kind: StrikeKind, rng: Rng) {
+    this.strikes.push(drawStrike(kind, rng));
+
+    if (kind === "title-reveal") {
+      this.logo = true;
+    }
   }
 
   setPrompt(text: string | null) {
@@ -499,7 +524,9 @@ describe("title", () => {
     assert.equal(t.game.session.games, 1);
     assert.equal(t.game.session.seed, 42);
     assert.equal(t.game.session.rounds.length, 3);
-    assert.equal(t.scene.title, true);
+    // The logo waits for its reveal strike.
+    assert.equal(t.scene.logo, false);
+    assert.equal(t.scene.credits, true);
     assert.equal(t.scene.prompt, TAP_TO_BEGIN);
     assert.equal(t.pad.visible, false);
 
@@ -933,6 +960,57 @@ describe("cues", () => {
     assert.equal(t.machine.current, "story");
     t.wait(30_000);
     assert.equal(cuesOf(t, "title").length, fired, "no Title cue after Title");
+  });
+
+  it("strikes on every lightning and title-reveal cue, drawn from the game's lightning stream", async () => {
+    const t = setup();
+
+    await toTitle(t);
+
+    const { seed } = t.game.session;
+
+    t.wait(TITLE_CUES[1].at + FRAME_MS);
+    assert.equal(t.scene.logo, false, "no logo before the reveal");
+    t.wait(TITLE_CUES[2].at - TITLE_CUES[1].at);
+    assert.equal(t.scene.logo, true, "the reveal shows the logo");
+
+    t.input.advance();
+    t.frame();
+    assert.equal(t.scene.logo, false);
+    t.wait(STORY_PREAMBLE_MS);
+
+    // The same draws, in the same order, from seed ^ LIGHTNING_SALT, apart from the rounds' and the ambient's.
+    const rng = createRng((seed ^ LIGHTNING_SALT) >>> 0);
+    const kinds: StrikeKind[] = ["lightning", "lightning", "title-reveal", "lightning"];
+
+    assert.deepEqual(t.scene.strikes, kinds.map((kind) => drawStrike(kind, rng)));
+    assert.deepEqual(cuesOf(t, "story"), [{ name: "lightning", at: 1250 }]);
+  });
+
+  it("draws the same strikes for the same seed and different ones for another game", async () => {
+    const strikesOf = async () => {
+      const t = setup();
+
+      await toTitle(t);
+      t.wait(TITLE_CUES[2].at + FRAME_MS);
+
+      return t.scene.strikes;
+    };
+    const first = await strikesOf();
+
+    assert.deepEqual(await strikesOf(), first);
+    assert.equal(first.length, 3);
+
+    const t = setup();
+
+    await toTitle(t);
+    t.wait(TITLE_DEBOUNCE_MS);
+    // Replay to game 2 the quick way: a new Title enter starts a new game with the next seed.
+    t.machine.request("title");
+    t.frame();
+    assert.equal(t.game.session.games, 2);
+    t.wait(TITLE_CUES[2].at + FRAME_MS);
+    assert.notDeepEqual(t.scene.strikes, first);
   });
 
   it("draws different ambient times for a different game", () => {

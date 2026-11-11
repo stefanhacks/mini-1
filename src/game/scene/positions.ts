@@ -5,7 +5,7 @@
 // y down): playfield = (250 + x, 250 − y). The converted numbers are kept as they were. Draw order follows the
 // original's sortingOrder, back to front:
 // - world: WORLD_SPRITES, in table order.
-// - fx: the black overlay `TelaPreta` and the vignette (−1).
+// - fx: the lightning bolt `Raio` (−2), the black overlay `TelaPreta` and the vignette (−1), the white flash (0).
 // - top: the text box (0), cursors (0), arrows (1), the title logo (15).
 // - ui (CSS px): story text, the challenge prompt and its progress, the tap prompt and the credits.
 import type { SpriteKey } from "../../assets/manifest.ts";

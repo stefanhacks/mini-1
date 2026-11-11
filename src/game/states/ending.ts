@@ -47,7 +47,7 @@ export const createEnding = (deps: GameDeps, session: GameSession): GameState =>
       view.setBlack(false);
       view.setBoat("broken");
 
-      createCuePlayer(deps, "ending").schedule(scope, ENDING_CUES);
+      createCuePlayer(deps, session, "ending").schedule(scope, ENDING_CUES);
       enterPhaseAt(scope, "thrown", ENDING_MS.thrown, () => undefined);
       enterPhaseAt(scope, "kraken", ENDING_MS.kraken, () => view.setKraken(true));
       enterPhaseAt(scope, "black", ENDING_MS.black, () => view.setBlack(true));

@@ -12,10 +12,10 @@ export const TAP_TO_BEGIN = "Tap to begin";
 export const AMBIENT_SALT = 0x7a11e7;
 
 /**
- * Title: the static frame of the original's title (the logo, the credits and the prompt; M4 adds the visuals of the
- * timed lightning and the reveal). Every game starts here, the first and every replay: entering it starts a new game
- * with a new seed and resets the scene, which is the soft reset of owner decision 2. Any tap or key goes to story
- * part 0, once TITLE_DEBOUNCE_MS have passed.
+ * Title: the original's title frame. The credits and the prompt show at once (M4 wave 2 fades them in at 7.25 s); the
+ * logo shows at the reveal strike's flash peak (`SceneView.strike`). Every game starts here, the first and every
+ * replay: entering it starts a new game with a new seed and resets the scene, which is the soft reset of owner
+ * decision 2. Any tap or key goes to story part 0, once TITLE_DEBOUNCE_MS have passed.
  *
  * Its cues: the intro's strikes (TITLE_CUES), then ambient lightning at the original's random intervals
  * (TITLE_AMBIENT), drawn from the game's seed. The music is left alone: BGM01 loops on, and after a game bgm02 plays
@@ -53,10 +53,10 @@ export const createTitle = (deps: GameDeps, session: GameSession): GameState => 
 
       hidePad(pad);
       view.reset();
-      view.setTitle(true);
+      view.setCredits(true);
       view.setPrompt(TAP_TO_BEGIN);
 
-      const cues = createCuePlayer(deps, "title");
+      const cues = createCuePlayer(deps, session, "title");
 
       cues.schedule(scope, TITLE_CUES, scheduleAmbient(scope, cues));
     },

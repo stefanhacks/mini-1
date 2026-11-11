@@ -1,9 +1,10 @@
 // The state of one game, shared by the states, and a plain-data snapshot of it for `window.debug`. Pure TypeScript.
 import { generateRounds, type RoundSpec } from "../challenges/generate.ts";
-import { createRng } from "../challenges/rng.ts";
+import { createRng, type Rng } from "../challenges/rng.ts";
 import type { Round } from "../challenges/round.ts";
 import type { ChallengeProgress, ChallengeSpec } from "../challenges/rule.ts";
 import type { Tuning } from "../challenges/tuning.ts";
+import { LIGHTNING_SALT } from "../lightning.ts";
 import type { StoryCursor } from "../story/cursor.ts";
 import type { Typewriter } from "../story/typewriter.ts";
 
@@ -28,6 +29,8 @@ export interface GameSession {
   games: number;
   /** Every round's challenges, generated from `seed` when the game starts. */
   rounds: readonly RoundSpec[];
+  /** The strikes' draws (bolt, x, mirror), from `seed ^ LIGHTNING_SALT`: a stream apart from the rounds'. */
+  lightning: Rng;
   /** The story part being read, or the round being played after it: 0–3 (rounds 0–2). */
   part: number;
   /** The current state's phase, for tests. */
@@ -44,6 +47,7 @@ export const createSession = (): GameSession => ({
   seed: 0,
   games: 0,
   rounds: [],
+  lightning: createRng(LIGHTNING_SALT),
   part: 0,
   phase: "",
   round: null,
@@ -52,13 +56,14 @@ export const createSession = (): GameSession => ({
 });
 
 /**
- * Starts a new game on `session` (Title, on every enter): its seed, the game count, and every round generated from the
- * seed, from story part 0 with no round or story running. The phase is the caller's.
+ * Starts a new game on `session` (Title, on every enter): its seed, the game count, every round generated from the
+ * seed and the lightning stream, from story part 0 with no round or story running. The phase is the caller's.
  */
 export const startNewGame = (session: GameSession, seed: number, tuning: Tuning) => {
   session.seed = seed;
   session.games += 1;
   session.rounds = generateRounds(createRng(seed), tuning);
+  session.lightning = createRng((seed ^ LIGHTNING_SALT) >>> 0);
   session.part = 0;
   session.round = null;
   session.cursor = null;

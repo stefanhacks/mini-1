@@ -3,7 +3,8 @@
 // the positions and draw order in scene/positions.ts.
 //
 // The parts are built in draw order, each appending to its layers: world → fx → story → challenge → title. That gives
-// top: text box, arrows, logo; ui: story text, challenge progress, challenge prompt, tap prompt, credits.
+// fx: bolt, black, vignette, flash; top: text box, arrows, logo; ui: story text, challenge progress, challenge prompt,
+// tap prompt, credits. scene/lightning.ts drives the bolt and the flash, and adds no display object.
 import type { Graphics, Sprite, Container, Text } from "pixi.js";
 import { createClipPlayer, type ClipPlayer } from "../core/anim/player.ts";
 import type { Layers } from "../core/layers.ts";
@@ -12,6 +13,7 @@ import type { SceneView } from "./states/types.ts";
 import type { Textures } from "./scene/art-sprite.ts";
 import { createChallengeView } from "./scene/challenge-view.ts";
 import { createFx } from "./scene/fx.ts";
+import { createLightning, watchReducedMotion } from "./scene/lightning.ts";
 import { createStoryView } from "./scene/story-view.ts";
 import { createTitleCard } from "./scene/title-card.ts";
 import { createWorld } from "./scene/world.ts";
@@ -34,28 +36,41 @@ export interface Scene extends SceneView {
     readonly credits: Text;
     readonly logo: Sprite;
     readonly arrows: Container;
+    readonly bolt: Sprite;
+    readonly flash: Graphics;
   };
 }
 
 /**
  * Builds the whole scene into the layers, hidden but for the opening frame (see `reset`). Needs the textures and the
  * font loaded. `clips` is the app's player, which the frame loop syncs; the default one is never synced (tests).
+ * `reducedMotion` is read at each strike: it caps the flash.
  */
 export const createScene = (
   layers: Layers,
   textures: Textures,
   initial: Layout,
   clips: ClipPlayer = createClipPlayer(),
+  reducedMotion: () => boolean = watchReducedMotion(),
 ): Scene => {
   const world = createWorld(layers, textures);
   const fx = createFx(layers, textures);
   const story = createStoryView(layers, textures, initial);
   const challenge = createChallengeView(layers, textures, initial);
   const title = createTitleCard(layers, textures);
+  const lightning = createLightning({
+    bolt: fx.bolt,
+    flash: fx.flash,
+    textures,
+    clips,
+    revealLogo: () => title.setLogo(true),
+    reducedMotion,
+  });
 
   const scene: Scene = {
     clips,
     reset: () => {
+      lightning.reset();
       scene.setTitle(false);
       scene.setPrompt(null);
       scene.setStoryPage(null);
@@ -66,7 +81,16 @@ export const createScene = (
       scene.setKraken(false);
       scene.setBlack(false);
     },
-    setTitle: (visible) => title.setTitle(visible),
+    setTitle: (visible) => {
+      // Hidden, the logo stays hidden: a reveal still pending (Title left before its flash peaked) is dropped.
+      if (!visible) {
+        lightning.cancelReveal();
+      }
+
+      title.setTitle(visible);
+    },
+    setCredits: (visible) => title.setCredits(visible),
+    strike: (kind, rng) => lightning.strike(kind, rng),
     setPrompt: (text) => title.setPrompt(text),
     setStoryPage: (page, revealed) => story.setPage(page, revealed),
     setChallenge: (spec) => challenge.setChallenge(spec),
@@ -93,6 +117,8 @@ export const createScene = (
       credits: title.credits,
       logo: title.logo,
       arrows: challenge.arrows,
+      bolt: fx.bolt,
+      flash: fx.flash,
     },
   };
 
