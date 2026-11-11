@@ -409,8 +409,9 @@ window.debug = {
 
 // The only thing that ticks the clock. A listener that throws stops Pixi's frame loop for good (the Ticker skips its
 // next requestAnimationFrame), so the first error halts the game logic instead: it is reported as an uncaught error,
-// kept in `debug.error`, and the last frame keeps rendering. The pad view follows the held directions inside the same
-// guard, after the states, so a halted game freezes it too.
+// kept in `debug.error` unless an earlier render or audio error is there (the first error wins), and the last frame
+// keeps rendering. The pad view follows the held directions inside the same guard, after the states, so a halted game
+// freezes it too.
 let halted = false;
 
 app.ticker.add((ticker) => {
@@ -423,7 +424,7 @@ app.ticker.add((ticker) => {
     padView.update((dir) => router.isHeld(dir));
   } catch (error) {
     halted = true;
-    window.debug.error = error;
+    window.debug.error ??= error;
     reportError(error);
     // The music would loop on over a frozen frame.
     void audio.suspend();

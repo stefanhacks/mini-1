@@ -53,6 +53,6 @@ export interface DebugApi {
   readonly setTimescale: (value: number) => void;
   /** Set once the scene is built. */
   scene?: Scene;
-  /** The first error that halted the game logic or the render passes. */
+  /** The first error that halted the game logic, the render passes or the audio tick. Later ones don't replace it. */
   error?: unknown;
 }

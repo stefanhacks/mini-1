@@ -78,7 +78,7 @@ This consolidates the two read-only reviews, **Centaur Sage: Scene Readability**
 
 1. **No behaviour change:**
    - Keep every label, the `parts` keys, the `SceneView`/`GateView`/`DebugApi` shapes, and the RNG draw order.
-   - Keep child order in every layer: world → fx → story → challenge → title, and in `ui`: overlay, pad, mute, continue, gate, then the scene's texts.
+   - Keep child order in every layer: world → fx → story → challenge → title, and in `ui` exactly as recorded at Title: `debug-overlay, pad-view, mute-button, continue, gate-warning, gate-prompt, gate-bar, story-text, challenge-progress, challenge-prompt, tap-prompt, credits` (e2e/guards.spec.ts asserts it).
    - No `addChildAt`/`zIndex`, and no new wrapper containers between a layer and its children.
 2. **Keep the ordering contracts:**
    - Ticker listeners: game logic → audio tick → render, then Pixi's own render at LOW.
