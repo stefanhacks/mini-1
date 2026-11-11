@@ -144,12 +144,33 @@ M4 removes the M2/M3 stopgaps listed above.
 - **Timing on slow frames:** animations run on the game clock with the 100 ms cap, so a hitch slows them rather than skipping, as for the rules.
 - **Photosensitivity:** the flash stays under 3/s, the gate warns, and reduced motion caps it. A flash toggle would be an M5 settings item.
 
-## Owner questions
+## Owner decisions
 
-1. **Title exit:** after the tap, fade the title out over 1 s before Story 0 begins, as the original's `Inicio`? Recommended: faithful, and the double-tap problem is gone once Title only accepts the tap from 7.25 s.
-2. **Reduced-motion flash cap in M4,** where the flash first appears, instead of M5? Recommended.
-3. **Eye sprites** (owner note in 04): bubbles are particles, which is M5. Options:
-   - (a) design their behaviour now, but implement them with the bubbles in M5 (recommended);
-   - (b) design and implement a simple version in M4;
-   - (c) drop them.
-4. **Deliverable 0 first:** split `scene.ts` and `main.ts` before any M4 feature work? Recommended.
+1. **Title exit:** after the tap, the title, credits and prompt fade out over 1 s (`Inicio.anim`) before Story 0 starts.
+2. **Reduced-motion flash cap in M4:** the flash peaks at about 0.4 when `prefers-reduced-motion: reduce` matches.
+3. **Eye sprites: designed in M4, built with the bubbles in M5.**
+   - The owner recalls the original notes: the eyes are **rare occurrences**, either seen only in later stages, or extremely uncommon earlier on.
+   - The draft design is below; the numbers are tunable and get confirmed in M5.
+4. **Readability first:** before any M4 feature work, `scene.ts` and `main.ts` (and whatever else the reviewers flag) are reviewed for readability. The aim is shorter functions broken into smaller named ones, and cleaner code overall, then the split. No behaviour change. More agents are assigned to this step (see the revised wave 0).
+
+## Eye sprites: draft design (built in M5)
+
+- **Assets:** `eye_large.png` (64×32) and `eye_small.png` (12×12) from `Graphics/SpritesFinal/Actors/`. M5 re-imports them with `scripts/import-assets.sh` and the manifest (centred anchors, as the other actors).
+- **Where:** in the underwater band below the sea strips, where the bubbles rise (the original's `UnderSea`, around playfield y 455–490), behind the front sea strip. Never over the text box or the challenge row.
+- **What:** an eye fades in (about 0.5 s), stays open for 1.5–3 s, maybe drifts a few art pixels, then fades out. It never overlaps another eye. It's an alternative to a bubble burst, not an addition: a slot that would emit bubbles occasionally shows an eye instead.
+- **Rarity:** by story progress, drawn from a seeded **eye RNG**, separate from the rounds, ambient thunder and lightning streams.
+  - Story parts 0–1 (before the first backdrop): *extremely uncommon*. Proposed: at most one eye per game, at a 5% chance; `eye_small` only.
+  - Story part 2 and later (after the pillars): *rare*. Proposed: about 1 chance in 6 per bubble slot; `eye_large` allowed from part 3, and in the ending's empty sea before the card.
+  - Never during a challenge: it would compete with the arrows for attention.
+- **Debug:** `?debug&eyes=always` forces them, so they can be reviewed without waiting.
+- **To confirm in M5:** the chances, durations, whether eyes blink (no art for it; alpha only), and whether they ever come back on Title after a replay.
+
+## Revised wave 0: readability first
+
+| Step | Agents | Work |
+|---|---|---|
+| 0a, review | **Owl Sage: Scene Readability**, **Raven Monk: Main Readability** | Read-only. Each reads its files and the states, flags long functions, mixed concerns, duplication, unclear names, machine-written-looking code and dead code, and proposes a concrete target structure (modules, function boundaries, names) that keeps `SceneView` and the other interfaces stable. |
+| 0b, build | **Dwarf Mason: Scene Split**, **Elf Tidier: Main Split** | Apply the agreed proposals in parallel (scene modules; main wiring modules). No behaviour change. Unit and e2e results unchanged. |
+| 0c, review | **Goblin Scribe: Code Review** | The refactor is behaviour-neutral (same tests, same e2e counts, a spot-check of screenshots), reads well, and follows `CLAUDE.md` style. |
+
+Then waves 1–2 as planned.
