@@ -20,6 +20,7 @@ import {
   STORY_DEBOUNCE_MS,
   STORY_PREAMBLE_MS,
   TITLE_AMBIENT,
+  TITLE_DEBOUNCE_MS,
   TRANSITION_MS,
 } from "./timings.ts";
 import { AMBIENT_SALT, TAP_TO_BEGIN } from "./title.ts";
@@ -477,6 +478,12 @@ describe("title", () => {
     t.frame();
     assert.equal(t.machine.current, "title");
 
+    // A tap within the debounce is dropped (the stopgap until M4 gates the prompt behind the intro).
+    t.input.advance();
+    t.frame();
+    assert.equal(t.machine.current, "title");
+
+    t.wait(TITLE_DEBOUNCE_MS);
     t.input.advance();
     t.frame();
     assert.equal(t.machine.current, "story");
@@ -490,6 +497,7 @@ describe("story", () => {
     const t = setup();
 
     await toTitle(t);
+    t.wait(TITLE_DEBOUNCE_MS);
     t.input.advance();
     t.frame();
     t.wait(STORY_PREAMBLE_MS - 2 * FRAME_MS);
@@ -507,6 +515,7 @@ describe("story", () => {
     const t = setup();
 
     await toTitle(t);
+    t.wait(TITLE_DEBOUNCE_MS);
     t.input.advance();
     t.frame();
     t.wait(STORY_PREAMBLE_MS);
@@ -529,6 +538,7 @@ describe("story", () => {
     const t = setup();
 
     await toTitle(t);
+    t.wait(TITLE_DEBOUNCE_MS);
     t.input.advance();
     t.frame();
     t.wait(STORY_PREAMBLE_MS);
@@ -553,6 +563,7 @@ describe("a full game", () => {
 
     for (let game = 1; game <= 3; game++) {
       assert.equal(t.game.session.games, game);
+      t.wait(TITLE_DEBOUNCE_MS);
       t.input.advance();
       t.frame();
       t.wait(STORY_PREAMBLE_MS);
@@ -615,6 +626,7 @@ describe("round", () => {
     const t = setup();
 
     await toTitle(t);
+    t.wait(TITLE_DEBOUNCE_MS);
     t.input.advance();
     t.frame();
     t.wait(STORY_PREAMBLE_MS);
@@ -676,6 +688,7 @@ describe("frame stepper", () => {
     const t = setup();
 
     await toTitle(t);
+    t.wait(TITLE_DEBOUNCE_MS);
     t.input.advance();
     t.frame();
     t.wait(STORY_PREAMBLE_MS);
@@ -730,11 +743,11 @@ describe("cues", () => {
   const expectedAmbient = (seed: number, count: number) => {
     const rng = createRng((seed ^ AMBIENT_SALT) >>> 0);
     const times: number[] = [];
-    let at = TITLE_AMBIENT.from + ambientDelay(rng, true);
+    let at = TITLE_AMBIENT.from + ambientDelay(rng, TITLE_AMBIENT.first);
 
     for (let i = 0; i < count; i++) {
       times.push(at);
-      at += ambientDelay(rng, false);
+      at += ambientDelay(rng, TITLE_AMBIENT.next);
     }
 
     return times;
@@ -746,8 +759,8 @@ describe("cues", () => {
     const nexts = new Set<number>();
 
     for (let i = 0; i < 500; i++) {
-      firsts.add(ambientDelay(rng, true));
-      nexts.add(ambientDelay(rng, false));
+      firsts.add(ambientDelay(rng, TITLE_AMBIENT.first));
+      nexts.add(ambientDelay(rng, TITLE_AMBIENT.next));
     }
 
     assert.deepEqual([...firsts].sort((a, b) => a - b), [5000, 6000, 7000]);
@@ -827,6 +840,7 @@ describe("cues", () => {
     await toTitle(t);
 
     for (let game = 1; game <= 2; game++) {
+      t.wait(TITLE_DEBOUNCE_MS);
       t.cues.length = 0;
       t.input.advance();
       t.frame();

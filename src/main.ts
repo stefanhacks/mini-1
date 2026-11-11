@@ -206,9 +206,20 @@ const muteButton = createMuteButton(layers.ui);
 muteButton.setMuted(audio.muted);
 onLayout((next) => muteButton.setLayout(next));
 muteButton.setLayout(layout);
+// Unlocks audio when it needs a gesture: any tap or key once Gate is left (at the gate the begin tap's unlock and its
+// touchend retry are Gate's). It reads `lifecycle` and `machine`, defined below: it only runs from DOM events, which
+// come after this module has run.
+const continueAudio = () => {
+  if (machine.current !== "gate") {
+    lifecycle.activate();
+  }
+};
+
 router.onMute(() => {
   audio.setMuted(!audio.muted);
   muteButton.setMuted(audio.muted);
+  // A mute tap or the M key is a gesture too: it may resume audio, without counting as an activation.
+  continueAudio();
 });
 
 // "Tap to continue": shown by the lifecycle when audio can't resume without a gesture.
@@ -326,7 +337,7 @@ const machine = new StateMachine<GameStateId>(clock, game.states);
 // Inside the DOM gesture (router-core.ts has the contract): Gate's begin tap unlocks audio and starts the music, and
 // any later tap unlocks audio again when it needs a gesture ("Tap to continue").
 router.onActivate(() => game.gate.activate());
-router.onActivate(lifecycle.activate);
+router.onActivate(continueAudio);
 const stepper = createFrameStepper(machine);
 
 // See frame-step.ts: the first frame back runs no game time, so a cancel queued while hidden is applied first. The
@@ -364,7 +375,7 @@ window.debug = {
   get cues() {
     return cueLog.map((entry) => ({ ...entry }));
   },
-  get continuePrompt() {
+  get continuePromptShown() {
     return lifecycle.prompting;
   },
   get gate() {
@@ -414,6 +425,8 @@ app.ticker.add((ticker) => {
     halted = true;
     window.debug.error = error;
     reportError(error);
+    // The music would loop on over a frozen frame.
+    void audio.suspend();
   }
 });
 

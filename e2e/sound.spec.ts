@@ -69,11 +69,11 @@ const tapPlayfield = async (page: Page) => {
 const expectedTitleCues = (count: number) => {
   const rng = createRng((seedFromString(String(SEED)) ^ AMBIENT_SALT) >>> 0);
   const cues = TITLE_CUES.map(({ name, at }) => ({ name, at }));
-  let at = TITLE_AMBIENT.from + ambientDelay(rng, true);
+  let at = TITLE_AMBIENT.from + ambientDelay(rng, TITLE_AMBIENT.first);
 
   while (cues.length < count) {
     cues.push({ name: "lightning", at });
-    at += ambientDelay(rng, false);
+    at += ambientDelay(rng, TITLE_AMBIENT.next);
   }
 
   return cues;
@@ -152,7 +152,8 @@ test("a game plays its cues at the plan's times, and each part's music on a bar"
   expect(audio.storyPart).toBe(3);
 });
 
-test("a hidden tab suspends audio, and showing it again resumes it", async ({ page }) => {
+test("a hidden tab suspends audio, and showing it again resumes it", async ({ page, isMobile }) => {
+  test.skip(isMobile, "desktop only: no device-specific path");
   await openGame(page);
   expect((await readAudio(page)).contextState).toBe("running");
 
@@ -182,13 +183,8 @@ test("a failed resume shows Tap to continue; its tap resumes audio without advan
   await expect.poll(async () => (await readAudio(page)).contextState, POLL).toBe("suspended");
   await setHidden(page, false);
   await expect.poll(() => promptOnScreen(page), POLL).toBe("Tap to continue");
-  expect(await page.evaluate(() => window.debug.continuePrompt)).toBe(true);
+  expect(await page.evaluate(() => window.debug.continuePromptShown)).toBe(true);
   expect((await readAudio(page)).status).toBe("needs-gesture");
-
-  // The mute button works under the prompt and doesn't dismiss it.
-  await page.keyboard.press("m");
-  await expect.poll(() => page.evaluate(() => window.debug.audio.muted), POLL).toBe(true);
-  expect(await promptOnScreen(page)).toBe("Tap to continue");
 
   const before = (await readResumeEvents(page)).length;
 
@@ -201,19 +197,29 @@ test("a failed resume shows Tap to continue; its tap resumes audio without advan
   await page.waitForTimeout(300);
   expect((await readGame(page)).state).toBe("title");
 
-  await page.keyboard.press("m");
-  await expect.poll(() => page.evaluate(() => window.debug.audio.muted), POLL).toBe(false);
-
-  // A page restored from the bfcache takes the same path.
+  // A page restored from the bfcache takes the same path. Under the prompt, the M key both mutes and, being a
+  // gesture, resumes audio; it never advances.
   await setHidden(page, true);
   await expect.poll(async () => (await readAudio(page)).contextState, POLL).toBe("suspended");
   await setHidden(page, false, false);
   await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
   await expect.poll(() => promptOnScreen(page), POLL).toBe("Tap to continue");
+  await page.keyboard.press("m");
+  await expect.poll(() => page.evaluate(() => window.debug.audio.muted), POLL).toBe(true);
+  await expect.poll(() => promptOnScreen(page), POLL).toBeNull();
+  expect((await readAudio(page)).status).toBe("running");
+
+  // A key continues too, without advancing; mute still toggles back.
+  await setHidden(page, true);
+  await expect.poll(async () => (await readAudio(page)).contextState, POLL).toBe("suspended");
+  await setHidden(page, false);
+  await expect.poll(() => promptOnScreen(page), POLL).toBe("Tap to continue");
   await page.keyboard.press("Space");
   await expect.poll(() => promptOnScreen(page), POLL).toBeNull();
   await page.waitForTimeout(300);
   expect((await readGame(page)).state).toBe("title");
+  await page.keyboard.press("m");
+  await expect.poll(() => page.evaluate(() => window.debug.audio.muted), POLL).toBe(false);
 
   // With audio running, the next tap advances as usual.
   await tapPlayfield(page);

@@ -59,11 +59,12 @@ export const createCuePlayer = (deps: Pick<GameDeps, "audio" | "onCue" | "clock"
 };
 
 /**
- * The delay from one ambient Title strike to the next (or from TITLE_AMBIENT.from to the first), in ms: the
- * original's timer counts from its start value (whole seconds) up to `interval`.
+ * The delay from one ambient Title strike to the next (`TITLE_AMBIENT.next`), or from TITLE_AMBIENT.from to the first
+ * (`TITLE_AMBIENT.first`), in ms: the original's timer counts from a start value drawn in `range` (whole seconds, max
+ * exclusive) up to `interval`.
  */
-export const ambientDelay = (rng: Rng, first: boolean): number => {
-  const [min, max] = first ? TITLE_AMBIENT.first : TITLE_AMBIENT.next;
+export const ambientDelay = (rng: Rng, range: readonly [number, number]): number => {
+  const [min, max] = range;
 
   return TITLE_AMBIENT.interval - (min + rng.nextInt(max - min)) * 1000;
 };

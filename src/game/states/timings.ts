@@ -33,8 +33,12 @@ export const ENDING_MS = {
 
 /**
  * - `lightning`: a strike (`DoTheThunder`): bolt and flash in M4, a thunderclap now.
- * - `title-reveal`: Title's big strike whose flash reveals the logo (M4), with a thunderclap.
+ * - `title-reveal`: Title's big strike, with a thunderclap. The cue marks the strike; the logo appears
+ *   TITLE_REVEAL_FLASH_MS later, at the flash's peak.
  * - `kraken`: the kraken appears (`FimKraken`), with its roar.
+ *
+ * A CueEvent carries no payload: M4's random bolt sprite, position and orientation (`DoTheThunder`'s draws) need an
+ * RNG of their own.
  */
 export type CueName = "lightning" | "title-reveal" | "kraken";
 
@@ -71,6 +75,16 @@ export const TITLE_AMBIENT = {
   /** `Random.Range(0, 4)` s: its value after each strike. */
   next: [0, 4],
 } as const;
+
+/** `Flash.anim`'s `DoingFlash` event: the flash peaks, and the logo appears, this long after `title-reveal`. */
+export const TITLE_REVEAL_FLASH_MS = 250;
+
+/**
+ * Title ignores taps this long after it appears, as Story's debounce, so the tap that ended the last game can't also
+ * start the next. A stopgap: M4 replaces it by showing and accepting Title's prompt only after its 7.25 s intro
+ * (owner decision 6).
+ */
+export const TITLE_DEBOUNCE_MS = 500;
 
 /** Story part 0's preamble strike (`firstTimePreamblePreambleDelay`). Other parts have none. */
 export const STORY_PREAMBLE_CUES: readonly Cue[] = [{ at: 1250, name: "lightning" }];

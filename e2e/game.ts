@@ -212,6 +212,21 @@ export const touchDriver = async (page: Page): Promise<TouchDriver> => {
   };
 };
 
+/**
+ * Advances from Title to story part 0. Title drops taps for its first 500 ms of game time (TITLE_DEBOUNCE_MS), so one
+ * that changes nothing is sent again.
+ */
+export const leaveTitle = async (page: Page, driver: Driver) => {
+  await expect.poll(async () => {
+    if ((await readGame(page)).state === "title") {
+      await driver.advance();
+      await page.waitForTimeout(15);
+    }
+
+    return (await readGame(page)).state;
+  }, POLL).not.toBe("title");
+};
+
 const pageKey = (game: GameSnapshot) => `${game.state}:${game.part}:${game.page?.line}:${game.page?.page}`;
 
 /**
@@ -288,7 +303,7 @@ export const playGame = async (page: Page, driver: Driver, onPage?: (game: GameS
 
   expect(start.state).toBe("title");
   expect(await isPadVisible(page)).toBe(false);
-  await driver.advance();
+  await leaveTitle(page, driver);
   await waitFor(page, (game) => game.state === "story");
 
   for (let part = 0; part < 4; part++) {

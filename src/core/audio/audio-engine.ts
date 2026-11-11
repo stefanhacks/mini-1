@@ -162,6 +162,8 @@ export interface AudioEngine {
   destroy(): void;
 }
 
+/** The music bus's gain: about −2 dB, so BGM01 and an overlay together stay under full scale. */
+const MUSIC_BUS_GAIN = 0.8;
 /** BGM01's fade-in (SoundManager.WakeUp: volume 0 to 1 at 1/s). */
 const BGM_FADE = 1;
 /** The mute ramp's time constant; ~99% there after 5 constants (75 ms). */
@@ -255,8 +257,9 @@ export const createAudioEngine = (
   const schedulingHorizon = 2 * bar;
 
   const master = ctx.createGain();
-  // The music bus sums BGM01 (1.0) and the overlay (0.9), as the original did, peaks included. If that ever clips
-  // audibly, lower this bus's gain rather than the tracks, so their balance stays the original's.
+  // The music bus sums BGM01 (1.0) and the overlay (0.9), as the original did. Their peaks reached 1.2 in part 2
+  // (BGM01 + overlayPhase04) and clipped, so the bus is lowered to MUSIC_BUS_GAIN (owner decision, wave-2 review):
+  // the bus, not the tracks, so their balance stays the original's.
   const musicBus = ctx.createGain();
   const worldBus = ctx.createGain();
   const uiBus = ctx.createGain();
@@ -267,6 +270,7 @@ export const createAudioEngine = (
   [musicBus, worldBus, uiBus].forEach((bus) => bus.connect(master));
   [bgmGain, overlayGain].forEach((gain) => gain.connect(musicBus));
   overlayGain.gain.value = 0;
+  musicBus.gain.value = MUSIC_BUS_GAIN;
 
   let muted = readStoredMute();
 

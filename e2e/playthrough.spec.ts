@@ -7,6 +7,7 @@ import {
   answerChallenge,
   FAST,
   keyboardDriver,
+  leaveTitle,
   openGame,
   playGame,
   readCounts,
@@ -66,7 +67,7 @@ const watchErrors = (page: Page) => {
 
 /** Plays round 0 until its current challenge is of `kind`, starting from Title. */
 const reachChallenge = async (page: Page, driver: Driver, kind: "sequence" | "hold") => {
-  await driver.advance();
+  await leaveTitle(page, driver);
   await readStory(page, driver);
   await waitFor(page, (game) => game.state === "round");
 
@@ -162,7 +163,7 @@ test("a resize mid-story never shows a page paged for the old layout", async ({ 
   const driver = await keyboardDriver(page);
 
   await openGame(page);
-  await driver.advance();
+  await leaveTitle(page, driver);
   // The first line is the longest of part 0: at a 200 px square it takes several pages of one line.
   await waitFor(page, (game) => game.page !== null);
 

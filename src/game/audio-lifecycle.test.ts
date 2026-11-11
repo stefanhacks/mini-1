@@ -134,7 +134,7 @@ describe("audio lifecycle", () => {
     t.lifecycle.activate();
     assert.deepEqual(t.lifecycle.filter([ADVANCE]), []);
     t.audio.setStatus("running");
-    assert.deepEqual(t.lifecycle.filter([]), []);
+    // That drain already dropped the tap's advance: the next tap counts.
     assert.deepEqual(t.lifecycle.filter([ADVANCE]), [ADVANCE]);
   });
 
@@ -181,30 +181,21 @@ describe("audio lifecycle", () => {
     assert.equal(t.view.visible, false);
   });
 
-  it("unlocks on a tap only while recovering and audio needs a gesture", async () => {
+  it("unlocks on any tap while audio needs a gesture, and only then", () => {
     const t = setup();
 
     t.lifecycle.activate();
     t.audio.status = "locked";
     t.lifecycle.activate();
-    // The begin tap whose unlock didn't take yet: Gate's and the touchend fallback's job, not the lifecycle's.
+    assert.deepEqual(t.audio.log, [], "running, or locked (the begin tap is Gate's): no unlock");
+
     t.audio.status = "needs-gesture";
     t.lifecycle.activate();
-    assert.deepEqual(t.audio.log, []);
-
-    t.audio.status = "running";
-    t.hide();
-    t.show();
-    // A tap before the resume attempt settled.
     t.lifecycle.activate();
-    assert.deepEqual(t.audio.log, ["suspend", "resume", "unlock"]);
-    t.audio.settleResume(true);
-    await settle();
-    t.lifecycle.activate();
-    assert.deepEqual(t.audio.log, ["suspend", "resume", "unlock"]);
+    assert.deepEqual(t.audio.log, ["unlock", "unlock"], "idempotent, so every tap may retry");
   });
 
-  it("never shows the prompt before audio first ran", async () => {
+  it("doesn't flash the prompt while the begin tap's unlock settles", () => {
     const audio = new FakeEngine();
     const view = { visible: false, setVisible: (visible: boolean) => {
       view.visible = visible;
@@ -214,15 +205,6 @@ describe("audio lifecycle", () => {
 
     const lifecycle = createAudioLifecycle(audio, view, () => true);
 
-    // A hidden tab at the gate.
-    lifecycle.hidden();
-    lifecycle.visible();
-    audio.resumes.at(-1)?.(false);
-    await settle();
-    assert.equal(view.visible, false);
-
-    // The begin tap: unlocked, and "needs-gesture" until its resume settles (or the touchend fallback retries it).
-    audio.status = "locked";
     audio.setStatus("needs-gesture");
     assert.equal(view.visible, false);
     audio.setStatus("running");
@@ -231,5 +213,45 @@ describe("audio lifecycle", () => {
     // From now on an interruption shows it.
     audio.setStatus("needs-gesture");
     assert.equal(view.visible, true);
+  });
+
+  it("recovers from a begin tap whose unlock never took", async () => {
+    const audio = new FakeEngine();
+    const view = { visible: false, setVisible: (visible: boolean) => {
+      view.visible = visible;
+    } };
+    const page = { visible: true };
+
+    audio.status = "locked";
+
+    const lifecycle = createAudioLifecycle(audio, view, () => page.visible);
+
+    // A hidden tab before the begin tap: still locked, nothing to show.
+    page.visible = false;
+    lifecycle.hidden();
+    audio.status = "locked";
+    page.visible = true;
+    lifecycle.visible();
+    audio.resumes.at(-1)?.(false);
+    await settle();
+    assert.equal(view.visible, false);
+
+    // The begin tap unlocked, but the context never ran: no prompt from the status change...
+    audio.setStatus("needs-gesture");
+    assert.equal(view.visible, false);
+    // ...but a later tap retries the unlock,
+    lifecycle.activate();
+    assert.equal(audio.log.at(-1), "unlock");
+
+    // and a failed resume on the way back from a hidden tab shows the prompt.
+    page.visible = false;
+    lifecycle.hidden();
+    page.visible = true;
+    lifecycle.visible();
+    audio.resumes.at(-1)?.(false);
+    await settle();
+    assert.equal(view.visible, true);
+    audio.setStatus("running");
+    assert.equal(view.visible, false);
   });
 });

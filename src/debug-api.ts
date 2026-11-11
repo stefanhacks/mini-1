@@ -40,7 +40,7 @@ export interface DebugApi {
   /** The last cues fired (at most 64), oldest first. */
   readonly cues: readonly CueLogEntry[];
   /** Whether "Tap to continue" is up. */
-  readonly continuePrompt: boolean;
+  readonly continuePromptShown: boolean;
   /** The start gate's phase and load progress (0..1). */
   readonly gate: { readonly phase: GatePhase; readonly progress: number };
   /** Subscribes to every new layout; returns the unsubscribe function. */

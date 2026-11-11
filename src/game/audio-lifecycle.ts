@@ -8,16 +8,21 @@
 // - The engine reports "needs-gesture" right after `suspend()`, while hidden. That is not shown: the prompt waits for
 //   the resume attempt. A status change to "needs-gesture" while visible and no attempt is running (iOS "interrupted"
 //   by a call or Siri) shows it at once.
-// - Nothing shows before audio has run once: the begin tap's unlock goes "locked" → "needs-gesture" while its resume
-//   settles (or until the touchend fallback retries it), and that is Gate's business, not a prompt's.
-// - An activation (router.onActivate, inside the DOM gesture) while the prompt is up, or while a resume attempt is
-//   still running, calls `unlock()` if the engine needs a gesture. The prompt hides when the status becomes "running".
+// - A status change shows nothing before audio has run once: the begin tap's unlock goes "locked" → "needs-gesture"
+//   while its resume settles, and that window must not flash the prompt. A failed resume on becoming visible shows it
+//   either way ("needs-gesture" means an unlock happened; before the begin tap the status is "locked").
+// - Any activation (router.onActivate, inside the DOM gesture) calls `unlock()` while the engine needs a gesture
+//   (unlock is idempotent). That also rescues a begin tap whose unlock never took. main.ts calls it only once Gate is
+//   left: at the gate, the begin tap's unlock and its touchend retry are Gate's. The prompt hides on "running".
 // - The prompt's tap only continues: it must not also advance the game (a Story page, Title, the Ending's replay).
 //   `filter` runs over every drain and drops the "advance" events while the prompt is up, and in the first drain after
 //   a tap made it go away, since the tap's advance is queued before its unlock resumes the context. Only "advance" is
 //   dropped: presses, releases and cancels pass, so a Round's held directions stay consistent, and the queued
 //   "cancel" of a hidden tab reaches the state on the frame stepper's guard frame (frame-step.ts) as before. No
-//   `beginEpoch()` here, which would drop that cancel.
+//   `beginEpoch()` here, which would drop that cancel. So a "continue" tap during a Round can still press a pad, on
+//   purpose: the full pause is M5.
+// - Known limit: a tap queued just before an interruption shows the prompt (both between two drains) has its advance
+//   dropped too.
 
 import type { AudioStatus } from "../core/audio/audio-rules.ts";
 import type { InputEvent } from "./input/pointer-map.ts";
@@ -111,7 +116,7 @@ export const createAudioLifecycle = (
 
         if (running) {
           hide();
-        } else if (ran && audio.status === "needs-gesture") {
+        } else if (audio.status === "needs-gesture") {
           show();
         }
       });
@@ -119,15 +124,19 @@ export const createAudioLifecycle = (
     activate: () => {
       tapped ||= prompting;
 
-      // Only for the lifecycle's own recovery: the begin tap's unlock is Gate's (it may leave "needs-gesture" for the
-      // touchend fallback to retry, router-core.ts).
-      if ((prompting || resuming) && audio.status === "needs-gesture") {
+      if (audio.status === "needs-gesture") {
         audio.unlock();
       }
     },
     filter: (events) => {
       if (!prompting && !dropNext) {
         return events;
+      }
+
+      // A drain while the prompt is up drops that tap's advance itself: the drain after the hide has nothing to drop
+      // unless the tap and the hide both fell between two drains.
+      if (prompting) {
+        tapped = false;
       }
 
       dropNext = false;
