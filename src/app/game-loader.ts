@@ -37,9 +37,19 @@ export interface GameLoaderDeps {
   /** The gate's view needs nothing loaded: it only refreshes its texts once the font is in. */
   readonly gateView: { refreshFont(): void };
   readonly audio: Pick<AudioEngine, "load">;
+  /** What loads the sprites and the font and builds the scene: Pixi's, unless a unit test passes fakes. */
+  readonly assets?: LoaderAssets;
 }
 
-export const createGameLoader = ({ layers, layouts, gateView, audio }: GameLoaderDeps) => {
+export interface LoaderAssets {
+  readonly loadSprites: (onProgress?: (fraction: number) => void) => Promise<Record<SpriteKey, Texture>>;
+  readonly loadFont: () => Promise<void>;
+  readonly createScene: typeof createScene;
+}
+
+const PIXI_ASSETS: LoaderAssets = { loadSprites, loadFont, createScene };
+
+export const createGameLoader = ({ layers, layouts, gateView, audio, assets = PIXI_ASSETS }: GameLoaderDeps) => {
   let textures: Record<SpriteKey, Texture> | null = null;
   let scene: Scene | null = null;
 
@@ -47,14 +57,14 @@ export const createGameLoader = ({ layers, layouts, gateView, audio }: GameLoade
     font: {
       weight: LOAD_WEIGHTS.font,
       load: async () => {
-        await loadFont();
+        await assets.loadFont();
         gateView.refreshFont();
       },
     },
     sprites: {
       weight: LOAD_WEIGHTS.sprites,
       load: async (onProgress) => {
-        textures = await loadSprites(onProgress);
+        textures = await assets.loadSprites(onProgress);
       },
     },
     audio: {
@@ -72,7 +82,7 @@ export const createGameLoader = ({ layers, layouts, gateView, audio }: GameLoade
     const before = countChildren(parents);
 
     try {
-      const built = createScene(layers, loaded, layouts.current);
+      const built = assets.createScene(layers, loaded, layouts.current);
 
       layouts.onLayout(built.relayout);
 
