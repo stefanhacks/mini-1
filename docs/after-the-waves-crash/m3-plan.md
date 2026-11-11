@@ -64,7 +64,7 @@ Milestone M3 from [04-implementation-difficulty.md](04-implementation-difficulty
 
 | When | Sound |
 |---|---|
-| Title: 2.0 s, 3.25 s, 5.25 s (title flash), then every 6–10 s while on Title | `thunderclap` (world) |
+| Title: 2.0 s, 3.25 s, 5.25 s (title flash; the logo appears 0.25 s later, at the flash peak), then ambient strikes: the first 5–7 s after the intro ends at 7.25 s, then every 7–10 s, in whole seconds (`GameManager.cs`: `Random.Range(3,6)`, then `Random.Range(0,4)`, interval 10) | `thunderclap` (world) |
 | Story part 0 preamble: 1.25 s | `thunderclap` |
 | Each story part starts | overlay change for that part (bar-aligned) |
 | Transition: 0.167 s | `thunderclap` |
