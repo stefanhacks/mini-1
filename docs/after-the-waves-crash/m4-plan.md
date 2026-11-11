@@ -174,3 +174,17 @@ M4 removes the M2/M3 stopgaps listed above.
 | 0c, review | **Goblin Scribe: Code Review** | The refactor is behaviour-neutral (same tests, same e2e counts, a spot-check of screenshots), reads well, and follows `CLAUDE.md` style. |
 
 Then waves 1–2 as planned.
+
+## Owner request: trim the tests (after wave 2)
+
+Once wave 2 lands and before M4 is merged, a dedicated step trims the test suite. It mainly targets the **browser (e2e) suite**, which grew to about 5.7 min across desktop, iphone-13 and pixel-7.
+
+- **Goal:** e2e well under about 3 min, by:
+  - merging overlapping specs;
+  - running device-independent checks on one project only;
+  - keeping only device-specific checks (touch, safe areas, the touchend unlock) on the phone projects;
+  - replacing fixed real-time waits with timescale or frame-stepping where the timing isn't the point.
+- **Unit tests:** also prune clearly redundant ones (duplicates, tautologies, implementation details). They are cheap, so they're secondary.
+- **Safety:** a reviewer checks that every contract listed in `m4-refactor.md` (Safety net) and the guards specs keeps at least one test. The trim reports before/after counts and times.
+- Agents: **Halfling Pruner: Test Trim** (build), **Gnome Warden: Coverage Review** (review).
+
