@@ -32,7 +32,14 @@ const recordResumes = (page: Page, failEvents: readonly string[] = []) => page.a
     get(this: BaseAudioContext) {
       const real = stateDescriptor?.get?.call(this) as AudioContextState;
 
-      return real === "running" && !unlocked.has(this) ? "suspended" : real;
+      // Once unlocked, read "running" at once, as a phone would. A context Chromium starts suspended (it happens
+      // under load) would otherwise read "suspended" until its resume settles, and the touchend retry would resume
+      // again.
+      if (unlocked.has(this)) {
+        return real === "closed" ? real : "running";
+      }
+
+      return real === "running" ? "suspended" : real;
     },
   });
   proto.resume = function resume(this: AudioContext) {

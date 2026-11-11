@@ -249,6 +249,10 @@ const screenshot = async (page: Page, testInfo: TestInfo, name: string) => {
   await testInfo.attach(name, { path, contentType: "image/png" });
 };
 
+// The real-time Title intro (logo at the 5.5 s flash peak) runs inside `settle`: these need more than 30 s
+// under load.
+test.describe.configure({ timeout: 60_000 });
+
 test("renders the playfield through the render texture in both orientations, with and without insets", async ({
   page,
 }, testInfo) => {
