@@ -68,8 +68,8 @@ export const createTitleCard = (layers: Layers, textures: Textures, fades: Fades
     setCredits,
     setPrompt: (text, fade) => {
       if (text === null) {
-        // The pulse stops for the fade-out (`Inicio` resets IdleOn), which starts from alpha 1 as the clip does. The
-        // text stays for the fade; a cut clears it.
+        // The pulse stops for the fade-out (`Inicio` resets IdleOn), which starts from alpha 1 as the clip does, or
+        // from where a cut-short fade-in got to. The text stays for the fade; a cut clears it, and ends the fade.
         fades.hide(tapPrompt, faded(fade, CLIPS.tmpFadeOut));
 
         if (fade === undefined) {

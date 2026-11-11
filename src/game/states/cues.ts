@@ -47,8 +47,8 @@ export const createCuePlayer = (
     at,
     /**
      * Fires `cues` (in time order) at their times, then calls `then`. One cue is pending at a time, each scheduled
-     * when the one before fires, so a state's pending timer count doesn't drift with its cues (the replay leak test
-     * reads it at any moment).
+     * when the one before fires, so a state's pending timer count doesn't drift with its cues: Title keeps one timer
+     * pending, plus its exit timer while leaving (the replay leak test reads the count at any moment).
      */
     schedule: (scope: TimerScope, cues: readonly Cue[], then?: () => void) => {
       const next = (index: number) => {

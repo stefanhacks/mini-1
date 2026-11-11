@@ -24,8 +24,8 @@ export type SessionPhase =
   | "won"
   | EndingPhase;
 
-/** The Ending's phases, in order (ending.ts). */
-export type EndingPhase = "boat" | "thrown" | "kraken" | "black" | "sea" | "card";
+/** The Ending's phases, in order (ending.ts). Its `prompt` is Title's: the phase that takes the tap. */
+export type EndingPhase = "boat" | "thrown" | "kraken" | "black" | "sea" | "card" | "prompt";
 
 export interface GameSession {
   /** The current game's seed. */

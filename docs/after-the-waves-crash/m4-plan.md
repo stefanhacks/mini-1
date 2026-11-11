@@ -198,6 +198,17 @@ Then waves 1–2 as planned.
   - the thrown boat ends at playfield (255, 199) until FimFinal.
 - **The original's 1 s load fade** (LoaderScreen) is dropped: the gate covers that moment.
 
+## Owner decisions after the wave-2 reviews
+
+5. **The ending's black fades wait for TelaPreta's exit time, as `black` (8.5 s) does.** Only the start of each black fade moves:
+   - part 3's black starts fading out **0.5 s** into the ending, not at once (the original: 0–1 s after the trigger);
+   - `FimFinal`'s fade-out of black starts at **10.25 s**, not 10 s: TelaPreta's FadeIn state, started at 8.5 s, reaches its exit time 0.75 at 9.25 s and 10.25 s, and then blends for 0.25 s;
+   - `FimFinal`'s cuts (the kraken, the broken boat, the backdrops) stay at 10 s, under full black.
+6. **"Tap to play again" fades in after the card, with Title's gap between the logo (5.5 s) and the prompt (7.25 s):** 1.75 s after the card's 2 s fade-in completes, so at **17.25 s** (card at 13.5 s, in at 15.5 s). It plays at speed 1 (TMPFadeIn, then TMPIdle), as on Title, and the replay tap counts only from its start.
+7. **A tap during Title's prompt fade-in:** the credits and the prompt fade out from the alpha they had reached, with no jump to 1. The exit still takes 1 s (`TITLE_EXIT_MS`).
+
+The numbers are in `src/game/states/timings.ts` (`ENDING_MS.lift`, `ENDING_MS.seaLift`, `ENDING_MS.prompt`, and the ANIMATOR DELAYS comment).
+
 ## Owner request: trim the tests (after wave 2)
 
 Once wave 2 lands and before M4 is merged, a dedicated step trims the test suite. It mainly targets the **browser (e2e) suite**, which grew to about 5.7 min across desktop, iphone-13 and pixel-7.

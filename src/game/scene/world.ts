@@ -54,30 +54,24 @@ const AMBIENT_LOOPS: readonly AmbientLoop[] = [
   { label: "boat", clip: CLIPS.barco, origin: TARGETS["Stage/Barco Inteiro/InteiroSprite"].parentOrigin },
 ];
 
-/** Appends WORLD_SPRITES to the world layer, in table order. Everything starts visible; the scene's `reset` hides. */
-export const createWorld = (layers: Layers, textures: Textures, clips: ClipPlayer, fades: Fades): WorldView => {
-  const sprites = {} as Record<WorldSpriteLabel, Sprite>;
+type WorldSprites = Readonly<Record<WorldSpriteLabel, Sprite>>;
 
-  for (const { label, key, at } of WORLD_SPRITES) {
-    sprites[label] = addArtSprite(layers.world, textures, key, at, label);
+/** Starts AMBIENT_LOOPS on `sprites`. */
+const playAmbientLoops = (clips: ClipPlayer, sprites: WorldSprites) => {
+  for (const { label, clip, origin } of AMBIENT_LOOPS) {
+    clips.play(clip, { node: sprites[label], origin });
   }
+};
 
+/**
+ * The boat's states: the whole boat bobbing, the broken one at its spot or thrown up (its end pose stays), or none.
+ * `placeHome` puts a sprite back at its WORLD_SPRITES place.
+ */
+const createBoat = (sprites: WorldSprites, fades: Fades, placeHome: (label: WorldSpriteLabel) => void) => {
   const broken = sprites["broken-boat"];
-  const body = sprites["kraken-body"];
-  const tail = sprites["kraken-tail"];
-  const bodyOrigin = TARGETS["Stage/Monster/Body"].parentOrigin;
-  let ambientStarted = false;
-  let boat: Boat | null = null;
-
-  const placeAt = (label: WorldSpriteLabel) => {
-    const { at } = WORLD_SPRITES.find((sprite) => sprite.label === label) ?? { at: sprites[label].position };
-
-    placeOnArtGrid(sprites[label], at.x, at.y);
-  };
-
   // The broken boat's clip animates its child QuebradoSprite: the sprite is that child, and the clip has no curve on
   // the parent itself.
-  const THROWN = {
+  const thrown = {
     clip: CLIPS.barcoQuebradoJogadoCima,
     speed: 1,
     target: {
@@ -87,18 +81,56 @@ export const createWorld = (layers: Layers, textures: Textures, clips: ClipPlaye
       },
     },
   };
+  let boat: Boat | null = null;
+
+  return (state: Boat) => {
+    if (state === boat) {
+      return;
+    }
+
+    const wasThrown = boat === "thrown";
+
+    boat = state;
+    sprites.boat.visible = state === "whole";
+
+    if (state === "whole" || state === "none") {
+      fades.hide(broken);
+    } else {
+      fades.show(broken);
+    }
+
+    if (state === "thrown") {
+      fades.play(broken, thrown);
+    } else if (wasThrown) {
+      fades.stop(broken);
+      placeHome("broken-boat");
+    }
+  };
+};
+
+/** Appends WORLD_SPRITES to the world layer, in table order. Everything starts visible; the scene's `reset` hides. */
+export const createWorld = (layers: Layers, textures: Textures, clips: ClipPlayer, fades: Fades): WorldView => {
+  const sprites = {} as Record<WorldSpriteLabel, Sprite>;
+  const homes = {} as Record<WorldSpriteLabel, Point>;
+
+  for (const { label, key, at } of WORLD_SPRITES) {
+    sprites[label] = addArtSprite(layers.world, textures, key, at, label);
+    homes[label] = at;
+  }
+
+  const body = sprites["kraken-body"];
+  const tail = sprites["kraken-tail"];
+  const bodyOrigin = TARGETS["Stage/Monster/Body"].parentOrigin;
+  let ambientStarted = false;
+
+  const placeHome = (label: WorldSpriteLabel) => placeOnArtGrid(sprites[label], homes[label].x, homes[label].y);
 
   return {
     sprites,
     startAmbient: () => {
-      if (ambientStarted) {
-        return;
-      }
-
-      ambientStarted = true;
-
-      for (const { label, clip, origin } of AMBIENT_LOOPS) {
-        clips.play(clip, { node: sprites[label], origin });
+      if (!ambientStarted) {
+        ambientStarted = true;
+        playAmbientLoops(clips, sprites);
       }
     },
     setBackdrop: (backdrop, visible, fade) => {
@@ -110,29 +142,7 @@ export const createWorld = (layers: Layers, textures: Textures, clips: ClipPlaye
         fades.hide(sprite, faded(fade, CLIPS.fadeOut));
       }
     },
-    setBoat: (state) => {
-      if (state === boat) {
-        return;
-      }
-
-      const wasThrown = boat === "thrown";
-
-      boat = state;
-      sprites.boat.visible = state === "whole";
-
-      if (state === "whole" || state === "none") {
-        fades.hide(broken);
-      } else {
-        fades.show(broken);
-      }
-
-      if (state === "thrown") {
-        fades.play(broken, THROWN);
-      } else if (wasThrown) {
-        fades.stop(broken);
-        placeAt("broken-boat");
-      }
-    },
+    setBoat: createBoat(sprites, fades, placeHome),
     setKraken: (visible, fade) => {
       if (visible) {
         fades.show(body, faded(fade, CLIPS.fadeKrakenA, { node: body, origin: bodyOrigin }));
@@ -143,8 +153,8 @@ export const createWorld = (layers: Layers, textures: Textures, clips: ClipPlaye
       }
     },
     resetPoses: () => {
-      placeAt("kraken-body");
-      placeAt("broken-boat");
+      placeHome("kraken-body");
+      placeHome("broken-boat");
     },
   };
 };

@@ -78,7 +78,8 @@ export const createTitle = (deps: GameDeps, session: GameSession): GameState => 
       const cues = createCuePlayer(deps, session, "title");
       const startAmbient = scheduleAmbient(scope, cues);
 
-      // One timer pending at a time, as the cues': the intro's strikes, then the prompt, then the ambient strikes.
+      // One timer pending, as the cues': the intro's strikes, then the prompt, then the ambient strikes; plus the exit
+      // timer while leaving.
       cues.schedule(scope, TITLE_CUES, () => cues.at(scope, TITLE_PROMPT_MS, () => {
         showPrompt(view);
         startAmbient();

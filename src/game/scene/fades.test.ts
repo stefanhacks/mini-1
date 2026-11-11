@@ -123,4 +123,54 @@ describe("createFades", () => {
     at(2000);
     assert.deepEqual([prompt.visible, prompt.alpha, player.active], [false, 0, 0]);
   });
+
+  it("lets a cut win over a running fade: a hide cut ends a fade-out, a show cut a fade-in", () => {
+    const { fades, player, at } = setup();
+    const prompt = node();
+
+    fades.show(prompt);
+    fades.hide(prompt, faded({ speed: 1 }, CLIPS.tmpFadeOut));
+    at(300);
+    fades.hide(prompt);
+    assert.deepEqual([prompt.visible, prompt.alpha, player.active], [false, 0, 0]);
+
+    const calls: string[] = [];
+
+    fades.show(prompt, faded({ speed: 1 }, CLIPS.tmpFadeIn), () => calls.push("faded"));
+    at(600);
+    fades.show(prompt, undefined, () => calls.push("cut"));
+    assert.deepEqual([prompt.visible, prompt.alpha, player.active], [true, 1, 0]);
+    at(2000);
+    assert.deepEqual([prompt.alpha, calls], [1, ["cut"]]);
+
+    // Once shown or hidden, a cut asks for nothing new.
+    fades.play(prompt, { clip: CLIPS.tmpIdle, speed: 1 });
+    fades.show(prompt);
+    assert.equal(player.active, 1, "the pulse goes on");
+  });
+
+  it("fades out from the alpha a cut-short fade-in reached, over the clip's full length", () => {
+    const { fades, at } = setup();
+    const credits = node();
+
+    fades.show(credits, faded({ speed: 1 }, CLIPS.tmpFadeIn));
+    at(500);
+
+    const reached = credits.alpha;
+
+    assert.ok(reached > 0.4 && reached < 0.6, `${reached}`);
+    fades.hide(credits, faded({ speed: 1 }, CLIPS.tmpFadeOut));
+    at(500);
+    assert.equal(credits.alpha, reached, "no jump to 1");
+    at(1000);
+    assert.ok(credits.alpha > 0 && credits.alpha < reached, `${credits.alpha}`);
+    at(1500);
+    assert.deepEqual([credits.visible, credits.alpha], [false, 0]);
+
+    // From a finished fade-in or a cut, it starts from 1, as the clip does.
+    fades.show(credits);
+    fades.hide(credits, faded({ speed: 1 }, CLIPS.tmpFadeOut));
+    at(1500);
+    assert.equal(credits.alpha, 1);
+  });
 });

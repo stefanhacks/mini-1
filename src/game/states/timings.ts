@@ -31,10 +31,16 @@ export const TRANSITION_MS = 500;
 export const AFTER_ROUND_MS = 1250;
 
 /**
- * The ending (`Fim.anim`, then GameManager's GameEnd), from the end of story part 3. Each phase starts its fade at its
- * time (see ANIMATOR DELAYS below for `black`).
+ * The ending (`Fim.anim`, then GameManager's GameEnd), from the end of story part 3: when each phase starts its fade,
+ * and when black fades out. The black's fades wait for TelaPreta's animator (see ANIMATOR DELAYS below).
  */
 export const ENDING_MS = {
+  /**
+   * Part 3's black fades out (`FadeOut` on `TelaPreta`, 1 s). It is triggered at 0, but TelaPreta only leaves its
+   * FadeIn state at exit time 0.75 with a 0.25 s blend, so the original began it 0–1 s late; 0.5 s is the typical
+   * case, the same delay as `black`'s (m4-plan, owner decision 5).
+   */
+  lift: 500,
   /** `FimBarco` (0.583 s): the broken boat is thrown up (`BarcoQuebradoJogadoCima`, 1.67 s; its end pose stays). */
   thrown: 583,
   /** `FimKraken`: the kraken's body and tail fade in (`FadeKrakenA`/`B`, 1 s, the body rising), with its roar. */
@@ -45,19 +51,24 @@ export const ENDING_MS = {
    * 1 s late at a random point. 8.5 s is its typical case, fully black before `FimFinal` (m4-plan, Notes for wave 2).
    */
   black: 8500,
-  /** `FimFinal`: the kraken, the broken boat and the backdrops go; black fades out (`FadeOut`, 1 s) to the sea. */
+  /** `FimFinal`: the kraken, the broken boat and the backdrops go, a cut under full black. */
   sea: 10000,
   /**
-   * `endGameDelay` (3.5 s in Main.unity) later: the logo and the credits fade in at ENDING_CARD_SPEED, and in this port
-   * "Tap to play again" with them.
+   * `FimFinal`'s `FadeOut` of black (1 s) to the empty sea. TelaPreta is in its FadeIn state from 8.5 s, whose exit
+   * time 0.75 comes at 9.25 s and 10.25 s: the trigger at 10 s waits for 10.25 s (m4-plan, owner decision 5).
    */
+  seaLift: 10250,
+  /** `endGameDelay` (3.5 s in Main.unity) after `FimFinal`: the logo and the credits fade in at ENDING_CARD_SPEED. */
   card: 13500,
+  /**
+   * "Tap to play again" (new in this port) fades in once the card is in (2 s at ENDING_CARD_SPEED), as long after it
+   * as Title's prompt comes after its logo (7.25 − 5.5 = 1.75 s), at speed 1 (m4-plan, owner decision 6). The ending
+   * takes the replay tap only from here.
+   */
+  prompt: 17250,
 } as const;
 
-/**
- * GameEnd sets the logo's and the credits' animators to speed 0.5, so the card's fades take 2 s. "Tap to play again"
- * (new in this port) fades in with them, at the same speed.
- */
+/** GameEnd sets the logo's and the credits' animators to speed 0.5, so the card's fades take 2 s. */
 export const ENDING_CARD_SPEED = 0.5;
 
 /** A fade at the clips' own speed. */
@@ -67,14 +78,19 @@ export const FADE: Fade = { speed: 1 };
 export const CARD_FADE: Fade = { speed: ENDING_CARD_SPEED };
 
 // ANIMATOR DELAYS. The original started most fades through Animator transitions, which the clip data doesn't carry.
-// TelaPreta, PillarsAnimator and GameManager's Inicio each leave an empty state with exit time 0.75 and a 0.25 s
-// blend, so those fades began up to about 1 s after their trigger, at an effectively random point. The port picks one
-// deterministic time for each (m4-plan, Notes for wave 2):
-// - the ending's fade to black: ENDING_MS.black, 8.5 s (the typical case, so black is full before FimFinal);
-// - the backdrop's FadeIn after a won round: on the win, no delay (it then runs 1 s of the AFTER_ROUND_MS wait);
-// - Title's exit (`Inicio`): on the accepted tap, no delay (TITLE_EXIT_MS);
-// - story part 3's black FadeIn, the ending's FadeOut of it and FimFinal's FadeOut: on their trigger, no delay (the
-//   same TelaPreta transitions; the port treats them as the backdrop's);
+// TelaPreta, PillarsAnimator and GameManager's Inicio each leave a looping state at exit time 0.75 with a 0.25 s blend,
+// so those fades began 0–1 s after their trigger, at an effectively random point. The port picks one deterministic
+// time for each (m4-plan, Notes for wave 2 and owner decision 5):
+// - the ending's fade to black (TelaPreta, from Idle): `FimFade` at 8.017 s, so 8.017–9.017 s; ENDING_MS.black,
+//   8.5 s, the typical case, so black is full before FimFinal;
+// - part 3's black fading out as the ending starts (TelaPreta, from FadeIn): 0–1 s; ENDING_MS.lift, 0.5 s, the same
+//   typical delay;
+// - FimFinal's fade-out of black (TelaPreta, from the FadeIn started at 8.5 s): exit time at 9.25 s and 10.25 s, so the
+//   trigger at 10 s waits; ENDING_MS.seaLift, 10.25 s. FimFinal's cuts stay at 10 s, under full black;
+// - the backdrop's FadeIn after a won round (PillarsAnimator): 0–1 s; fired on the win, with no exit-time delay (it
+//   then runs 1 s of the AFTER_ROUND_MS wait);
+// - Title's exit (`Inicio`): 0–1 s; fired on the accepted tap, with no exit-time delay (TITLE_EXIT_MS);
+// - story part 3's black FadeIn (TelaPreta, from Idle): 0–1 s; fired on the trigger, with no exit-time delay;
 // - the title texts (TMPAnimator) and the logo (LogoAnimator) leave their states with no exit time: no delay in the
 //   original either.
 
@@ -111,8 +127,8 @@ export const TITLE_CUES: readonly Cue[] = [
 
 /**
  * The end of Title's intro (`entranceWarmUp + 2 × entrancePreambleDelay + entranceDelay + entrancePressKeyDelay`):
- * the credits fade in (`FadeIn`) and the tap prompt too (`TMPFadeIn`, then the `TMPIdle` pulse). Title accepts the tap
- * only from here (`titleAnimationOver`), as the original took no key before it.
+ * the credits fade in (`TMPFadeIn`) and the tap prompt too (`TMPFadeIn`, then the `TMPIdle` pulse). Title accepts the
+ * tap only from here (`titleAnimationOver`), as the original took no key before it.
  */
 export const TITLE_PROMPT_MS = 7250;
 
@@ -120,6 +136,8 @@ export const TITLE_PROMPT_MS = 7250;
  * Title's exit (`Inicio.anim`, 1 s): its `Inicio` event at 0 s fades the logo, the credits and the prompt out
  * (`FadeOut`, `TMPFadeOut`, 1 s each), and its `FimInicio` event at 1 s starts the story. It starts on the tap (see
  * ANIMATOR DELAYS). Ambient lightning goes on meanwhile: the original's `CheckForThunder` runs until `FimInicio`.
+ * A tap while the credits and the prompt still fade in fades them out from the alpha they reached, over the same 1 s
+ * (m4-plan, owner decision 7).
  */
 export const TITLE_EXIT_MS = 1000;
 

@@ -326,7 +326,8 @@ export const playGame = async (page: Page, driver: Driver, onPage?: (game: GameS
 
   await waitFor(page, (game) => game.state === "ending");
   expect(await isPadVisible(page)).toBe(false);
-  await waitFor(page, (game) => game.phase === "card");
+  // The ending takes the replay tap once its prompt is up, after the card.
+  await waitFor(page, (game) => game.state === "ending" && game.phase === "prompt");
   await driver.advance();
   await waitFor(page, (game) => game.state === "title" && game.games === start.games + 1);
 };

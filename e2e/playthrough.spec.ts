@@ -371,16 +371,23 @@ test.describe("at the smallest square", () => {
 /** Sea front, mid and back, two cloud sprites and the whole boat (scene/world.ts), plus the prompt's pulse. */
 const TITLE_CLIPS = 7;
 
+/** Game ms on the clock. */
+const readNow = (page: Page) => page.evaluate(() => window.debug.clock.now);
+
 /**
- * Waits for Title's prompt, then for the clips playing to come down to TITLE_CLIPS, at real time: the six ambient loops
- * and the prompt's pulse, once the fade-ins are over and between ambient strikes (a strike plays two clips for 0.67 s
- * every 7–10 s). A leaked clip keeps the count above it for good.
+ * Waits for Title's prompt and its fade-ins (1 s of game time), then for the clips playing to come down to TITLE_CLIPS:
+ * the six ambient loops and the prompt's pulse, between ambient strikes (a strike plays two clips for 0.67 s every
+ * 7–10 s). At FAST time a read lands between strikes most of the time, and the poll retries; a leaked clip keeps the
+ * count above it for good.
  */
 const expectTitleClips = async (page: Page) => {
-  await waitFor(page, (game) => game.state === "title" && game.phase === "prompt");
-  await setTimescale(page, 1);
-  await expect.poll(() => page.evaluate(() => window.debug.anim.active), { timeout: 15_000 }).toBe(TITLE_CLIPS);
   await setTimescale(page, FAST);
+  await waitFor(page, (game) => game.state === "title" && game.phase === "prompt");
+
+  const fadedInAt = (await readNow(page)) + 1000;
+
+  await expect.poll(() => readNow(page)).toBeGreaterThanOrEqual(fadedInAt);
+  await expect.poll(() => page.evaluate(() => window.debug.anim.active)).toBe(TITLE_CLIPS);
 };
 
 test("replays twice without growing timers, listeners, display objects or clips", async ({ page }, testInfo) => {

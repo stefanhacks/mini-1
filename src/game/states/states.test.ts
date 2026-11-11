@@ -608,7 +608,9 @@ describe("title", () => {
     assert.deepEqual([t.scene.credits, t.scene.prompt], [true, TAP_TO_BEGIN]);
 
     // A key held down before the prompt doesn't count: the prompt began an input epoch.
-    assert.equal(t.machine.current, "title");
+    t.frame();
+    assert.equal(t.game.session.phase, "prompt");
+    assert.equal(t.scene.callsSince(enteredAt).length, 2);
   });
 
   it("fades everything out over Inicio's 1 s on the tap, dropping taps meanwhile, then starts story 0", async () => {
@@ -844,26 +846,35 @@ describe("a full game", () => {
 
       assert.equal(t.machine.current, "ending");
       assert.equal(t.scene.boat, "broken");
-      assert.equal(t.scene.black, false);
+      assert.equal(t.scene.black, true, "part 3's black lifts after a moment");
       assert.equal(t.pad.visible, false);
 
-      t.wait(ENDING_MS.kraken);
+      t.wait(ENDING_MS.lift);
+      assert.equal(t.scene.black, false);
+      t.wait(ENDING_MS.kraken - ENDING_MS.lift);
       assert.equal(t.scene.kraken, true);
       t.wait(ENDING_MS.black - ENDING_MS.kraken);
       assert.equal(t.scene.black, true);
       t.wait(ENDING_MS.sea - ENDING_MS.black);
       assert.deepEqual(
         [t.scene.black, t.scene.kraken, t.scene.boat, t.scene.backdrops.size],
-        [false, false, "none", 0],
+        [true, false, "none", 0],
+        "FimFinal's cuts happen under full black",
       );
+      t.wait(ENDING_MS.seaLift - ENDING_MS.sea);
+      assert.equal(t.scene.black, false);
 
-      // A tap before the card is dropped.
+      // Taps before the prompt are dropped, on the card too.
+      t.input.advance();
+      t.frame();
+      t.wait(ENDING_MS.card - ENDING_MS.seaLift);
+      assert.deepEqual([t.scene.title, t.scene.prompt], [true, null]);
       t.input.advance();
       t.frame();
       assert.equal(t.machine.current, "ending");
 
-      t.wait(ENDING_MS.card - ENDING_MS.sea);
-      assert.equal(t.scene.title, true);
+      t.wait(ENDING_MS.prompt - ENDING_MS.card);
+      assert.equal(t.game.session.phase, "prompt");
       assert.equal(t.scene.prompt, TAP_TO_PLAY_AGAIN);
 
       t.input.advance();
@@ -878,7 +889,7 @@ describe("a full game", () => {
 });
 
 describe("ending", () => {
-  it("plays Fim's phases in order on the clock, the black from 8.5 s, then the card at half speed", async () => {
+  it("plays Fim's phases on the clock: black from 8.5 s, the card at half speed, then the prompt", async () => {
     const t = setup();
 
     await toTitle(t);
@@ -904,7 +915,7 @@ describe("ending", () => {
     const enteredAt = t.clock.now;
     const phases: string[] = [];
 
-    while (t.clock.now - enteredAt <= ENDING_MS.card) {
+    while (t.clock.now - enteredAt <= ENDING_MS.prompt) {
       if (phases.at(-1) !== t.game.session.phase) {
         phases.push(t.game.session.phase);
       }
@@ -914,23 +925,21 @@ describe("ending", () => {
 
     phases.push(t.game.session.phase);
 
-    assert.deepEqual(phases, ["boat", "thrown", "kraken", "black", "sea", "card"]);
+    assert.deepEqual(phases, ["boat", "thrown", "kraken", "black", "sea", "card", "prompt"]);
     assert.deepEqual(t.scene.callsSince(enteredAt), [
-      "black false@0 ×1",
       "boat broken@0",
+      `black false@${ENDING_MS.lift} ×1`,
       `boat thrown@${ENDING_MS.thrown}`,
       `kraken true@${ENDING_MS.kraken} ×1`,
-      "black true@8500 ×1",
+      `black true@${ENDING_MS.black} ×1`,
       `kraken false@${ENDING_MS.sea}`,
       `boat none@${ENDING_MS.sea}`,
       `pillars false@${ENDING_MS.sea}`,
       `tentacles false@${ENDING_MS.sea}`,
-      `black false@${ENDING_MS.sea} ×1`,
+      `black false@${ENDING_MS.seaLift} ×1`,
       `title true@${ENDING_MS.card} ×${ENDING_CARD_SPEED}`,
-      `prompt ${TAP_TO_PLAY_AGAIN}@${ENDING_MS.card} ×${ENDING_CARD_SPEED}`,
+      `prompt ${TAP_TO_PLAY_AGAIN}@${ENDING_MS.prompt} ×1`,
     ]);
-    // Fully black (1 s FadeIn) before FimFinal.
-    assert.ok(ENDING_MS.black + 1000 <= ENDING_MS.sea);
   });
 });
 
@@ -1195,7 +1204,7 @@ describe("cues", () => {
     assert.equal(cuesOf(t, "title").length, fired);
   });
 
-  it("keeps one Title timer pending at any time, so the leak check can read it whenever", async () => {
+  it("keeps one Title timer pending, plus the exit timer while leaving, for the leak check", async () => {
     const t = setup();
 
     await toTitle(t);
@@ -1203,6 +1212,16 @@ describe("cues", () => {
     for (let i = 0; i < 40; i++) {
       assert.equal(t.clock.pendingTimers, 1);
       t.wait(1000);
+    }
+
+    // Leaving adds the exit timer, and the ambient strikes go on meanwhile.
+    t.input.advance();
+    t.frame();
+    assert.equal(t.game.session.phase, "leaving");
+
+    for (let elapsed = 0; elapsed < TITLE_EXIT_MS - FRAME_MS; elapsed += FRAME_MS) {
+      assert.equal(t.clock.pendingTimers, 2);
+      t.frame();
     }
   });
 
@@ -1243,7 +1262,7 @@ describe("cues", () => {
         }
       }
 
-      t.wait(ENDING_MS.card);
+      t.wait(ENDING_MS.prompt);
       assert.deepEqual(t.cues.map(({ name, state, at }) => ({ name, state, at })), [
         { name: "lightning", state: "story", at: 1250 },
         ...Array.from({ length: 3 }, () => ({ name: "lightning", state: "transition", at: 167 })),

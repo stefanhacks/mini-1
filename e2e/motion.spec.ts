@@ -239,13 +239,18 @@ const openToTitle = async (page: Page) => {
   return (await readGame(page)).now;
 };
 
-/** Plays the shown round to its win, a key per frame; `onHeld` runs a few frames into each Hold. */
-const playRound = async (page: Page, onPulse?: (kind: string) => Promise<void>) => {
+/**
+ * Plays the shown round to its win, a key per frame; `onPulse` steps a few frames into each Hold and Many. Returns
+ * every frame stepped, `onPulse`'s included, the win's last.
+ */
+const playRound = async (page: Page, onPulse?: (kind: string) => Promise<readonly Frame[]>) => {
+  const frames: Frame[] = [];
+
   for (let guard = 0; guard < 50; guard++) {
     const game = await readGame(page);
 
     if (game.phase !== "play" || game.challenge === null) {
-      return;
+      return frames;
     }
 
     const { spec, index, progress } = game.challenge;
@@ -253,24 +258,26 @@ const playRound = async (page: Page, onPulse?: (kind: string) => Promise<void>) 
     if (spec.kind === "sequence") {
       for (const dir of spec.directions) {
         await press(page, ARROW_KEYS[dir]);
-        await step(page, 1);
+        frames.push(...await step(page, 1));
       }
     } else if (spec.kind === "hold") {
       await page.keyboard.down(ARROW_KEYS[spec.direction]);
-      await onPulse?.("hold");
-      await run(page, { leaveChallenge: index });
+      frames.push(...await onPulse?.("hold") ?? []);
+      frames.push(...await run(page, { leaveChallenge: index }));
       await page.keyboard.up(ARROW_KEYS[spec.direction]);
     } else {
-      await onPulse?.("many");
+      frames.push(...await onPulse?.("many") ?? []);
 
       for (let count = 0; count < (progress.kind === "many" ? progress.target : 0); count++) {
         await press(page, ARROW_KEYS[spec.direction]);
-        await step(page, 1);
+        frames.push(...await step(page, 1));
       }
     }
 
-    await run(page, { leaveChallenge: index });
+    frames.push(...await run(page, { leaveChallenge: index }));
   }
+
+  throw new Error("the round never ended");
 };
 
 test("Title: the prompt fades in at 7.25 s, earlier taps are dropped, the tap fades Title out, then the story", async ({
@@ -442,9 +449,11 @@ test("Hold and Many arrows pulse, and the backdrop fades in over the wait after 
     if (kind === "hold") {
       await screenshot(page, testInfo, "round-hold-pulse");
     }
+
+    return pulses[kind];
   };
 
-  await playRound(page, onPulse);
+  const round = await playRound(page, onPulse);
 
   // Hold (ArrowHold, looping every 1.03 s): the overlay fades in as it shrinks from 1.5× to the arrow.
   const hold = (pulses.hold ?? []).map((frame) => node(frame, "pulse"));
@@ -455,8 +464,10 @@ test("Hold and Many arrows pulse, and the backdrop fades in over the wait after 
   expect(Math.min(...hold.map((sample) => sample.alpha))).toBeLessThan(0.1);
 
   // The won round: the pillars fade in from the win (FadeIn, 1 s), and the next part starts after AFTER_ROUND_MS.
-  const won = await run(page, { state: "story" });
-  const wonAt = won[0].now - FRAME_MS;
+  const after = await run(page, { state: "story" });
+  const won = [...round, ...after];
+  // The win shows the pillars and starts their fade on the same frame.
+  const wonAt = won.find((frame) => node(frame, "pillars").visible)?.now ?? NaN;
   const fade = between(won, wonAt, wonAt + 1000);
 
   expect(won.at(-1)?.now).toBeGreaterThanOrEqual(wonAt + AFTER_ROUND_MS);
@@ -466,7 +477,7 @@ test("Hold and Many arrows pulse, and the backdrop fades in over the wait after 
   expect(alphas(between(won, wonAt + 400, wonAt + 600), "pillars").some((alpha) => alpha > 0.3 && alpha < 0.7))
     .toBe(true);
   expect(node(won.at(-1) as Frame, "pillars")).toMatchObject({ visible: true, alpha: 1 });
-  expect(won.every((frame) => frame.nodes.pulse === null)).toBe(true);
+  expect(after.every((frame) => frame.nodes.pulse === null)).toBe(true);
 
   // Round 1 has a Many (ArrowMany, every 0.83 s): the overlay grows to 1.35× as it fades out.
   await page.evaluate(() => window.debug.machine.request("round"));
@@ -480,29 +491,36 @@ test("Hold and Many arrows pulse, and the backdrop fades in over the wait after 
   expect(Math.min(...many.map((sample) => sample.alpha))).toBeLessThan(0.1);
 });
 
-test("the ending throws the boat, fades the kraken in, goes black at 8.5 s, fades the card in at half speed", async ({
+test("the ending throws the boat, raises the kraken, goes black at 8.5 s, then shows the card and the prompt", async ({
   page,
 }, testInfo) => {
   await openToTitle(page);
-  // Straight to the ending from Title: this test is about Fim's timeline, playthrough.spec plays the way there.
-  await page.evaluate(() => window.debug.machine.request("ending"));
+  // Straight to the ending from Title, with part 3's black and a won round's pillars up as a game would leave them:
+  // this test is about Fim's timeline, playthrough.spec plays the way there.
+  await page.evaluate(() => {
+    const { machine, scene } = window.debug;
+
+    scene?.setBackdrop("pillars", true);
+    scene?.setBlack(true);
+    machine.request("ending");
+  });
 
   const startedAt = (await readGame(page)).now;
   const frames: Frame[] = [];
   const moments = [[1200, "ending-thrown"], [2000, "ending-kraken"], [9000, "ending-black"], [10500, "ending-sea"],
-    [14500, "ending-card"]] as const;
+    [14500, "ending-card"], [17750, "ending-prompt"]] as const;
 
   for (const [at, name] of moments) {
     frames.push(...await run(page, { now: startedAt + at, frameMs: ENDING_FRAME_MS }));
     await screenshot(page, testInfo, name);
   }
 
-  frames.push(...await run(page, { now: startedAt + ENDING_MS.card + 2100, frameMs: ENDING_FRAME_MS }));
+  frames.push(...await run(page, { now: startedAt + ENDING_MS.prompt + 1100, frameMs: ENDING_FRAME_MS }));
 
   const span = (from: number, to: number) => between(frames, startedAt + from, startedAt + to);
   const phases = frames.map((frame) => frame.phase).filter((phase, index, all) => phase !== all[index - 1]);
 
-  expect(phases).toEqual(["boat", "thrown", "kraken", "black", "sea", "card"]);
+  expect(phases).toEqual(["boat", "thrown", "kraken", "black", "sea", "card", "prompt"]);
 
   // The broken boat waits at its spot, is thrown up (1.67 s) and stays at the top until FimFinal.
   expect(span(0, ENDING_MS.thrown).every((frame) => node(frame, "broken-boat").y === 294)).toBe(true);
@@ -530,19 +548,29 @@ test("the ending throws the boat, fades the kraken in, goes black at 8.5 s, fade
     return body.alpha === 1 && body.x === 216 && body.y === 224;
   })).toBe(true);
 
-  // Black from 8.5 s, full by 9.5 s; FimFinal clears the scene and black fades out to the empty sea by 11 s.
-  expect(span(0, ENDING_MS.black).every((frame) => !node(frame, "black").visible)).toBe(true);
+  // Part 3's black stays full for 0.5 s, then fades out over 1 s.
+  const lifting = span(ENDING_MS.lift, ENDING_MS.lift + 1000);
+
+  expect(span(0, ENDING_MS.lift).every((frame) => node(frame, "black").visible && node(frame, "black").alpha === 1))
+    .toBe(true);
+  expect(nonIncreasing(alphas(lifting, "black"))).toBe(true);
+  expect(alphas(lifting, "black").some((alpha) => alpha > 0.3 && alpha < 0.7)).toBe(true);
+  expect(span(ENDING_MS.lift + 1000, ENDING_MS.black).every((frame) => !node(frame, "black").visible)).toBe(true);
+
+  // Black from 8.5 s, full by 9.5 s; FimFinal cuts the scene under it at 10 s, and black fades out to the empty sea
+  // from 10.25 s.
   expect(alphas(span(8900, 9100), "black").some((alpha) => alpha > 0.3 && alpha < 0.7)).toBe(true);
-  expect(span(9500, ENDING_MS.sea).every((frame) => node(frame, "black").alpha === 1)).toBe(true);
+  expect(span(9500, ENDING_MS.seaLift).every((frame) => node(frame, "black").alpha === 1)).toBe(true);
+  expect(span(0, ENDING_MS.sea).every((frame) => node(frame, "pillars").visible)).toBe(true);
   expect(span(ENDING_MS.sea, ENDING_MS.card).every((frame) => !node(frame, "kraken-body").visible
     && !node(frame, "broken-boat").visible && !node(frame, "pillars").visible)).toBe(true);
-  expect(nonIncreasing(alphas(span(ENDING_MS.sea, 11000), "black"))).toBe(true);
-  expect(span(11000, ENDING_MS.card).every((frame) => !node(frame, "black").visible)).toBe(true);
+  expect(nonIncreasing(alphas(span(ENDING_MS.seaLift, ENDING_MS.seaLift + 1000), "black"))).toBe(true);
+  expect(span(ENDING_MS.seaLift + 1000, Infinity).every((frame) => !node(frame, "black").visible)).toBe(true);
 
-  // The card: logo, credits and prompt fade in at half speed, 2 s instead of 1.
+  // The card: the logo and the credits fade in at half speed, 2 s instead of 1.
   const card = span(ENDING_MS.card, ENDING_MS.card + 2000);
 
-  for (const name of ["logo", "credits", "prompt"]) {
+  for (const name of ["logo", "credits"]) {
     expect(nonDecreasing(alphas(card, name)), name).toBe(true);
     expect(alphas(card, name)[0], name).toBeLessThan(0.05);
     const halfway = alphas(span(ENDING_MS.card + 900, ENDING_MS.card + 1100), name);
@@ -550,6 +578,14 @@ test("the ending throws the boat, fades the kraken in, goes black at 8.5 s, fade
     expect(halfway.some((alpha) => alpha > 0.3 && alpha < 0.7), name).toBe(true);
   }
 
+  // Then the prompt, at the clip's own speed (1 s).
+  const prompt = span(ENDING_MS.prompt, ENDING_MS.prompt + 1000);
+
+  expect(span(0, ENDING_MS.prompt).every((frame) => !node(frame, "prompt").visible)).toBe(true);
+  expect(nonDecreasing(alphas(prompt, "prompt"))).toBe(true);
+  expect(alphas(prompt, "prompt")[0]).toBeLessThan(0.05);
+  expect(alphas(span(ENDING_MS.prompt + 400, ENDING_MS.prompt + 600), "prompt")
+    .some((alpha) => alpha > 0.3 && alpha < 0.7)).toBe(true);
   expect(node(frames.at(-1) as Frame, "logo").alpha).toBe(1);
 
   // The replay tap: Title's opening frame, with only the ambient loops playing.
