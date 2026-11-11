@@ -120,3 +120,12 @@ This consolidates the two read-only reviews, **Centaur Sage: Scene Readability**
 1. **The safety net goes first,** before any refactor. The snapshots and the new tests also serve as a before/after record for later comparison.
 2. **First error wins for `debug.error`, everywhere.** Today the game-logic guard overwrites an earlier render or audio error, contradicting the `DebugApi` doc. The safety-net step makes all three guards keep the first error (debug readout only) and tests it, so the refactor starts from the corrected behaviour.
 
+## Result (wave 0 done)
+
+- **`main.ts`:** 459 → 77 lines (13 modules in `src/app/`). **`scene.ts`:** 641 → 96 lines (13 modules in `src/game/scene/`). The states are split into named steps.
+- **Snapshot:** identical to the baseline after the refactor and after the review fixes (11 moments × 2 configs).
+- **Tests:** 595 unit tests; e2e 71 passed, 22 skipped.
+- **The one intentional change:** the scene rollback no longer masks a build error. Pixi's `removeChildren` threw a RangeError on an unchanged layer; fixed with a regression test.
+- **Known flake:** `gate.spec.ts` "shows progress and the warning, then Tap to begin…" failed once on iphone-13 in one of two full runs, and passed in 4 isolated runs. It's intermittent under load. Handed to the M4 wave-1 runtime review.
+- **Snapshots for later comparison** (session scratchpad): `baseline.json` (before), `after-refactor.json`, `after-0c.json`.
+
