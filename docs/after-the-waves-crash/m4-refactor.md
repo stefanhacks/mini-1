@@ -126,6 +126,6 @@ This consolidates the two read-only reviews, **Centaur Sage: Scene Readability**
 - **Snapshot:** identical to the baseline after the refactor and after the review fixes (11 moments × 2 configs).
 - **Tests:** 595 unit tests; e2e 71 passed, 22 skipped.
 - **The one intentional change:** the scene rollback no longer masks a build error. Pixi's `removeChildren` threw a RangeError on an unchanged layer; fixed with a regression test.
-- **Known flake:** `gate.spec.ts` "shows progress and the warning, then Tap to begin…" failed once on iphone-13 in one of two full runs, and passed in 4 isolated runs. It's intermittent under load. Handed to the M4 wave-1 runtime review.
+- **Known flake, resolved in wave 1:** `gate.spec.ts` "shows progress and the warning, then Tap to begin…" failed under load (3 in 30 runs). The cause was a test bug, not the app: under load Chromium sometimes starts a context suspended, and the test's locked-context emulation kept reading "suspended" until the first resume settled, so the touchend retry (correctly) resumed again. Fixed in the recorder; 30 of 30 passed under the same load.
 - **Snapshots for later comparison** (session scratchpad): `baseline.json` (before), `after-refactor.json`, `after-0c.json`.
 

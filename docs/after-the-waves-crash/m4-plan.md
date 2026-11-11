@@ -210,4 +210,6 @@ Once wave 2 lands and before M4 is merged, a dedicated step trims the test suite
 - **Unit tests:** also prune clearly redundant ones (duplicates, tautologies, implementation details). They are cheap, so they're secondary.
 - **Safety:** a reviewer checks that every contract listed in `m4-refactor.md` (Safety net) and the guards specs keeps at least one test. The trim reports before/after counts and times.
 - Agents: **Halfling Pruner: Test Trim** (build), **Gnome Warden: Coverage Review** (review).
+- **Input for the trim:** the full suite is now about 6–7 min. `display.spec` runs the real-time 5.5 s Title intro inside `settle`, so its timeout had to go to 60 s. Stepping the clock (or the snapshot harness's frame-locking) instead would cut most of that.
+- **For M5:** Pixi's text cache (`canvasText._activeTextures`) leaves one null key per distinct typed prefix: up to about 840 per game, never pruned. Small, but it grows over long sessions. Consider pruning the null entries on Title.
 
