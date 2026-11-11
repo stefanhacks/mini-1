@@ -139,4 +139,6 @@ Milestone M3 from [04-implementation-difficulty.md](04-implementation-difficulty
 
 5. **bgm02 is never cut:** on replay, the next part's overlay starts on the first bar at or after bgm02's natural end, as the original let a non-looping clip finish.
 6. **"Tap to begin" on both the gate and Title,** for now. In M4, Title only shows and accepts its prompt after its intro (about 7.25 s, as the original), so the two prompts never feel doubled.
+7. **Music bus at 0.8** (about −2 dB): BGM01 plus an overlay reached 1.2× full scale and clipped. The original summed the same levels.
+8. **Title ignores taps for its first 0.5 s**, so a double tap on the gate can't skip it. A stopgap that M4 replaces by gating Title's prompt behind its 7.25 s intro.
 
