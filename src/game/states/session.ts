@@ -1,8 +1,24 @@
 // The state of one game, shared by the states, and a plain-data snapshot of it for `window.debug`. Pure TypeScript.
+import { generateRounds, type RoundSpec } from "../challenges/generate.ts";
+import { createRng } from "../challenges/rng.ts";
 import type { Round } from "../challenges/round.ts";
 import type { ChallengeProgress, ChallengeSpec } from "../challenges/rule.ts";
-import type { RoundSpec } from "../challenges/generate.ts";
+import type { Tuning } from "../challenges/tuning.ts";
 import type { StoryCursor } from "../story/cursor.ts";
+
+/** The current state's phase ("" before the first game): what e2e and the unit tests wait on. */
+export type SessionPhase =
+  | ""
+  | "title"
+  | "preamble"
+  | "page"
+  | "transition"
+  | "play"
+  | "won"
+  | EndingPhase;
+
+/** The Ending's phases, in order (ending.ts). */
+export type EndingPhase = "boat" | "thrown" | "kraken" | "black" | "sea" | "card";
 
 export interface GameSession {
   /** The current game's seed. */
@@ -13,8 +29,8 @@ export interface GameSession {
   rounds: readonly RoundSpec[];
   /** The story part being read, or the round being played after it: 0–3 (rounds 0–2). */
   part: number;
-  /** The current state's phase, for tests: "preamble", "page", "play", "won", or an ending phase. */
-  phase: string;
+  /** The current state's phase, for tests. */
+  phase: SessionPhase;
   /** The running round, while in Round. */
   round: Round | null;
   /** The story cursor, while in Story. */
@@ -31,11 +47,24 @@ export const createSession = (): GameSession => ({
   cursor: null,
 });
 
+/**
+ * Starts a new game on `session` (Title, on every enter): its seed, the game count, and every round generated from the
+ * seed, from story part 0 with no round or story running. The phase is the caller's.
+ */
+export const startNewGame = (session: GameSession, seed: number, tuning: Tuning) => {
+  session.seed = seed;
+  session.games += 1;
+  session.rounds = generateRounds(createRng(seed), tuning);
+  session.part = 0;
+  session.round = null;
+  session.cursor = null;
+};
+
 export interface SessionSnapshot {
   readonly seed: number;
   readonly games: number;
   readonly part: number;
-  readonly phase: string;
+  readonly phase: SessionPhase;
   /** The current challenge's index in the round, its spec and progress, while a round runs. */
   readonly challenge: {
     readonly index: number;

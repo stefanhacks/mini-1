@@ -52,7 +52,7 @@ export interface DebugApi {
   /** Changes the time scale. Does nothing without `?debug`. */
   readonly setTimescale: (value: number) => void;
   /** Set once the scene is built. */
-  scene?: Scene;
+  readonly scene?: Scene;
   /** The first error that halted the game logic, the render passes or the audio tick. Later ones don't replace it. */
-  error?: unknown;
+  readonly error?: unknown;
 }

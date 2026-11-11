@@ -10,6 +10,7 @@ import {
   MIN_ZONE_SHARE,
   PLAYFIELD_SIZE,
   type Rect,
+  snapToDevicePixels,
   type ScreenInfo,
   playfieldToScreen,
   rectToScreen,
@@ -321,5 +322,28 @@ describe("rectToScreen", () => {
     assert.ok(Math.abs(rect.y - (layout.square.y + RECT.y * layout.scale)) < EPSILON);
     assert.ok(Math.abs(rect.width - RECT.width * layout.scale) < EPSILON);
     assert.ok(Math.abs(rect.height - RECT.height * layout.scale) < EPSILON);
+  });
+});
+
+describe("snapToDevicePixels", () => {
+  it("rounds to the nearest whole device pixel", () => {
+    assert.equal(snapToDevicePixels(10.3, 1), 10);
+    assert.equal(snapToDevicePixels(10.3, 2), 10.5);
+    assert.equal(snapToDevicePixels(10.2, 3), 31 / 3);
+    assert.equal(snapToDevicePixels(-0.4, 1), -0);
+  });
+
+  it("matches Math.round(value * dpr) / dpr for a layout's dpr", () => {
+    const layout = computeLayout({ width: 390, height: 844, insets: ZERO_INSETS, dpr: 3 });
+    const value = layout.square.x + 123.456 * layout.scale;
+
+    assert.equal(snapToDevicePixels(value, layout.dpr), Math.round(value * layout.dpr) / layout.dpr);
+  });
+
+  it("treats a dpr that isn't finite and positive as 1", () => {
+    assert.equal(snapToDevicePixels(10.6, 0), 11);
+    assert.equal(snapToDevicePixels(10.6, -2), 11);
+    assert.equal(snapToDevicePixels(10.6, Number.NaN), 11);
+    assert.equal(snapToDevicePixels(10.6, Number.POSITIVE_INFINITY), 11);
   });
 });

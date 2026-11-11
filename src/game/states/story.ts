@@ -1,9 +1,12 @@
-import { createStoryCursor } from "../story/cursor.ts";
+import type { TimerScope } from "../../core/clock.ts";
+import type { StateMachine } from "../../core/state-machine.ts";
+import { createStoryCursor, type StoryCursor } from "../story/cursor.ts";
 import { STORY_PARTS } from "../story/script.ts";
+import { drainAdvanced, hidePad } from "./common.ts";
 import { createCuePlayer } from "./cues.ts";
 import type { GameSession } from "./session.ts";
 import { STORY_DEBOUNCE_MS, STORY_PREAMBLE_CUES, STORY_PREAMBLE_MS } from "./timings.ts";
-import type { GameDeps, GameState, Paging } from "./types.ts";
+import type { GameDeps, GameState, GameStateId, Paging, SceneView } from "./types.ts";
 
 /** The last story part: the ending follows it instead of a round. */
 export const LAST_PART = STORY_PARTS.length - 1;
@@ -21,63 +24,76 @@ export const LAST_PART = STORY_PARTS.length - 1;
  * - On a layout change the cursor pages the rest of the line again (story/cursor.ts), and the page is redrawn.
  */
 export const createStory = (deps: GameDeps, session: GameSession): GameState => {
-  const { clock, input } = deps;
+  const { audio, clock, input, pad, scene } = deps;
   let shownAt = 0;
   let paging: Paging | null = null;
 
   const showPage = () => {
-    deps.scene().setStoryPage(session.cursor?.page ?? null);
+    scene().setStoryPage(session.cursor?.page ?? null);
     shownAt = clock.now;
     input.beginEpoch();
   };
 
   const startText = () => {
-    const scene = deps.scene();
+    const view = scene();
 
-    paging = scene.paging;
+    paging = view.paging;
     session.cursor = createStoryCursor(STORY_PARTS[session.part] ?? [], paging.linesPerPage, paging.measure);
     session.phase = "page";
 
     if (session.part === LAST_PART) {
-      scene.setBlack(true);
+      view.setBlack(true);
     }
 
     showPage();
   };
 
+  /** Part 0's preamble: the text box waits STORY_PREAMBLE_MS, with its strike. */
+  const startPreamble = (scope: TimerScope) => {
+    session.phase = "preamble";
+    createCuePlayer(deps, "story").schedule(scope, STORY_PREAMBLE_CUES);
+    scope.after(STORY_PREAMBLE_MS, startText);
+  };
+
+  /** A new paging object means the layout changed: the rest of the line is paged again and the page redrawn. */
+  const repageIfLayoutChanged = (view: SceneView, cursor: StoryCursor) => {
+    if (view.paging !== paging) {
+      paging = view.paging;
+      cursor.relayout(paging.linesPerPage, paging.measure);
+      view.setStoryPage(cursor.page);
+    }
+  };
+
+  /** After the last page: Transition, or the Ending after the last part. */
+  const finishPart = (view: SceneView, machine: StateMachine<GameStateId>) => {
+    view.setStoryPage(null);
+    machine.request(session.part === LAST_PART ? "ending" : "transition");
+  };
+
   return {
     enter: (scope) => {
       input.beginEpoch();
-      deps.pad.setVisible(false);
-      deps.pad.setHint(null);
+      hidePad(pad);
       session.cursor = null;
-      deps.audio.setStoryPart(session.part);
+      audio.setStoryPart(session.part);
 
       if (session.part === 0) {
-        session.phase = "preamble";
-        createCuePlayer(deps, "story").schedule(scope, STORY_PREAMBLE_CUES);
-        scope.after(STORY_PREAMBLE_MS, startText);
+        startPreamble(scope);
       } else {
         startText();
       }
     },
     update: (_deltaMS, machine) => {
-      const events = input.drain();
+      const advanced = drainAdvanced(input);
       const cursor = session.cursor;
 
       if (cursor === null) {
         return;
       }
 
-      const scene = deps.scene();
+      const view = scene();
 
-      if (scene.paging !== paging) {
-        paging = scene.paging;
-        cursor.relayout(paging.linesPerPage, paging.measure);
-        scene.setStoryPage(cursor.page);
-      }
-
-      const advanced = events.some((event) => event.kind === "advance");
+      repageIfLayoutChanged(view, cursor);
 
       if (!advanced || clock.now - shownAt < STORY_DEBOUNCE_MS) {
         return;
@@ -85,16 +101,14 @@ export const createStory = (deps: GameDeps, session: GameSession): GameState => 
 
       cursor.advance();
 
-      if (!cursor.done) {
+      if (cursor.done) {
+        finishPart(view, machine);
+      } else {
         showPage();
-        return;
       }
-
-      scene.setStoryPage(null);
-      machine.request(session.part === LAST_PART ? "ending" : "transition");
     },
     exit: () => {
-      deps.scene().setStoryPage(null);
+      scene().setStoryPage(null);
       session.cursor = null;
     },
   };

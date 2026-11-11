@@ -109,13 +109,12 @@ export const attachKeyboard = (map: PointerMap, { target = window, onMuteKey }: 
 
   const onBlur = () => map.cancelAll();
 
-  target.addEventListener("keydown", onKeyDown);
-  target.addEventListener("keyup", onKeyUp);
-  target.addEventListener("blur", onBlur);
+  const listeners = new AbortController();
+  const { signal } = listeners;
 
-  return () => {
-    target.removeEventListener("keydown", onKeyDown);
-    target.removeEventListener("keyup", onKeyUp);
-    target.removeEventListener("blur", onBlur);
-  };
+  target.addEventListener("keydown", onKeyDown, { signal });
+  target.addEventListener("keyup", onKeyUp, { signal });
+  target.addEventListener("blur", onBlur, { signal });
+
+  return () => listeners.abort();
 };

@@ -1,7 +1,8 @@
-import { generateRounds } from "../challenges/generate.ts";
+import type { TimerScope } from "../../core/clock.ts";
 import { createRng } from "../challenges/rng.ts";
-import { ambientDelay, createCuePlayer } from "./cues.ts";
-import type { GameSession } from "./session.ts";
+import { drainAdvanced, hidePad } from "./common.ts";
+import { ambientDelay, createCuePlayer, type CuePlayer } from "./cues.ts";
+import { startNewGame, type GameSession } from "./session.ts";
 import { TITLE_AMBIENT, TITLE_CUES, TITLE_DEBOUNCE_MS } from "./timings.ts";
 import type { GameDeps, GameState } from "./types.ts";
 
@@ -21,52 +22,54 @@ export const AMBIENT_SALT = 0x7a11e7;
  * out (owner decision 5); Story 0 asks for part 0's overlay again.
  */
 export const createTitle = (deps: GameDeps, session: GameSession): GameState => {
+  const { clock, input, pad, scene, nextSeed, tuning } = deps;
   let enteredAt = 0;
+
+  /**
+   * Ambient lightning after the intro's strikes, from its own RNG stream. Draws the first delay now (at the enter, as
+   * before the split: the draw order is part of a seed's replay) and returns what starts the strikes.
+   */
+  const scheduleAmbient = (scope: TimerScope, cues: CuePlayer) => {
+    const rng = createRng((session.seed ^ AMBIENT_SALT) >>> 0);
+    // Times from the enter, as the cues'.
+    let nextAt = TITLE_AMBIENT.from + ambientDelay(rng, TITLE_AMBIENT.first);
+    const strike = () => {
+      cues.fire("lightning");
+      nextAt += ambientDelay(rng, TITLE_AMBIENT.next);
+      cues.at(scope, nextAt, strike);
+    };
+
+    return () => cues.at(scope, nextAt, strike);
+  };
 
   return {
     enter: (scope) => {
-      const { input, pad, scene, nextSeed, tuning } = deps;
-
       input.beginEpoch();
-      enteredAt = deps.clock.now;
-      session.seed = nextSeed();
-      session.games += 1;
-      session.rounds = generateRounds(createRng(session.seed), tuning);
-      session.part = 0;
+      enteredAt = clock.now;
+      startNewGame(session, nextSeed(), tuning);
       session.phase = "title";
-      session.round = null;
-      session.cursor = null;
 
       const view = scene();
 
-      pad.setVisible(false);
-      pad.setHint(null);
+      hidePad(pad);
       view.reset();
       view.setTitle(true);
       view.setPrompt(TAP_TO_BEGIN);
 
       const cues = createCuePlayer(deps, "title");
-      const rng = createRng((session.seed ^ AMBIENT_SALT) >>> 0);
-      // Times from the enter, as the cues'.
-      let nextAt = TITLE_AMBIENT.from + ambientDelay(rng, TITLE_AMBIENT.first);
-      const strike = () => {
-        cues.fire("lightning");
-        nextAt += ambientDelay(rng, TITLE_AMBIENT.next);
-        cues.at(scope, nextAt, strike);
-      };
 
-      cues.schedule(scope, TITLE_CUES, () => cues.at(scope, nextAt, strike));
+      cues.schedule(scope, TITLE_CUES, scheduleAmbient(scope, cues));
     },
     update: (_deltaMS, machine) => {
-      const advanced = deps.input.drain().some((event) => event.kind === "advance");
-
-      if (advanced && deps.clock.now - enteredAt >= TITLE_DEBOUNCE_MS) {
+      if (drainAdvanced(input) && clock.now - enteredAt >= TITLE_DEBOUNCE_MS) {
         machine.request("story");
       }
     },
     exit: () => {
-      deps.scene().setTitle(false);
-      deps.scene().setPrompt(null);
+      const view = scene();
+
+      view.setTitle(false);
+      view.setPrompt(null);
     },
   };
 };

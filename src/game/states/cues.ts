@@ -58,6 +58,8 @@ export const createCuePlayer = (deps: Pick<GameDeps, "audio" | "onCue" | "clock"
   };
 };
 
+export type CuePlayer = ReturnType<typeof createCuePlayer>;
+
 /**
  * The delay from one ambient Title strike to the next (`TITLE_AMBIENT.next`), or from TITLE_AMBIENT.from to the first
  * (`TITLE_AMBIENT.first`), in ms: the original's timer counts from a start value drawn in `range` (whole seconds, max

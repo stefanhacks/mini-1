@@ -1,7 +1,9 @@
+import type { TimerScope } from "../../core/clock.ts";
+import { drainAdvanced, hidePad } from "./common.ts";
 import { createCuePlayer } from "./cues.ts";
-import type { GameSession } from "./session.ts";
+import type { EndingPhase, GameSession } from "./session.ts";
 import { ENDING_CUES, ENDING_MS } from "./timings.ts";
-import type { GameDeps, GameState } from "./types.ts";
+import type { GameDeps, GameState, SceneView } from "./types.ts";
 
 export const TAP_TO_PLAY_AGAIN = "Tap to play again";
 
@@ -12,48 +14,56 @@ export const TAP_TO_PLAY_AGAIN = "Tap to play again";
  * credits and, new in this port, "Tap to play again" (owner decision 2). Each phase begins an input epoch, and only a
  * tap after the last one counts: it goes to Title, which starts a new game.
  */
-export const createEnding = (deps: GameDeps, session: GameSession): GameState => ({
-  enter: (scope) => {
-    const { input, pad } = deps;
-    const scene = deps.scene();
-    const phase = (name: string, ms: number, cut: () => void) => {
-      scope.after(ms, () => {
-        session.phase = name;
-        input.beginEpoch();
-        cut();
+export const createEnding = (deps: GameDeps, session: GameSession): GameState => {
+  const { input, pad, scene } = deps;
+
+  /** At `ms` from the enter: the phase changes, begins an input epoch, and `cut` shows it. */
+  const enterPhaseAt = (scope: TimerScope, name: EndingPhase, ms: number, cut: () => void) => {
+    scope.after(ms, () => {
+      session.phase = name;
+      input.beginEpoch();
+      cut();
+    });
+  };
+
+  /** Back to the empty sea under the storm, for the card. */
+  const clearToSea = (view: SceneView) => {
+    view.setKraken(false);
+    view.setBoat("none");
+    view.setBackdrop("pillars", false);
+    view.setBackdrop("tentacles", false);
+    view.setBlack(false);
+  };
+
+  return {
+    enter: (scope) => {
+      input.beginEpoch();
+
+      const view = scene();
+
+      hidePad(pad);
+      session.phase = "boat";
+      view.setStoryPage(null);
+      view.setBlack(false);
+      view.setBoat("broken");
+
+      createCuePlayer(deps, "ending").schedule(scope, ENDING_CUES);
+      enterPhaseAt(scope, "thrown", ENDING_MS.thrown, () => undefined);
+      enterPhaseAt(scope, "kraken", ENDING_MS.kraken, () => view.setKraken(true));
+      enterPhaseAt(scope, "black", ENDING_MS.black, () => view.setBlack(true));
+      enterPhaseAt(scope, "sea", ENDING_MS.sea, () => clearToSea(view));
+      enterPhaseAt(scope, "card", ENDING_MS.card, () => {
+        view.setTitle(true);
+        view.setPrompt(TAP_TO_PLAY_AGAIN);
       });
-    };
+    },
+    update: (_deltaMS, machine) => {
+      const advanced = drainAdvanced(input);
 
-    input.beginEpoch();
-    pad.setVisible(false);
-    pad.setHint(null);
-    session.phase = "boat";
-    scene.setStoryPage(null);
-    scene.setBlack(false);
-    scene.setBoat("broken");
-
-    createCuePlayer(deps, "ending").schedule(scope, ENDING_CUES);
-    phase("thrown", ENDING_MS.thrown, () => undefined);
-    phase("kraken", ENDING_MS.kraken, () => scene.setKraken(true));
-    phase("black", ENDING_MS.black, () => scene.setBlack(true));
-    phase("sea", ENDING_MS.sea, () => {
-      scene.setKraken(false);
-      scene.setBoat("none");
-      scene.setBackdrop("pillars", false);
-      scene.setBackdrop("tentacles", false);
-      scene.setBlack(false);
-    });
-    phase("card", ENDING_MS.card, () => {
-      scene.setTitle(true);
-      scene.setPrompt(TAP_TO_PLAY_AGAIN);
-    });
-  },
-  update: (_deltaMS, machine) => {
-    const advanced = deps.input.drain().some((event) => event.kind === "advance");
-
-    // Only once the card is up: earlier taps were dropped by each phase's epoch, and this drops the rest.
-    if (session.phase === "card" && advanced) {
-      machine.request("title");
-    }
-  },
-});
+      // Only once the card is up: earlier taps were dropped by each phase's epoch, and this drops the rest.
+      if (session.phase === "card" && advanced) {
+        machine.request("title");
+      }
+    },
+  };
+};

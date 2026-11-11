@@ -66,7 +66,7 @@ export interface SceneView {
   readonly paging: Paging;
 }
 
-/** What the start gate loads (main.ts: sprites, font and audio through a LoadPlan, then the scene is built). */
+/** What the start gate loads (app/game-loader.ts: sprites, font and audio, then the scene is built). */
 export interface GateLoader {
   /**
    * Loads everything not loaded yet and builds the scene, reporting progress (0..1). Resolves once the scene exists;
@@ -129,8 +129,8 @@ export interface GameDeps {
   readonly gateView: GateView;
   readonly audio: GameAudio;
   /**
-   * Called on every cue, right after its sound was asked for, inside the clock tick that reached it. main.ts logs it
-   * for `window.debug`; M4 hangs the visuals here.
+   * Called on every cue, right after its sound was asked for, inside the clock tick that reached it. app/cue-log.ts
+   * logs it for `window.debug`; M4 hangs the visuals here.
    */
   readonly onCue: (event: CueEvent) => void;
   readonly clock: GameClock;

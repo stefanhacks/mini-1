@@ -2,9 +2,12 @@
 // Pure TypeScript with no Pixi import, so it runs under `node --test`. Every length is in #game CSS px, which are the
 // ui layer's coordinates.
 
-import type { Rect } from "../core/layout.ts";
+import { snapToDevicePixels, type Rect } from "../core/layout.ts";
 import type { Direction } from "./direction.ts";
 import { VOICE_GREY } from "./story/script.ts";
+
+// Moved to core/layout.ts (the one device-pixel snap); re-exported for the pad view and its tests.
+export { snapToDevicePixels };
 
 /** Gap between a button's art rect and its drawn body, as a share of the button side, so neighbours don't touch. */
 export const BUTTON_INSET_RATIO = 0.06;
@@ -89,13 +92,6 @@ const HEADINGS: Readonly<Record<Direction, { readonly x: number; readonly y: num
   down: { x: 0, y: 1 },
   left: { x: -1, y: 0 },
   right: { x: 1, y: 0 },
-};
-
-/** Rounds a CSS px value to the nearest whole device pixel. A `dpr` that isn't finite and positive counts as 1. */
-export const snapToDevicePixels = (value: number, dpr: number) => {
-  const ratio = Number.isFinite(dpr) && dpr > 0 ? dpr : 1;
-
-  return Math.round(value * ratio) / ratio;
 };
 
 /**
