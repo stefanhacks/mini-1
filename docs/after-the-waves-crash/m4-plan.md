@@ -169,7 +169,7 @@ M4 removes the M2/M3 stopgaps listed above.
 
 | Step | Agents | Work |
 |---|---|---|
-| 0a, review | **Owl Sage: Scene Readability**, **Raven Monk: Main Readability** | Read-only. Each reads its files and the states, flags long functions, mixed concerns, duplication, unclear names, machine-written-looking code and dead code, and proposes a concrete target structure (modules, function boundaries, names) that keeps `SceneView` and the other interfaces stable. |
+| 0a, review | **Centaur Sage: Scene Readability**, **Kobold Monk: Main Readability** | Read-only. Each reads its files and the states, flags long functions, mixed concerns, duplication, unclear names, machine-written-looking code and dead code, and proposes a concrete target structure (modules, function boundaries, names) that keeps `SceneView` and the other interfaces stable. |
 | 0b, build | **Dwarf Mason: Scene Split**, **Elf Tidier: Main Split** | Apply the agreed proposals in parallel (scene modules; main wiring modules). No behaviour change. Unit and e2e results unchanged. |
 | 0c, review | **Goblin Scribe: Code Review** | The refactor is behaviour-neutral (same tests, same e2e counts, a spot-check of screenshots), reads well, and follows `CLAUDE.md` style. |
 
