@@ -147,6 +147,7 @@ Use one on-screen cross of 4 buttons (↑ ↓ ← →) for all three challenge t
 - **Unity-only issues:** the duplicate `SoundManager`, `using UnityEditor;`, and the non-working `ChangeText` fade.
 - **The 5 s untappable load screen.**
 - **Unused assets:** `noise.ogg`, `eye_*.png`, `PillarsSwitch.anim`, `Fundo.prefab`.
+  - The eyes are to be reconsidered in M4/M5 as an underwater alternative to the bubbles (owner note; see 04).
 
 ## Open device checks
 

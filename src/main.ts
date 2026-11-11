@@ -1,6 +1,7 @@
 import "./style.css";
 import { Application, Assets, UPDATE_PRIORITY, type Texture, type UnresolvedAsset } from "pixi.js";
 import { FONTS, SPRITES, type SpriteKey } from "./assets/manifest.ts";
+import { createAudioEngine } from "./core/audio/audio-engine.ts";
 import { GameClock } from "./core/clock.ts";
 import { createDebugOverlay, drawDebugOverlay, isDebugEnabled } from "./core/debug-overlay.ts";
 import { PlayfieldDisplay } from "./core/display.ts";
@@ -21,25 +22,31 @@ import {
 } from "./core/viewport.ts";
 import { randomSeed, seedFromString } from "./game/challenges/rng.ts";
 import { TUNING } from "./game/challenges/tuning.ts";
+import { createAudioLifecycle } from "./game/audio-lifecycle.ts";
 import { createFrameStepper } from "./game/frame-step.ts";
 import { createInputRouter } from "./game/input/dom-router.ts";
+import { createLoadPlan } from "./game/load-plan.ts";
+import { createMuteButton } from "./game/mute-button.ts";
 import { computePads } from "./game/input/pad-geometry.ts";
 import { createPadView } from "./game/pad-view.ts";
-import { createScene, type Scene } from "./game/scene.ts";
+import { createContinuePrompt, createGateView, createScene, type Scene } from "./game/scene.ts";
 import { createGame, type GameStateId } from "./game/states/index.ts";
+import type { CueEvent } from "./game/states/types.ts";
+import type { CueLogEntry } from "./debug-api.ts";
 import { snapshotSession } from "./game/states/session.ts";
 
 const UI_FONT = "Josefin Slab";
 
-// Pixel art: every sprite texture samples nearest. `data` becomes the TextureSource options.
-const loadSprites = async () => {
+// Pixel art: every sprite texture samples nearest. `data` becomes the TextureSource options. Calling it again after a
+// failure retries: Pixi drops a failed asset's cached promise, and the loaded ones resolve from its cache.
+const loadSprites = async (onProgress?: (fraction: number) => void) => {
   const assets = Object.entries(SPRITES).map(([alias, { url }]): UnresolvedAsset => ({
     alias,
     src: url,
     data: { scaleMode: "nearest" },
   }));
 
-  return (await Assets.load<Texture>(assets)) as Record<SpriteKey, Texture>;
+  return (await Assets.load<Texture>(assets, onProgress)) as Record<SpriteKey, Texture>;
 };
 
 // Without `family`, loadWebFont would name the font after its hashed file name.
@@ -191,21 +198,129 @@ layoutPads(layout);
 const clock = new GameClock();
 let scene: Scene | null = null;
 
-// The scene needs the textures and the font. Gate moves on once it is built.
-const sceneBuilt = Promise.all([loadSprites(), loadFont()]).then(([textures]) => {
-  const built = createScene(layers, textures, layout);
+// Audio (M3): the engine, the mute button, the lifecycle with "Tap to continue" (further down, with the visibility
+// handler), and the cues' log. The states play the cues and pick the music (states/cues.ts, story.ts).
+const audio = createAudioEngine();
+const muteButton = createMuteButton(layers.ui);
 
-  scene = built;
-  window.debug.scene = built;
-  onLayout(built.relayout);
+muteButton.setMuted(audio.muted);
+onLayout((next) => muteButton.setLayout(next));
+muteButton.setLayout(layout);
+// Unlocks audio when it needs a gesture: any tap or key once Gate is left (at the gate the begin tap's unlock and its
+// touchend retry are Gate's). It reads `lifecycle` and `machine`, defined below: it only runs from DOM events, which
+// come after this module has run.
+const continueAudio = () => {
+  if (machine.current !== "gate") {
+    lifecycle.activate();
+  }
+};
 
-  return built;
+router.onMute(() => {
+  audio.setMuted(!audio.muted);
+  muteButton.setMuted(audio.muted);
+  // A mute tap or the M key is a gesture too: it may resume audio, without counting as an activation.
+  continueAudio();
 });
 
+// "Tap to continue": shown by the lifecycle when audio can't resume without a gesture.
+const continuePrompt = createContinuePrompt(layers, layout);
+
+onLayout(continuePrompt.relayout);
+
+const lifecycle = createAudioLifecycle(audio, continuePrompt, () => document.visibilityState === "visible");
+
+// The last cues, for `window.debug.cues` (e2e checks their times). M4 hangs the visuals on `onCue` below.
+const CUE_LOG_SIZE = 64;
+const cueLog: CueLogEntry[] = [];
+
+const onCue = (event: CueEvent) => {
+  cueLog.push({ ...event, time: clock.now });
+
+  if (cueLog.length > CUE_LOG_SIZE) {
+    cueLog.shift();
+  }
+};
+
+// The gate's view needs nothing loaded; the scene needs the textures and the font.
+const gateView = createGateView(layers, layout);
+
+onLayout(gateView.relayout);
+
+// Weights are the parts' sizes in KB, roughly, so the bar moves with the bytes.
+let textures: Record<SpriteKey, Texture> | null = null;
+const loads = createLoadPlan({
+  font: {
+    weight: 110,
+    load: async () => {
+      await loadFont();
+      gateView.refreshFont();
+    },
+  },
+  sprites: {
+    weight: 140,
+    load: async (onProgress) => {
+      textures = await loadSprites(onProgress);
+    },
+  },
+  audio: { weight: 830, load: (onProgress) => audio.load((loaded, total) => onProgress(loaded / total)) },
+});
+
+// Builds the scene, or reports why not. A throw is a code bug, not a network one, but Gate still offers "Tap to
+// retry": what the failed build added to the layers is destroyed first, so a retry starts from empty layers instead
+// of building on top of a half scene. (A reload would lose the decoded audio and cached textures for no gain: the
+// same code fails the same way either way.)
+const buildScene = (loaded: Record<SpriteKey, Texture>) => {
+  const parents = [layers.world, layers.fx, layers.top, layers.ui];
+  const before = parents.map((parent) => parent.children.length);
+
+  try {
+    const built = createScene(layers, loaded, layout);
+
+    window.debug.scene = built;
+    onLayout(built.relayout);
+
+    return built;
+  } catch (error) {
+    parents.forEach((parent, index) => {
+      for (const child of parent.removeChildren(before[index])) {
+        child.destroy({ children: true });
+      }
+    });
+    reportError(error);
+    throw error;
+  }
+};
+
+const loader = {
+  load: async (onProgress: (fraction: number) => void) => {
+    try {
+      await loads.load(onProgress);
+    } catch (error) {
+      // Gate shows "Couldn't load. Tap to retry"; the console gets the reason, as an uncaught error.
+      reportError(error);
+      throw error;
+    }
+
+    if (scene === null && textures !== null) {
+      scene = buildScene(textures);
+    }
+  },
+  get fontReady() {
+    return loads.isLoaded("font");
+  },
+};
+
 const game = createGame({
-  loaded: sceneBuilt,
+  loader,
+  gateView,
+  audio,
+  onCue,
   clock,
-  input: router,
+  // Every drain goes through the lifecycle, which drops the "Tap to continue" tap's advance (audio-lifecycle.ts).
+  input: {
+    drain: () => lifecycle.filter(router.drain()),
+    beginEpoch: () => router.beginEpoch(),
+  },
   pad: padView,
   scene: () => {
     if (scene === null) {
@@ -218,12 +333,33 @@ const game = createGame({
   tuning: TUNING,
 });
 const machine = new StateMachine<GameStateId>(clock, game.states);
+
+// Inside the DOM gesture (router-core.ts has the contract): Gate's begin tap unlocks audio and starts the music, and
+// any later tap unlocks audio again when it needs a gesture ("Tap to continue").
+router.onActivate(() => game.gate.activate());
+router.onActivate(continueAudio);
 const stepper = createFrameStepper(machine);
 
-// See frame-step.ts: the first frame back runs no game time, so a cancel queued while hidden is applied first.
+// See frame-step.ts: the first frame back runs no game time, so a cancel queued while hidden is applied first. The
+// router cancels held input on hidden with its own listener, added before this one. Audio suspends while hidden and
+// tries to resume when visible, without blocking anything.
+const pageVisible = () => {
+  stepper.resume();
+  lifecycle.visible();
+};
+
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
-    stepper.resume();
+    pageVisible();
+  } else {
+    lifecycle.hidden();
+  }
+});
+
+// A page restored from the bfcache: the same as becoming visible (its visibilitychange may not come on every engine).
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) {
+    pageVisible();
   }
 });
 
@@ -235,6 +371,16 @@ window.debug = {
   display,
   onLayout,
   router,
+  audio,
+  get cues() {
+    return cueLog.map((entry) => ({ ...entry }));
+  },
+  get continuePromptShown() {
+    return lifecycle.prompting;
+  },
+  get gate() {
+    return { phase: game.gate.phase, progress: game.gate.progress };
+  },
   get layout() {
     return layout;
   },
@@ -279,6 +425,27 @@ app.ticker.add((ticker) => {
     halted = true;
     window.debug.error = error;
     reportError(error);
+    // The music would loop on over a frozen frame.
+    void audio.suspend();
+  }
+});
+
+// The audio engine's per-frame top-up of the bar-by-bar overlay schedule. Outside the game-logic guard and independent
+// of the game clock: the music runs on the AudioContext's own clock, paused game or not. Its own guard: a throw is
+// reported once and stops only this.
+let audioHalted = false;
+
+app.ticker.add(() => {
+  if (audioHalted) {
+    return;
+  }
+
+  try {
+    audio.tick();
+  } catch (error) {
+    audioHalted = true;
+    window.debug.error ??= error;
+    reportError(error);
   }
 });
 
@@ -289,6 +456,3 @@ app.ticker.add(renderPlayfield, undefined, UPDATE_PRIORITY.NORMAL);
 resizeRenderer();
 
 machine.request("gate");
-
-// A failed load surfaces here as an uncaught error; Gate just stays.
-await sceneBuilt;

@@ -4,6 +4,7 @@
 
 import type { Rect } from "../core/layout.ts";
 import type { Direction } from "./direction.ts";
+import { VOICE_GREY } from "./story/script.ts";
 
 /** Gap between a button's art rect and its drawn body, as a share of the button side, so neighbours don't touch. */
 export const BUTTON_INSET_RATIO = 0.06;
@@ -23,8 +24,11 @@ export const OUTLINE_WIDTH = 2;
 /** Alpha of the whole pad while it is dimmed (shown, but not yet interactive). */
 export const DIMMED_ALPHA = 0.35;
 
-// The original's whisper grey and white, over the game's black.
-const WHISPER_GREY = "#464646";
+/** The idle outline and arrow: the story's VOICE_GREY, #767676 (M3 owner decision 4; it was the original's #464646). */
+export const PAD_GREY = `#${VOICE_GREY.toString(16).padStart(6, "0")}`;
+
+// The pressed body keeps the original's darker grey, so a press still reads as a fill, not an outline.
+const PRESSED_GREY = "#464646";
 const WHITE = "#ffffff";
 
 export interface ButtonStyle {
@@ -39,9 +43,9 @@ export interface ButtonStyle {
 export const IDLE_STYLE: ButtonStyle = {
   fill: "#000000",
   fillAlpha: 0.45,
-  outline: WHISPER_GREY,
+  outline: PAD_GREY,
   outlineAlpha: 1,
-  arrow: WHISPER_GREY,
+  arrow: PAD_GREY,
 };
 
 /** The expected direction, released: a white outline at half strength. Static: M2 has no animations. */
@@ -55,7 +59,7 @@ export const HINT_STYLE: ButtonStyle = {
 
 /** Pressed: a brighter body and a white glyph. Hinted or not, a press looks the same. */
 export const PRESSED_STYLE: ButtonStyle = {
-  fill: WHISPER_GREY,
+  fill: PRESSED_GREY,
   fillAlpha: 0.9,
   outline: WHITE,
   outlineAlpha: 1,

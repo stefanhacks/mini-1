@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { type KeyInput, keyToDirection, readKeyDown } from "./keyboard.ts";
+import { isMuteKey, type KeyInput, keyToDirection, readKeyDown } from "./keyboard.ts";
 
 const key = (name: string, extra: Partial<KeyInput> = {}): KeyInput => ({
   key: name,
@@ -60,5 +60,17 @@ describe("readKeyDown", () => {
   it("ignores keys during an input method composition", () => {
     assert.equal(readKeyDown(key("a", { isComposing: true })), null);
     assert.equal(readKeyDown(key("ArrowUp", { isComposing: true })), null);
+  });
+});
+
+describe("isMuteKey", () => {
+  it("is M in either case, but not a repeat, a composition or a shortcut", () => {
+    assert.equal(isMuteKey(key("m")), true);
+    assert.equal(isMuteKey(key("M")), true);
+    assert.equal(isMuteKey(key("n")), false);
+    assert.equal(isMuteKey(key("m", { repeat: true })), false);
+    assert.equal(isMuteKey(key("m", { isComposing: true })), false);
+    assert.equal(isMuteKey(key("m", { ctrlKey: true })), false);
+    assert.equal(isMuteKey(key("m", { metaKey: true })), false);
   });
 });

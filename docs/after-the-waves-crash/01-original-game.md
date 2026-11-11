@@ -170,7 +170,7 @@ These are the things a mobile port has to replace:
 8. **The title lightning never uses sprite 5**: it uses `Random.Range(0,4)` while there are 5 sprites.
 9. **The per-line text fade (`ChangeText.anim`) probably has no visible effect**: it animates an object without a TMP component (*uncertain*).
 10. **Unused assets and code:**
-    - `eye_large.png`, `eye_small.png`, `PillarsSwitch.anim`, `Fundo.prefab`, `noise.ogg`.
+    - `eye_large.png`, `eye_small.png` (the owner recalls these as occasional eyes below the ocean, an alternative to the bubbles; see 04, M4), `PillarsSwitch.anim`, `Fundo.prefab`, `noise.ogg`.
     - `firstTimeDelay`, `SoundManager.PlaySingle`, and a stale `gameAudio` field in `Load.unity`.
 11. **Identifiers are in Portuguese**: `setas` (arrows), `raio` (lightning), `barco` (boat), `telaPreta` (black screen), `parteHistoria` (story part).
 

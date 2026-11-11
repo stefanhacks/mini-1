@@ -2,21 +2,37 @@
 // It uses DOM events, not Pixi's federated events: Pixi never delivers pointercancel (04, correction 1), and the
 // playfield is a render texture outside the hit-test tree. DOM handlers only queue events; the active state drains them
 // in `update`, so input runs under the state machine's error guard and in game time.
+// The decisions (mute button first, pads, the activation and mute hooks) live in router-core.ts, with their contract.
 
 import type { Direction } from "../direction.ts";
-import type { Layout } from "../../core/layout.ts";
+import type { Layout, Rect } from "../../core/layout.ts";
 import { getGameElement } from "../../core/viewport.ts";
 import { attachKeyboard } from "./keyboard.ts";
-import { computePads, hitTest, type Pad } from "./pad-geometry.ts";
-import { type InputEvent, PointerMap } from "./pointer-map.ts";
+import type { InputEvent } from "./pointer-map.ts";
+import { createRouterCore } from "./router-core.ts";
 
 export interface InputRouter {
   /** The queued events, oldest first; empties the queue. See pointer-map.ts for the contract. */
   drain(): InputEvent[];
   /** Call when a state starts: drops queued events and ignores whatever is down until it lifts. */
   beginEpoch(): void;
-  /** Recomputes the pads' hit areas. Call it with every new layout. */
+  /** Recomputes the pads' and the mute button's hit areas. Call it with every new layout. */
   setLayout(layout: Layout): void;
+  /** The mute button's hit square in the current layout (mute-geometry.ts), or null. */
+  readonly muteRect: Rect | null;
+  /**
+   * Calls `listener` synchronously inside the DOM event (pointerup or keydown) of every input that queues "advance",
+   * right after it is queued: the place for `audio.unlock()` and, on Gate's begin tap, `startMusic()`. Never for a
+   * pointerdown, a stale or cancelled pointer, a key repeat, or a mute tap. A touch tap calls it a second time from the
+   * `touchend` that follows (iOS fallback), so listeners must be idempotent. Returns the unsubscribe.
+   */
+  onActivate(listener: () => void): () => void;
+  /**
+   * Turns on the mute button's hit area and the M key: a tap on the button or the key calls `listener` (to toggle
+   * mute) and gives no press, advance or activation. While no listener is registered both are ordinary input.
+   * Returns the unsubscribe.
+   */
+  onMute(listener: () => void): () => void;
   /** Whether `dir` is held by any pointer or key, for the pad view. */
   isHeld(dir: Direction): boolean;
   /** Removes every listener. */
@@ -28,8 +44,12 @@ export interface InputRouter {
  * top-left is the origin of the layout's CSS px. Until `setLayout` is called there are no pads, so taps only advance.
  */
 export const createInputRouter = (canvas: HTMLElement, frame: HTMLElement = getGameElement()): InputRouter => {
-  const map = new PointerMap();
-  let pads: readonly Pad[] = [];
+  const core = createRouterCore();
+  const local = (event: PointerEvent) => {
+    const box = frame.getBoundingClientRect();
+
+    return { x: event.clientX - box.left, y: event.clientY - box.top };
+  };
 
   const onPointerDown = (event: PointerEvent) => {
     // A touch or pen contact and the primary mouse button are 0. Other mouse buttons are ignored.
@@ -37,10 +57,9 @@ export const createInputRouter = (canvas: HTMLElement, frame: HTMLElement = getG
       return;
     }
 
-    const box = frame.getBoundingClientRect();
-    const hit = hitTest(pads, event.clientX - box.left, event.clientY - box.top);
+    const { x, y } = local(event);
 
-    map.pointerDown(event.pointerId, hit?.dir ?? null);
+    core.pointerDown(event.pointerId, x, y);
 
     // Keeps a mouse pointer's up on the canvas when it leaves it; touch is captured implicitly.
     try {
@@ -50,44 +69,57 @@ export const createInputRouter = (canvas: HTMLElement, frame: HTMLElement = getG
     }
   };
 
-  const onPointerUp = (event: PointerEvent) => map.pointerUp(event.pointerId);
+  const onPointerUp = (event: PointerEvent) => {
+    const { x, y } = local(event);
 
-  const onPointerCancel = (event: PointerEvent) => map.pointerCancel(event.pointerId);
+    core.pointerUp(event.pointerId, x, y, event.pointerType === "touch");
+  };
+
+  // iOS fallback: some WebKit versions only count `touchend` as the gesture that may resume audio, not the pointerup
+  // before it. See router-core.ts `touchEnd`. Passive: it never blocks scrolling or calls preventDefault.
+  const onTouchEnd = () => core.touchEnd();
+
+  const onPointerCancel = (event: PointerEvent) => core.pointerCancel(event.pointerId);
 
   // Also fires right after every pointerup, when the capture is released, with no buttons pressed. Only a loss while a
   // button or contact is still down cancels, so an engine that fires it before pointerup can't eat the tap's advance.
   const onLostPointerCapture = (event: PointerEvent) => {
     if (event.buttons !== 0) {
-      map.pointerCancel(event.pointerId);
+      core.pointerCancel(event.pointerId);
     }
   };
 
   const onVisibilityChange = () => {
     if (document.visibilityState === "hidden") {
-      map.cancelAll();
+      core.cancelAll();
     }
   };
 
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointerup", onPointerUp);
   canvas.addEventListener("pointercancel", onPointerCancel);
+  canvas.addEventListener("touchend", onTouchEnd, { passive: true });
   canvas.addEventListener("lostpointercapture", onLostPointerCapture);
   document.addEventListener("visibilitychange", onVisibilityChange);
 
   // keydown, keyup and blur.
-  const detachKeyboard = attachKeyboard(map);
+  const detachKeyboard = attachKeyboard(core.map, { onMuteKey: core.muteKey });
 
   return {
-    drain: () => map.drain(),
-    beginEpoch: () => map.beginEpoch(),
-    setLayout: (layout) => {
-      pads = computePads(layout);
+    drain: () => core.map.drain(),
+    beginEpoch: () => core.map.beginEpoch(),
+    setLayout: (layout) => core.setLayout(layout),
+    get muteRect() {
+      return core.muteRect;
     },
-    isHeld: (dir) => map.isHeld(dir),
+    onActivate: (listener) => core.onActivate(listener),
+    onMute: (listener) => core.onMute(listener),
+    isHeld: (dir) => core.isHeld(dir),
     destroy: () => {
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointerup", onPointerUp);
       canvas.removeEventListener("pointercancel", onPointerCancel);
+      canvas.removeEventListener("touchend", onTouchEnd);
       canvas.removeEventListener("lostpointercapture", onLostPointerCapture);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       detachKeyboard();

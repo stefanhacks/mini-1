@@ -6,6 +6,7 @@ import type { ChallengeProgress, ChallengeSpec } from "../challenges/rule.ts";
 import { TUNING } from "../challenges/tuning.ts";
 import type { Direction } from "../direction.ts";
 import { createFrameStepper } from "../frame-step.ts";
+import type { WorldSfxKey } from "../../core/audio/audio-engine.ts";
 import type { InputEvent } from "../input/pointer-map.ts";
 import type { StoryPage } from "../story/cursor.ts";
 import { fixedWidthMeasure } from "../story/fake-measure.ts";
@@ -13,9 +14,20 @@ import { STORY_PARTS } from "../story/script.ts";
 import { TAP_TO_PLAY_AGAIN } from "./ending.ts";
 import { createGame, type GameDeps, type GameStateId } from "./index.ts";
 import { snapshotSession } from "./session.ts";
-import { AFTER_ROUND_MS, ENDING_MS, STORY_DEBOUNCE_MS, STORY_PREAMBLE_MS, TRANSITION_MS } from "./timings.ts";
-import { TAP_TO_BEGIN } from "./title.ts";
-import type { Backdrop, Boat, Paging, SceneView } from "./types.ts";
+import {
+  AFTER_ROUND_MS,
+  ENDING_MS,
+  STORY_DEBOUNCE_MS,
+  STORY_PREAMBLE_MS,
+  TITLE_AMBIENT,
+  TITLE_DEBOUNCE_MS,
+  TRANSITION_MS,
+} from "./timings.ts";
+import { AMBIENT_SALT, TAP_TO_BEGIN } from "./title.ts";
+import { ambientDelay } from "./cues.ts";
+import { createRng } from "../challenges/rng.ts";
+import { LOAD_FAILED } from "./gate.ts";
+import type { Backdrop, Boat, CueEvent, GateScreen, Paging, SceneView } from "./types.ts";
 
 const FRAME_MS = 16;
 
@@ -99,6 +111,72 @@ class FakeScene implements SceneView {
   }
 }
 
+// The gate's loader: every `load` call gets its own deferred, settled by the test (or at once with `auto`).
+class FakeLoader {
+  calls: ReturnType<typeof deferred>[] = [];
+  progress: ((fraction: number) => void)[] = [];
+  fontReady = true;
+  auto: boolean;
+
+  constructor(auto: boolean) {
+    this.auto = auto;
+  }
+
+  load(onProgress: (fraction: number) => void) {
+    const call = deferred();
+
+    this.calls.push(call);
+    this.progress.push(onProgress);
+
+    if (this.auto) {
+      onProgress(1);
+      call.resolve();
+    }
+
+    return call.promise;
+  }
+
+  get last() {
+    const call = this.calls.at(-1);
+
+    if (call === undefined) {
+      throw new Error("load was never called");
+    }
+
+    return call;
+  }
+}
+
+class FakeGateView {
+  screen: GateScreen | null = null;
+
+  show(screen: GateScreen | null) {
+    this.screen = screen;
+  }
+}
+
+class FakeAudio {
+  log: string[] = [];
+  sfx: string[] = [];
+  parts: (number | null)[] = [];
+
+  unlock() {
+    this.log.push("unlock");
+  }
+
+  startMusic() {
+    this.log.push("startMusic");
+  }
+
+  playSfx(key: WorldSfxKey) {
+    this.sfx.push(key);
+  }
+
+  setStoryPart(part: number | null) {
+    this.parts.push(part);
+  }
+}
+
 class FakeInput {
   queue: InputEvent[] = [];
   epochs = 0;
@@ -149,14 +227,22 @@ class FakePad {
 
 const timerCount = (clock: GameClock) => clock.pendingTimers;
 
-const setup = (loaded: Promise<unknown> = Promise.resolve()) => {
+const setup = ({ auto = true } = {}) => {
   const clock = new GameClock();
+  const loader = new FakeLoader(auto);
+  const gateView = new FakeGateView();
+  const audio = new FakeAudio();
   const scene = new FakeScene();
   const input = new FakeInput();
   const pad = new FakePad();
   let seed = 41;
+  // Every cue with the clock's time, as main.ts logs them.
+  const cues: (CueEvent & { time: number })[] = [];
   const deps: GameDeps = {
-    loaded,
+    loader,
+    gateView,
+    audio,
+    onCue: (event) => cues.push({ ...event, time: clock.now }),
     clock,
     input,
     pad,
@@ -176,13 +262,18 @@ const setup = (loaded: Promise<unknown> = Promise.resolve()) => {
     }
   };
 
-  return { clock, scene, input, pad, game, machine, frame, wait };
+  return { clock, scene, input, pad, game, machine, frame, wait, loader, gateView, audio, cues };
 };
 
 type Setup = ReturnType<typeof setup>;
 
+/** Loads, then taps to begin as the router would: the activation inside the gesture, then the advance. */
 const toTitle = async (t: Setup) => {
   await settle();
+  t.frame();
+  assert.equal(t.game.gate.phase, "ready");
+  t.game.gate.activate();
+  t.input.advance();
   t.frame();
   assert.equal(t.machine.current, "title");
 };
@@ -244,20 +335,106 @@ const playRound = (t: Setup) => {
 };
 
 describe("gate", () => {
-  it("waits for the scene, then requests title on the next frame", async () => {
-    const load = deferred();
-    const t = setup(load.promise);
+  it("shows progress and the warning while loading, then the prompt once loaded", async () => {
+    const t = setup({ auto: false });
 
+    assert.deepEqual(t.gateView.screen, { progress: 0, warning: true, prompt: null });
+    t.loader.progress[0](0.4);
+    t.frame();
+    assert.deepEqual(t.gateView.screen, { progress: 0.4, warning: true, prompt: null });
+
+    t.loader.last.resolve();
+    await settle();
+    assert.equal(t.game.gate.phase, "loading");
+    t.frame();
+    assert.equal(t.game.gate.phase, "ready");
+    assert.deepEqual(t.gateView.screen, { progress: null, warning: true, prompt: TAP_TO_BEGIN });
+    assert.equal(t.scene.black, true);
+    assert.equal(t.machine.current, "gate");
+  });
+
+  it("hides its texts until the font is in", () => {
+    const t = setup({ auto: false });
+
+    t.loader.fontReady = false;
+    t.frame();
+    assert.deepEqual(t.gateView.screen, { progress: 0, warning: false, prompt: null });
+    t.loader.fontReady = true;
+    t.frame();
+    assert.equal(t.gateView.screen?.warning, true);
+  });
+
+  it("drops taps made while loading, and goes to title on a tap once ready", async () => {
+    const t = setup({ auto: false });
+
+    t.input.advance();
+    t.frame();
+    t.input.advance();
+    t.loader.last.resolve();
     await settle();
     t.frame();
     assert.equal(t.machine.current, "gate");
+    assert.deepEqual(t.input.queue, []);
 
-    load.resolve();
-    await settle();
+    t.frame();
     assert.equal(t.machine.current, "gate");
-
+    t.input.advance();
     t.frame();
     assert.equal(t.machine.current, "title");
+    assert.equal(t.gateView.screen, null);
+    assert.equal(t.scene.black, false);
+  });
+
+  it("unlocks audio and starts the music only on the begin tap", async () => {
+    const t = setup({ auto: false });
+
+    t.game.gate.activate();
+    assert.deepEqual(t.audio.log, []);
+
+    t.loader.last.resolve();
+    await settle();
+    t.frame();
+    t.game.gate.activate();
+    assert.deepEqual(t.audio.log, ["unlock", "startMusic"]);
+
+    t.input.advance();
+    t.frame();
+    assert.equal(t.machine.current, "title");
+    t.game.gate.activate();
+    assert.deepEqual(t.audio.log, ["unlock", "startMusic"]);
+  });
+
+  it("shows the failure, and a tap retries the load", async () => {
+    const t = setup({ auto: false });
+
+    t.loader.last.reject(new Error("load failed"));
+    await settle();
+    t.frame();
+    assert.equal(t.game.gate.phase, "failed");
+    assert.deepEqual(t.gateView.screen, { progress: null, warning: true, prompt: LOAD_FAILED });
+
+    t.game.gate.activate();
+    assert.deepEqual(t.audio.log, []);
+    t.input.advance();
+    t.frame();
+    assert.equal(t.loader.calls.length, 2);
+    assert.equal(t.game.gate.phase, "loading");
+    assert.deepEqual(t.gateView.screen, { progress: 0, warning: true, prompt: null });
+
+    t.loader.last.resolve();
+    await settle();
+    t.frame();
+    assert.equal(t.game.gate.phase, "ready");
+  });
+
+  it("shows the failure line even without the font", async () => {
+    const t = setup({ auto: false });
+
+    t.loader.fontReady = false;
+    t.loader.last.reject(new Error("font failed"));
+    await settle();
+    t.frame();
+    assert.deepEqual(t.gateView.screen, { progress: null, warning: true, prompt: LOAD_FAILED });
   });
 
   it("waits while the clock is paused", async () => {
@@ -266,32 +443,22 @@ describe("gate", () => {
     await settle();
     t.clock.paused = true;
     t.frame();
-    assert.equal(t.machine.current, "gate");
+    assert.equal(t.game.gate.phase, "loading");
 
     t.clock.paused = false;
     t.frame();
-    assert.equal(t.machine.current, "title");
+    assert.equal(t.game.gate.phase, "ready");
   });
 
-  it("stays on gate when loading fails, and drains input meanwhile", async () => {
-    const t = setup(Promise.reject(new Error("load failed")));
+  it("does nothing on activation once it was left", async () => {
+    const t = setup();
 
     await settle();
-    t.input.advance();
     t.frame();
-    assert.equal(t.machine.current, "gate");
-    assert.deepEqual(t.input.queue, []);
-  });
-
-  it("requests nothing once it was left before loading finished", async () => {
-    const load = deferred();
-    const t = setup(load.promise);
-
     t.machine.request("ending");
-    load.resolve();
-    await settle();
-    t.frame();
-    assert.equal(t.machine.current, "ending");
+    t.game.gate.activate();
+    assert.deepEqual(t.audio.log, []);
+    assert.equal(t.loader.calls.length, 1);
   });
 });
 
@@ -311,6 +478,12 @@ describe("title", () => {
     t.frame();
     assert.equal(t.machine.current, "title");
 
+    // A tap within the debounce is dropped (the stopgap until M4 gates the prompt behind the intro).
+    t.input.advance();
+    t.frame();
+    assert.equal(t.machine.current, "title");
+
+    t.wait(TITLE_DEBOUNCE_MS);
     t.input.advance();
     t.frame();
     assert.equal(t.machine.current, "story");
@@ -324,6 +497,7 @@ describe("story", () => {
     const t = setup();
 
     await toTitle(t);
+    t.wait(TITLE_DEBOUNCE_MS);
     t.input.advance();
     t.frame();
     t.wait(STORY_PREAMBLE_MS - 2 * FRAME_MS);
@@ -341,6 +515,7 @@ describe("story", () => {
     const t = setup();
 
     await toTitle(t);
+    t.wait(TITLE_DEBOUNCE_MS);
     t.input.advance();
     t.frame();
     t.wait(STORY_PREAMBLE_MS);
@@ -363,6 +538,7 @@ describe("story", () => {
     const t = setup();
 
     await toTitle(t);
+    t.wait(TITLE_DEBOUNCE_MS);
     t.input.advance();
     t.frame();
     t.wait(STORY_PREAMBLE_MS);
@@ -387,6 +563,7 @@ describe("a full game", () => {
 
     for (let game = 1; game <= 3; game++) {
       assert.equal(t.game.session.games, game);
+      t.wait(TITLE_DEBOUNCE_MS);
       t.input.advance();
       t.frame();
       t.wait(STORY_PREAMBLE_MS);
@@ -449,6 +626,7 @@ describe("round", () => {
     const t = setup();
 
     await toTitle(t);
+    t.wait(TITLE_DEBOUNCE_MS);
     t.input.advance();
     t.frame();
     t.wait(STORY_PREAMBLE_MS);
@@ -510,6 +688,7 @@ describe("frame stepper", () => {
     const t = setup();
 
     await toTitle(t);
+    t.wait(TITLE_DEBOUNCE_MS);
     t.input.advance();
     t.frame();
     t.wait(STORY_PREAMBLE_MS);
@@ -553,5 +732,143 @@ describe("frame stepper", () => {
     stepper.step(100);
     assert.equal(t.clock.now, before + 100);
     assert.equal(t.scene.challenge?.kind, "hold");
+  });
+});
+
+describe("cues", () => {
+  const cuesOf = (t: Setup, state: string) =>
+    t.cues.filter((cue) => cue.state === state).map(({ name, at }) => ({ name, at }));
+
+  /** The ambient strikes' times on Title (ms from its enter), as the original's timer gives them for `seed`. */
+  const expectedAmbient = (seed: number, count: number) => {
+    const rng = createRng((seed ^ AMBIENT_SALT) >>> 0);
+    const times: number[] = [];
+    let at = TITLE_AMBIENT.from + ambientDelay(rng, TITLE_AMBIENT.first);
+
+    for (let i = 0; i < count; i++) {
+      times.push(at);
+      at += ambientDelay(rng, TITLE_AMBIENT.next);
+    }
+
+    return times;
+  };
+
+  it("draws the ambient delays in whole seconds: 5–7 s after the intro, then 7–10 s apart", () => {
+    const rng = createRng(7);
+    const firsts = new Set<number>();
+    const nexts = new Set<number>();
+
+    for (let i = 0; i < 500; i++) {
+      firsts.add(ambientDelay(rng, TITLE_AMBIENT.first));
+      nexts.add(ambientDelay(rng, TITLE_AMBIENT.next));
+    }
+
+    assert.deepEqual([...firsts].sort((a, b) => a - b), [5000, 6000, 7000]);
+    assert.deepEqual([...nexts].sort((a, b) => a - b), [7000, 8000, 9000, 10000]);
+  });
+
+  it("plays Title's intro strikes, then ambient lightning from the game's seed, until Title is left", async () => {
+    const t = setup();
+
+    await toTitle(t);
+
+    const ambient = expectedAmbient(t.game.session.seed, 3);
+
+    t.wait((ambient[2] ?? 0) + FRAME_MS);
+    assert.deepEqual(cuesOf(t, "title"), [
+      { name: "lightning", at: 2000 },
+      { name: "lightning", at: 3250 },
+      { name: "title-reveal", at: 5250 },
+      ...ambient.map((at) => ({ name: "lightning", at })),
+    ]);
+    assert.deepEqual(t.audio.sfx, Array(6).fill("thunderclap"));
+
+    const fired = t.cues.length;
+
+    t.input.advance();
+    t.frame();
+    assert.equal(t.machine.current, "story");
+    t.wait(30_000);
+    assert.equal(cuesOf(t, "title").length, fired, "no Title cue after Title");
+  });
+
+  it("draws different ambient times for a different game", () => {
+    assert.notDeepEqual(expectedAmbient(42, 4), expectedAmbient(43, 4));
+  });
+
+  it("drops Title's pending cues when it is left early", async () => {
+    const t = setup();
+
+    await toTitle(t);
+    t.wait(1000);
+    t.input.advance();
+    t.frame();
+    t.wait(STORY_PREAMBLE_MS);
+    assert.deepEqual(cuesOf(t, "title"), []);
+    assert.deepEqual(cuesOf(t, "story"), [{ name: "lightning", at: 1250 }]);
+    assert.deepEqual(t.audio.sfx, ["thunderclap"]);
+  });
+
+  it("keeps one Title timer pending at any time, so the leak check can read it whenever", async () => {
+    const t = setup();
+
+    await toTitle(t);
+
+    for (let i = 0; i < 40; i++) {
+      assert.equal(t.clock.pendingTimers, 1);
+      t.wait(1000);
+    }
+  });
+
+  it("waits while the clock is paused", async () => {
+    const t = setup();
+
+    await toTitle(t);
+    t.wait(1900);
+    t.clock.paused = true;
+    t.wait(1000);
+    assert.deepEqual(t.cues, []);
+
+    t.clock.paused = false;
+    t.wait(200);
+    assert.deepEqual(cuesOf(t, "title"), [{ name: "lightning", at: 2000 }]);
+  });
+
+  it("strikes in part 0's preamble and each Transition, roars in the Ending, and sets the music per part", async () => {
+    const t = setup();
+
+    await toTitle(t);
+
+    for (let game = 1; game <= 2; game++) {
+      t.wait(TITLE_DEBOUNCE_MS);
+      t.cues.length = 0;
+      t.input.advance();
+      t.frame();
+      assert.deepEqual(t.audio.parts.slice(-1), [0], "Story 0 asks for part 0's music, on replay too");
+      t.wait(STORY_PREAMBLE_MS);
+
+      for (let part = 0; part < STORY_PARTS.length; part++) {
+        assert.equal(t.audio.parts.at(-1), part);
+        readPart(t);
+
+        if (part < STORY_PARTS.length - 1) {
+          playRound(t);
+        }
+      }
+
+      t.wait(ENDING_MS.card);
+      assert.deepEqual(t.cues.map(({ name, state, at }) => ({ name, state, at })), [
+        { name: "lightning", state: "story", at: 1250 },
+        ...Array.from({ length: 3 }, () => ({ name: "lightning", state: "transition", at: 167 })),
+        { name: "kraken", state: "ending", at: 1500 },
+      ]);
+      assert.equal(t.audio.sfx.at(-1), "kraken");
+
+      t.input.advance();
+      t.frame();
+      assert.equal(t.machine.current, "title");
+    }
+
+    assert.deepEqual(t.audio.parts, [0, 1, 2, 3, 0, 1, 2, 3], "Title and the Ending leave the music alone");
   });
 });

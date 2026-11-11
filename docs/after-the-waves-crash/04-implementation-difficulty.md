@@ -109,6 +109,10 @@ Gameplay and platform tracks interleave. Each milestone ends with a Netlify bran
 3. **M2, playable loop with the pad (about 8–10 days):** challenge generation, a DOM pointer router with cancel handling, the three rules, keyboard fallback, the real states and scene, the real script with paging (moved from M4), and soft replay. Replanned in [m2-plan.md](m2-plan.md).
 4. **M3, audio and start gate (3–4 days).** iOS goes first, because it's the biggest unknown.
 5. **M4, story and presentation (6–8 days):** typewriter, transitions, Hermite animations, event timelines, thunder and flash, ending, replay.
+   - **Check before animating the underwater layer (owner note):** the original ships `eye_large.png` (64×32) and `eye_small.png` (12×12) in `Graphics/SpritesFinal/Actors/`.
+     - M0 dropped them as unused: no scene, prefab, animation or controller references them, and the clone has no history to show otherwise.
+     - The owner recalls they were meant to show up occasionally below the ocean, as an alternative to the bubbles.
+     - When the bubbles and the underwater layer are animated (M4/M5), decide with the owner whether to add them. That means re-importing them with `scripts/import-assets.sh` and the manifest, then designing when and where they appear, since the original gives no behaviour to copy.
 6. **M5, effects and lifecycle (4–6 days):** rain, splash, bubbles, reduced motion, pause and resume, soft restart.
    - **Shippable faithful port.**
 7. **M6, touch-native set (10–14 days):** gesture layer, then Brace, then Haul (these prove the gesture layer), then Chart, then the assists.

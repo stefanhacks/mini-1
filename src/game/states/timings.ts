@@ -1,13 +1,13 @@
 // The game flow's waits, in ms of game time, from the original GameManager.cs, its Main.unity overrides and the
 // animation events in Troca.anim and Fim.anim. M2 cuts instantly at each; M4 adds the tweens between them.
 
-/** Story part 0's preamble: 1.25 s, a thunder strike (M4), 1.25 s more, then the first line. */
+/** Story part 0's preamble: 1.25 s, a thunder strike (STORY_PREAMBLE_CUES), 1.25 s more, then the first line. */
 export const STORY_PREAMBLE_MS = 2500;
 
 /** Taps are ignored this long after a page appears, so a double tap can't skip one unread (02, Progression taps). */
 export const STORY_DEBOUNCE_MS = 200;
 
-/** Transition (`Troca.anim`): the thunder at 167 ms (M4), the round at 500 ms. */
+/** Transition (`Troca.anim`): the thunder at 167 ms (TRANSITION_CUES), the round at 500 ms. */
 export const TRANSITION_MS = 500;
 
 /** After the last challenge of a round: the backdrop appears, and the next story part starts after this. */
@@ -26,3 +26,71 @@ export const ENDING_MS = {
   /** `endGameDelay` (3.5 s in Main.unity) later: the logo and the credits, and in this port "Tap to play again". */
   card: 13500,
 } as const;
+
+// Cues: the moments a state's timeline strikes, as named events at ms from the state's enter, on the game clock.
+// M3 plays each cue's sound (states/cues.ts maps cue → SFX); M4 hangs the visuals (bolt, flash, logo reveal, kraken
+// fade) on the same events through `GameDeps.onCue`.
+
+/**
+ * - `lightning`: a strike (`DoTheThunder`): bolt and flash in M4, a thunderclap now.
+ * - `title-reveal`: Title's big strike, with a thunderclap. The cue marks the strike; the logo appears
+ *   TITLE_REVEAL_FLASH_MS later, at the flash's peak.
+ * - `kraken`: the kraken appears (`FimKraken`), with its roar.
+ *
+ * A CueEvent carries no payload: M4's random bolt sprite, position and orientation (`DoTheThunder`'s draws) need an
+ * RNG of their own.
+ */
+export type CueName = "lightning" | "title-reveal" | "kraken";
+
+export interface Cue {
+  /** Ms of game time from the state's enter. */
+  readonly at: number;
+  readonly name: CueName;
+}
+
+/**
+ * Title's intro (GameManager `Inicio`): warm-up 0.75 s, two strikes 1.25 s apart, then the reveal 2 s later. Title
+ * also strikes at random afterwards, see TITLE_AMBIENT.
+ */
+export const TITLE_CUES: readonly Cue[] = [
+  { at: 2000, name: "lightning" },
+  { at: 3250, name: "lightning" },
+  { at: 5250, name: "title-reveal" },
+];
+
+/**
+ * Title's ambient lightning, as GameManager's `CheckForThunder`: a timer counts up from the end of the intro (7.25 s,
+ * when the credits and "Press Any Key" appear) and strikes when it reaches `interval`, then restarts from a new value.
+ * It starts at a whole number of seconds in [`first`), and restarts at one in [`next`) (Unity's
+ * `Random.Range(int, int)`, max exclusive). So the first strike comes 5–7 s after the intro, and the next ones 7–10 s
+ * apart.
+ */
+export const TITLE_AMBIENT = {
+  /** When the timer starts counting (`entranceWarmUp + 2 × entrancePreambleDelay + entranceDelay + PressKeyDelay`). */
+  from: 7250,
+  /** `thunderInterval`. */
+  interval: 10000,
+  /** `Random.Range(3, 6)` s: the timer's start value (`Start()`). */
+  first: [3, 6],
+  /** `Random.Range(0, 4)` s: its value after each strike. */
+  next: [0, 4],
+} as const;
+
+/** `Flash.anim`'s `DoingFlash` event: the flash peaks, and the logo appears, this long after `title-reveal`. */
+export const TITLE_REVEAL_FLASH_MS = 250;
+
+/**
+ * Title ignores taps this long after it appears, as Story's debounce, so the tap that ended the last game can't also
+ * start the next. A stopgap: M4 replaces it by showing and accepting Title's prompt only after its 7.25 s intro
+ * (owner decision 6).
+ */
+export const TITLE_DEBOUNCE_MS = 500;
+
+/** Story part 0's preamble strike (`firstTimePreamblePreambleDelay`). Other parts have none. */
+export const STORY_PREAMBLE_CUES: readonly Cue[] = [{ at: 1250, name: "lightning" }];
+
+/** `Troca.anim`'s `Troca` event. */
+export const TRANSITION_CUES: readonly Cue[] = [{ at: 167, name: "lightning" }];
+
+/** `Fim.anim`'s `FimKraken` event. */
+export const ENDING_CUES: readonly Cue[] = [{ at: ENDING_MS.kraken, name: "kraken" }];

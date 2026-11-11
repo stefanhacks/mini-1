@@ -24,6 +24,8 @@
 // - `beginEpoch` (call it when a state starts) empties the queue and makes every pointer and key that is down stale:
 //   stale ones hold nothing, and their later up emits nothing. So the tap that closed the dialogue can't count as the
 //   round's first input, and can't release or advance anything either.
+// - `onAdvance` (the constructor's optional listener) is called synchronously every time an "advance" is queued, inside
+//   the same call, so inside the DOM event that caused it. It is the router's activation hook (audio unlock).
 // - If more than MAX_QUEUED_EVENTS pile up undrained, the queue is flushed as by `beginEpoch` and holds a single
 //   "cancel". Individual presses and releases are never dropped on their own.
 
@@ -52,6 +54,12 @@ export class PointerMap {
   private readonly keys = new Map<Direction, "live" | "stale">();
   private readonly holders = new Map<Direction, Set<Holder>>(DIRECTIONS.map((dir) => [dir, new Set<Holder>()]));
   private queue: InputEvent[] = [];
+  private readonly onAdvance: () => void;
+
+  /** `onAdvance` is called synchronously whenever an "advance" is queued (see the contract above). */
+  constructor(onAdvance: () => void = () => undefined) {
+    this.onAdvance = onAdvance;
+  }
 
   /** Whether any live pointer or key holds `dir`. For the pad view's pressed state; rules should use the events. */
   isHeld(dir: Direction): boolean {
@@ -150,6 +158,10 @@ export class PointerMap {
 
   private enqueue(event: InputEvent) {
     this.queue.push(event);
+
+    if (event.kind === "advance") {
+      this.onAdvance();
+    }
 
     if (this.queue.length > MAX_QUEUED_EVENTS) {
       this.makeAllStale();
