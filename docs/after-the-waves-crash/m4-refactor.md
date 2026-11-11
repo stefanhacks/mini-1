@@ -114,3 +114,9 @@ This consolidates the two read-only reviews, **Centaur Sage: Scene Readability**
 | 0b-1 | **Gnome Warden: Safety Net** | The guard tests above and the snapshot harness, on the current code (green before any refactor). |
 | 0b-2 | **Dwarf Mason: Scene Split**, **Elf Tidier: Main Split** | The scene refactor and the main/states refactor, in parallel (separate files; `main.ts` imports from the scene's new paths). |
 | 0c | **Goblin Scribe: Code Review** | Behaviour-neutral (snapshot identical, counts identical), reads well, rules followed. |
+
+## Owner decisions
+
+1. **The safety net goes first,** before any refactor. The snapshots and the new tests also serve as a before/after record for later comparison.
+2. **First error wins for `debug.error`, everywhere.** Today the game-logic guard overwrites an earlier render or audio error, contradicting the `DebugApi` doc. The safety-net step makes all three guards keep the first error (debug readout only) and tests it, so the refactor starts from the corrected behaviour.
+
