@@ -1,15 +1,16 @@
+import { createCuePlayer } from "./cues.ts";
 import type { GameSession } from "./session.ts";
-import { ENDING_MS } from "./timings.ts";
+import { ENDING_CUES, ENDING_MS } from "./timings.ts";
 import type { GameDeps, GameState } from "./types.ts";
 
 export const TAP_TO_PLAY_AGAIN = "Tap to play again";
 
 /**
  * Ending: the original's `Fim` timeline and GameEnd, as instant cuts on the clock (M4 adds the tweens):
- * at once the broken boat replaces the whole one and the black overlay of the last part lifts; the kraken at 1.5 s;
- * black at 8 s; at 10 s the scene is cleared to the empty sea; 3.5 s later the logo, the credits and, new in this port,
- * "Tap to play again" (owner decision 2). Each phase begins an input epoch, and only a tap after the last one counts:
- * it goes to Title, which starts a new game.
+ * at once the broken boat replaces the whole one and the black overlay of the last part lifts; the kraken at 1.5 s,
+ * with its roar (ENDING_CUES); black at 8 s; at 10 s the scene is cleared to the empty sea; 3.5 s later the logo, the
+ * credits and, new in this port, "Tap to play again" (owner decision 2). Each phase begins an input epoch, and only a
+ * tap after the last one counts: it goes to Title, which starts a new game.
  */
 export const createEnding = (deps: GameDeps, session: GameSession): GameState => ({
   enter: (scope) => {
@@ -31,6 +32,7 @@ export const createEnding = (deps: GameDeps, session: GameSession): GameState =>
     scene.setBlack(false);
     scene.setBoat("broken");
 
+    createCuePlayer(deps, "ending").schedule(scope, ENDING_CUES);
     phase("thrown", ENDING_MS.thrown, () => undefined);
     phase("kraken", ENDING_MS.kraken, () => scene.setKraken(true));
     phase("black", ENDING_MS.black, () => scene.setBlack(true));

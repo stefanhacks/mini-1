@@ -22,14 +22,17 @@ import {
 } from "./core/viewport.ts";
 import { randomSeed, seedFromString } from "./game/challenges/rng.ts";
 import { TUNING } from "./game/challenges/tuning.ts";
+import { createAudioLifecycle } from "./game/audio-lifecycle.ts";
 import { createFrameStepper } from "./game/frame-step.ts";
 import { createInputRouter } from "./game/input/dom-router.ts";
 import { createLoadPlan } from "./game/load-plan.ts";
 import { createMuteButton } from "./game/mute-button.ts";
 import { computePads } from "./game/input/pad-geometry.ts";
 import { createPadView } from "./game/pad-view.ts";
-import { createGateView, createScene, type Scene } from "./game/scene.ts";
+import { createContinuePrompt, createGateView, createScene, type Scene } from "./game/scene.ts";
 import { createGame, type GameStateId } from "./game/states/index.ts";
+import type { CueEvent } from "./game/states/types.ts";
+import type { CueLogEntry } from "./debug-api.ts";
 import { snapshotSession } from "./game/states/session.ts";
 
 const UI_FONT = "Josefin Slab";
@@ -195,8 +198,8 @@ layoutPads(layout);
 const clock = new GameClock();
 let scene: Scene | null = null;
 
-// Audio (M3). Wave 1 wires only what the gate and the mute button need: loading, the begin tap's unlock and music,
-// and mute. Lifecycle, cues and "Tap to continue" come in wave 2.
+// Audio (M3): the engine, the mute button, the lifecycle with "Tap to continue" (further down, with the visibility
+// handler), and the cues' log. The states play the cues and pick the music (states/cues.ts, story.ts).
 const audio = createAudioEngine();
 const muteButton = createMuteButton(layers.ui);
 
@@ -207,6 +210,25 @@ router.onMute(() => {
   audio.setMuted(!audio.muted);
   muteButton.setMuted(audio.muted);
 });
+
+// "Tap to continue": shown by the lifecycle when audio can't resume without a gesture.
+const continuePrompt = createContinuePrompt(layers, layout);
+
+onLayout(continuePrompt.relayout);
+
+const lifecycle = createAudioLifecycle(audio, continuePrompt, () => document.visibilityState === "visible");
+
+// The last cues, for `window.debug.cues` (e2e checks their times). M4 hangs the visuals on `onCue` below.
+const CUE_LOG_SIZE = 64;
+const cueLog: CueLogEntry[] = [];
+
+const onCue = (event: CueEvent) => {
+  cueLog.push({ ...event, time: clock.now });
+
+  if (cueLog.length > CUE_LOG_SIZE) {
+    cueLog.shift();
+  }
+};
 
 // The gate's view needs nothing loaded; the scene needs the textures and the font.
 const gateView = createGateView(layers, layout);
@@ -281,8 +303,13 @@ const game = createGame({
   loader,
   gateView,
   audio,
+  onCue,
   clock,
-  input: router,
+  // Every drain goes through the lifecycle, which drops the "Tap to continue" tap's advance (audio-lifecycle.ts).
+  input: {
+    drain: () => lifecycle.filter(router.drain()),
+    beginEpoch: () => router.beginEpoch(),
+  },
   pad: padView,
   scene: () => {
     if (scene === null) {
@@ -296,14 +323,32 @@ const game = createGame({
 });
 const machine = new StateMachine<GameStateId>(clock, game.states);
 
-// Inside the DOM gesture: Gate's begin tap unlocks audio and starts the music (router-core.ts has the contract).
+// Inside the DOM gesture (router-core.ts has the contract): Gate's begin tap unlocks audio and starts the music, and
+// any later tap unlocks audio again when it needs a gesture ("Tap to continue").
 router.onActivate(() => game.gate.activate());
+router.onActivate(lifecycle.activate);
 const stepper = createFrameStepper(machine);
 
-// See frame-step.ts: the first frame back runs no game time, so a cancel queued while hidden is applied first.
+// See frame-step.ts: the first frame back runs no game time, so a cancel queued while hidden is applied first. The
+// router cancels held input on hidden with its own listener, added before this one. Audio suspends while hidden and
+// tries to resume when visible, without blocking anything.
+const pageVisible = () => {
+  stepper.resume();
+  lifecycle.visible();
+};
+
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
-    stepper.resume();
+    pageVisible();
+  } else {
+    lifecycle.hidden();
+  }
+});
+
+// A page restored from the bfcache: the same as becoming visible (its visibilitychange may not come on every engine).
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) {
+    pageVisible();
   }
 });
 
@@ -316,6 +361,12 @@ window.debug = {
   onLayout,
   router,
   audio,
+  get cues() {
+    return cueLog.map((entry) => ({ ...entry }));
+  },
+  get continuePrompt() {
+    return lifecycle.prompting;
+  },
   get gate() {
     return { phase: game.gate.phase, progress: game.gate.progress };
   },
@@ -362,6 +413,25 @@ app.ticker.add((ticker) => {
   } catch (error) {
     halted = true;
     window.debug.error = error;
+    reportError(error);
+  }
+});
+
+// The audio engine's per-frame top-up of the bar-by-bar overlay schedule. Outside the game-logic guard and independent
+// of the game clock: the music runs on the AudioContext's own clock, paused game or not. Its own guard: a throw is
+// reported once and stops only this.
+let audioHalted = false;
+
+app.ticker.add(() => {
+  if (audioHalted) {
+    return;
+  }
+
+  try {
+    audio.tick();
+  } catch (error) {
+    audioHalted = true;
+    window.debug.error ??= error;
     reportError(error);
   }
 });

@@ -1,6 +1,7 @@
 // What the game states drive, as interfaces: the scene, the pad and the input queue. Pure TypeScript with no Pixi
 // import, so the whole game flow runs under `node --test` with fakes. main.ts passes the real scene (scene.ts), the pad
 // view (pad-view.ts) and the input router (input/dom-router.ts), which all satisfy these.
+import type { WorldSfxKey } from "../../core/audio/audio-engine.ts";
 import type { GameClock } from "../../core/clock.ts";
 import type { State } from "../../core/state-machine.ts";
 import type { ChallengeProgress, ChallengeSpec } from "../challenges/rule.ts";
@@ -9,6 +10,7 @@ import type { Direction } from "../direction.ts";
 import type { InputEvent } from "../input/pointer-map.ts";
 import type { StoryPage } from "../story/cursor.ts";
 import type { Measure } from "../story/paging.ts";
+import type { CueName } from "./timings.ts";
 
 export type GameStateId = "gate" | "title" | "story" | "transition" | "round" | "ending";
 
@@ -84,6 +86,24 @@ export interface GateAudio {
   startMusic(): void;
 }
 
+/**
+ * The audio engine's side the game states use (src/core/audio/audio-engine.ts satisfies it): the gate's unlock and
+ * music, the cues' sounds and the music per story part.
+ */
+export interface GameAudio extends GateAudio {
+  /** A world SFX at a random pitch, cutting the previous one (the original's single SFX channel). */
+  playSfx(key: WorldSfxKey): void;
+  /** The music overlay of a story part (0..3), from the next bar; null for none. */
+  setStoryPart(part: number | null): void;
+}
+
+/** A cue as it fired: which, in which state, and when in that state's timeline (ms of game time since its enter). */
+export interface CueEvent {
+  readonly name: CueName;
+  readonly state: GameStateId;
+  readonly at: number;
+}
+
 /** What the gate screen shows. */
 export interface GateScreen {
   /** The load bar's fill (0..1), or null for no bar. */
@@ -107,7 +127,12 @@ export interface GameDeps {
   /** Loads the assets and builds the scene; driven by Gate. */
   readonly loader: GateLoader;
   readonly gateView: GateView;
-  readonly audio: GateAudio;
+  readonly audio: GameAudio;
+  /**
+   * Called on every cue, right after its sound was asked for, inside the clock tick that reached it. main.ts logs it
+   * for `window.debug`; M4 hangs the visuals here.
+   */
+  readonly onCue: (event: CueEvent) => void;
   readonly clock: GameClock;
   readonly input: InputSource;
   readonly pad: PadControl;

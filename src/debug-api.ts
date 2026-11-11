@@ -10,7 +10,7 @@ import type { InputRouter } from "./game/input/dom-router.ts";
 import type { Scene } from "./game/scene.ts";
 import type { GatePhase } from "./game/states/gate.ts";
 import type { SessionSnapshot } from "./game/states/session.ts";
-import type { GameStateId } from "./game/states/types.ts";
+import type { CueEvent, GameStateId } from "./game/states/types.ts";
 
 /** The game as plain data, safe to hand to `page.evaluate`. */
 export type GameSnapshot = SessionSnapshot & { readonly state: GameStateId | undefined };
@@ -23,6 +23,11 @@ export interface DebugCounts {
   readonly tickerListeners: number;
 }
 
+/** A cue as it fired, with the game clock's time then (ms). */
+export interface CueLogEntry extends CueEvent {
+  readonly time: number;
+}
+
 export interface DebugApi {
   readonly app: Application;
   readonly clock: GameClock;
@@ -30,7 +35,12 @@ export interface DebugApi {
   readonly layers: Layers;
   readonly display: PlayfieldDisplay;
   readonly router: InputRouter;
+  /** The audio engine; `audio.debug` is its snapshot (context state, bar anchor, overlay starts, voices). */
   readonly audio: AudioEngine;
+  /** The last cues fired (at most 64), oldest first. */
+  readonly cues: readonly CueLogEntry[];
+  /** Whether "Tap to continue" is up. */
+  readonly continuePrompt: boolean;
   /** The start gate's phase and load progress (0..1). */
   readonly gate: { readonly phase: GatePhase; readonly progress: number };
   /** Subscribes to every new layout; returns the unsubscribe function. */
