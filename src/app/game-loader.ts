@@ -43,6 +43,8 @@ export interface GameLoaderDeps {
   readonly clips?: ClipPlayer;
   /** Handed to the scene's weather (`?debug&eyes=always`). */
   readonly weather?: WeatherOptions;
+  /** The "reduce flashes" toggle (reduce-flashes.ts), handed to the scene: it caps the strikes' flash. */
+  readonly reduceFlashes?: () => boolean;
   /** What loads the sprites and the font and builds the scene: Pixi's, unless a unit test passes fakes. */
   readonly assets?: LoaderAssets;
 }
@@ -56,7 +58,7 @@ export interface LoaderAssets {
 const PIXI_ASSETS: LoaderAssets = { loadSprites, loadFont, createScene };
 
 export const createGameLoader = ({
-  layers, layouts, gateView, audio, clips, weather, assets = PIXI_ASSETS,
+  layers, layouts, gateView, audio, clips, weather, reduceFlashes, assets = PIXI_ASSETS,
 }: GameLoaderDeps) => {
   let textures: Record<SpriteKey, Texture> | null = null;
   let scene: Scene | null = null;
@@ -91,7 +93,7 @@ export const createGameLoader = ({
 
     try {
       // `undefined` keeps the scene's own reduced-motion watch.
-      const built = assets.createScene(layers, loaded, layouts.current, clips, undefined, weather);
+      const built = assets.createScene(layers, loaded, layouts.current, clips, undefined, weather, reduceFlashes);
 
       layouts.onLayout(built.relayout);
 

@@ -1,6 +1,7 @@
-// Where the corner buttons sit (mute, then pause below it) and what counts as a tap on one. Pure TypeScript with no
-// Pixi import, so it runs under `node --test`. Every length is in #game CSS px. The views (src/game/mute-button.ts,
-// pause-button.ts) draw from the same rects, so art and hit-testing never disagree. Written by Claude Code.
+// Where the corner buttons sit (mute, then pause and "reduce flashes" below it) and what counts as a tap on one. Pure
+// TypeScript with no Pixi import, so it runs under `node --test`. Every length is in #game CSS px. The views
+// (src/game/mute-button.ts, pause-button.ts, flashes-button.ts) draw from the same rects, so art and hit-testing never
+// disagree. Written by Claude Code.
 //
 // Rule (m3-plan owner decision 1: top-right of the safe area; m5-plan owner decisions 6 and 7: a stack below it): slot
 // i's hit square has its top edge i squares below the safe rect's top, and its right edge on the safe rect's right,
@@ -11,11 +12,8 @@
 
 import type { Layout, Point, Rect } from "../../core/layout.ts";
 
-/**
- * The corner stack, top to bottom. Owner decision 7's order is mute, pause, reduce flashes: wave 2 appends its toggle
- * here, and the router and its view take the next slot.
- */
-export const CORNER_BUTTONS = ["mute", "pause"] as const;
+/** The corner stack, top to bottom: owner decision 7's order, mute, pause, then the "reduce flashes" toggle. */
+export const CORNER_BUTTONS = ["mute", "pause", "flashes"] as const;
 
 export type CornerButton = (typeof CORNER_BUTTONS)[number];
 

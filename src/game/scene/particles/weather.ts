@@ -102,8 +102,8 @@ export const createWeatherEffects = (textures: Textures) => {
 export type WeatherParts = ReturnType<typeof createWeatherEffects>;
 
 /**
- * How fast the weather goes. Reduced motion's hook (m5-plan, deliverable 4, wave 2): read at every `sync`, and left at
- * 1 and 1 until then.
+ * How fast the weather goes, read at every `sync`. The scene sets it from the reduced-motion policy (game/motion.ts):
+ * 1 and 1 without it.
  */
 export interface WeatherMotion {
   /** Multiplies the rain's emission: 1 is the original's 220 drops a second. */

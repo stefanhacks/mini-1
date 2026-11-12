@@ -10,8 +10,10 @@ import type { StateMachine } from "../core/state-machine.ts";
 import type { DebugApi } from "../debug-api.ts";
 import type { InputRouter } from "../game/input/dom-router.ts";
 import type { Pause } from "../game/pause.ts";
+import type { ReduceFlashes } from "../game/reduce-flashes.ts";
 import type { Scene } from "../game/scene.ts";
 import type { ContinuePromptScene } from "../game/scene/continue-prompt.ts";
+import type { ScreenTone } from "../game/screen-tone.ts";
 import { snapshotSession } from "../game/states/session.ts";
 import type { Game, GameStateId } from "../game/states/index.ts";
 import type { CueLog } from "./cue-log.ts";
@@ -37,6 +39,8 @@ export interface DebugWiring {
   readonly clips: Pick<ClipPlayer, "active">;
   readonly pause: Pause;
   readonly continuePrompt: Pick<ContinuePromptScene, "visible">;
+  readonly reduceFlashes: Pick<ReduceFlashes, "on">;
+  readonly screenTone: Pick<ScreenTone, "grey">;
 }
 
 /**
@@ -46,7 +50,7 @@ export interface DebugWiring {
 export const createDebugApi = (wiring: DebugWiring): DebugApi => {
   const {
     app, clock, machine, layers, display, layouts, router, audio, cueLog, game, timescale, loading, errors, clips,
-    pause, continuePrompt,
+    pause, continuePrompt, reduceFlashes, screenTone,
   } = wiring;
 
   return {
@@ -65,6 +69,9 @@ export const createDebugApi = (wiring: DebugWiring): DebugApi => {
       return continuePrompt.visible;
     },
     pause,
+    get flashes() {
+      return { reduced: reduceFlashes.on, tone: screenTone.grey };
+    },
     get gate() {
       return { phase: game.gate.phase, progress: game.gate.progress };
     },

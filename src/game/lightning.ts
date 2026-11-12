@@ -1,4 +1,4 @@
-// Lightning strikes as the original's GameManager.DoTheThunder draws them, and the reduced-motion flash. Pure
+// Lightning strikes as the original's GameManager.DoTheThunder draws them, and the reduced flash's rule. Pure
 // TypeScript with no Pixi import. Written by Claude Code.
 //
 // DoTheThunder picks a bolt sprite, an x and a mirror, and plays `Raio.anim` on the bolt and `Flash.anim` on the
@@ -106,3 +106,20 @@ export const capAlpha = (clip: Clip, peak: number): Clip => {
 
 /** `Flash.anim` capped at FLASH_REDUCED_PEAK, for reduced motion. */
 export const FLASH_REDUCED: Clip = capAlpha(CLIPS.flash, FLASH_REDUCED_PEAK);
+
+/** What a strike's flash does under the player's settings (m5-plan owner decision 9). */
+export interface FlashRule {
+  /** The square's flash plays FLASH_REDUCED (peak FLASH_REDUCED_PEAK) instead of `Flash.anim`. */
+  readonly capped: boolean;
+  /** The screen tone (screen-tone.ts) repeats the flash over the whole canvas; it follows the square's cap. */
+  readonly screenTone: boolean;
+}
+
+/**
+ * OS reduced motion caps the flash and keeps the screen tone (capped with it); the "reduce flashes" toggle caps the
+ * flash and turns the screen tone off.
+ */
+export const flashRule = (reducedMotion: boolean, reduceFlashes: boolean): FlashRule => ({
+  capped: reducedMotion || reduceFlashes,
+  screenTone: !reduceFlashes,
+});

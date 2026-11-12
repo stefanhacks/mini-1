@@ -5,7 +5,8 @@
 // (now − start) × speed, so it stands still while the clock is paused or the game logic halted, and follows
 // `?timescale`; there is no setTimeout or requestAnimationFrame. A clip started with `play` begins at the clock's
 // `now` at that call (the due time, inside a timer callback), or, from an event or end callback, at that event's own
-// time, so chained clips don't drift by a frame. Without a clock it begins at the next `sync`.
+// time, so chained clips don't drift by a frame. Without a clock it begins at the next `sync`. A handle's `setSpeed`
+// changes the speed from the last synced pose on, so the clip goes on without a jump (reduced motion, game/motion.ts).
 //
 // Values: every channel is absolute, as in Unity.
 // - Alpha (m_Color.a, m_fontColor.a) sets `alpha`.
@@ -56,6 +57,11 @@ export interface ClipHandle {
   readonly stop: () => void;
   /** Whether it ended or was stopped. */
   readonly done: boolean;
+  /**
+   * A new speed (finite, > 0), from the pose the last `sync` applied: the clip goes on from where it is, with no jump,
+   * at the new rate (reduced motion, game/motion.ts). Events already crossed don't fire again.
+   */
+  readonly setSpeed: (speed: number) => void;
 }
 
 export interface PlayOptions {
@@ -112,16 +118,24 @@ interface Playback {
   readonly clip: Clip;
   readonly nodes: readonly BoundNode[];
   readonly loop: boolean;
-  readonly speed: number;
+  speed: number;
   readonly options: PlayOptions;
   /** Game ms at the clip's time 0; null until the first `sync` when there is no clock. */
   start: number | null;
   /** Clip seconds already played, not wrapped; −1 before the first `sync`, so events at 0 fire. */
   played: number;
+  /** Game ms of the last `sync` that advanced it, where `played` was reached; null before the first. */
+  syncedAt: number | null;
   done: boolean;
 }
 
 const UNIT = { x: 1, y: 1 } as const;
+
+const checkSpeed = (speed: number) => {
+  if (!(speed > 0) || !Number.isFinite(speed)) {
+    throw new RangeError(`a clip needs a finite speed > 0, got ${speed}`);
+  }
+};
 
 const bindingFor = (target: AnimTarget, path: string, clip: Clip) => {
   const binding = path === "" ? target : target.children?.[path];
@@ -272,6 +286,7 @@ export const createClipPlayer = (clock?: { readonly now: number }): ClipPlayer =
     }
 
     playback.played = elapsed;
+    playback.syncedAt = now;
 
     const ended = !loop && elapsed >= clip.length;
     const time = ended ? clip.length : loop && clip.length > 0 ? elapsed % clip.length : elapsed;
@@ -293,9 +308,7 @@ export const createClipPlayer = (clock?: { readonly now: number }): ClipPlayer =
     play: (clip, target, options = {}) => {
       const speed = options.speed ?? 1;
 
-      if (!(speed > 0) || !Number.isFinite(speed)) {
-        throw new RangeError(`play() needs a finite speed > 0, got ${speed}`);
-      }
+      checkSpeed(speed);
 
       const playback: Playback = {
         clip,
@@ -305,6 +318,7 @@ export const createClipPlayer = (clock?: { readonly now: number }): ClipPlayer =
         options,
         start: callbackTime ?? clock?.now ?? null,
         played: -1,
+        syncedAt: null,
         done: false,
       };
 
@@ -316,6 +330,17 @@ export const createClipPlayer = (clock?: { readonly now: number }): ClipPlayer =
         },
         get done() {
           return playback.done;
+        },
+        setSpeed: (speed) => {
+          checkSpeed(speed);
+
+          // Re-anchored so that the last synced time maps to the clip time it showed; before any sync, the clip
+          // simply starts at the new speed.
+          if (playback.syncedAt !== null) {
+            playback.start = playback.syncedAt - (playback.played * 1000) / speed;
+          }
+
+          playback.speed = speed;
         },
       };
     },

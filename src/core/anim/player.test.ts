@@ -302,6 +302,72 @@ describe("createClipPlayer: time", () => {
     assert.equal(broken.position.y, snapToArtPixels(target.parentOrigin.y - y, 0.5, 42));
   });
 
+  it("changes speed mid-loop from the last synced pose, with no jump (reduced motion)", () => {
+    // The boat's tilt is unsnapped: its pose at clip time `ms`, from a player that never changed speed.
+    const tiltAt = (ms: number) => {
+      const reference = createClipPlayer();
+      const node = sprite();
+
+      reference.play(CLIPS.barco, { node, origin: BOAT.parentOrigin });
+      reference.sync(0);
+      reference.sync(ms);
+
+      return node.rotation;
+    };
+    const player = createClipPlayer();
+    const boat = sprite();
+    const handle = player.play(CLIPS.barco, { node: boat, origin: BOAT.parentOrigin });
+
+    player.sync(0);
+    player.sync(1000);
+    close(boat.rotation, tiltAt(1000));
+    handle.setSpeed(0.5);
+    // The same frame again: the same pose. Then half the clip's time per game second.
+    player.sync(1000);
+    close(boat.rotation, tiltAt(1000));
+    player.sync(3000);
+    close(boat.rotation, tiltAt(2000));
+    // Back to full speed, past the loop's wrap at 2.6 s: 2 s + 1.5 s is 0.9 s into the next cycle.
+    handle.setSpeed(1);
+    player.sync(4500);
+    close(boat.rotation, tiltAt(900));
+  });
+
+  it("keeps events and the end on time after a speed change, and takes a speed set before the first sync", () => {
+    const player = createClipPlayer();
+    const fired: number[] = [];
+    let endedAt = NaN;
+    let now = 0;
+    const handle = player.play(eventsOnly(2, false, [[0.5, "a"], [1.5, "b"]]), { node: sprite() }, {
+      onEvent: () => fired.push(now),
+      onEnd: () => {
+        endedAt = now;
+      },
+    });
+
+    for (now = 0; now <= 1000; now += 100) {
+      player.sync(now);
+    }
+
+    // 1 s of clip time played; the last second takes 2 s at half speed.
+    handle.setSpeed(0.5);
+
+    for (now = 1100; now <= 3000; now += 100) {
+      player.sync(now);
+    }
+
+    assert.deepEqual(fired, [500, 2000]);
+    assert.equal(endedAt, 3000);
+
+    const late = player.play(eventsOnly(1, false, []), { node: sprite() }, { onEnd: () => fired.push(-1) });
+
+    late.setSpeed(2);
+    player.sync(3000);
+    player.sync(3500);
+    assert.equal(late.done, true);
+    assert.throws(() => late.setSpeed(Number.NaN), RangeError);
+  });
+
   it("never fires an event twice after its callback throws", () => {
     const player = createClipPlayer();
     let calls = 0;

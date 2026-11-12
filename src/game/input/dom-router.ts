@@ -2,8 +2,8 @@
 // It uses DOM events, not Pixi's federated events: Pixi never delivers pointercancel (04, correction 1), and the
 // playfield is a render texture outside the hit-test tree. DOM handlers only queue events; the active state drains them
 // in `update`, so input runs under the state machine's error guard and in game time.
-// The decisions (corner buttons first, pads, the activation, mute and pause hooks) live in router-core.ts, with their
-// contract.
+// The decisions (corner buttons first, pads, the activation, mute, pause and reduce-flashes hooks) live in
+// router-core.ts, with their contract.
 
 import type { Direction } from "../direction.ts";
 import type { Layout, Rect } from "../../core/layout.ts";
@@ -23,6 +23,8 @@ export interface InputRouter {
   readonly muteRect: Rect | null;
   /** The pause button's hit square in the current layout (corner-geometry.ts), or null. */
   readonly pauseRect: Rect | null;
+  /** The "reduce flashes" toggle's hit square in the current layout (corner-geometry.ts), or null. */
+  readonly flashesRect: Rect | null;
   /**
    * Calls `listener` synchronously inside the DOM event (pointerup or keydown) of every input that queues "advance",
    * right after it is queued: the place for `audio.unlock()` and, on Gate's begin tap, `startMusic()`. Never for a
@@ -41,6 +43,11 @@ export interface InputRouter {
    * as `setPauseInput` allows (router-core.ts has the contract). Returns the unsubscribe.
    */
   onPause(listener: () => void): () => void;
+  /**
+   * Turns on the "reduce flashes" toggle's hit area: a tap on it calls `listener` and gives no press, advance or
+   * activation, paused or not. While no listener is registered it is ordinary input. Returns the unsubscribe.
+   */
+  onFlashes(listener: () => void): () => void;
   /** What the pause button and keys do from now on: "off", "ready" or "paused" (see router-core.ts). */
   setPauseInput(input: PauseInput): void;
   /** Whether `dir` is held by any pointer or key, for the pad view. */
@@ -131,8 +138,12 @@ export const createInputRouter = (canvas: HTMLElement, frame: HTMLElement = getG
     get pauseRect() {
       return core.pauseRect;
     },
+    get flashesRect() {
+      return core.flashesRect;
+    },
     onMute: (listener) => core.onMute(listener),
     onPause: (listener) => core.onPause(listener),
+    onFlashes: (listener) => core.onFlashes(listener),
     setPauseInput: (input) => core.setPauseInput(input),
     isHeld: (dir) => core.isHeld(dir),
     destroy: () => {

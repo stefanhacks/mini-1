@@ -1,5 +1,6 @@
-// What the corner buttons' icons share (mute-button.ts, pause-button.ts): the colour, the stroke, and a 24-unit grid on
-// the icon box snapped to device pixels. Written by Claude Code.
+// What the corner buttons' icons share (mute-button.ts, pause-button.ts, flashes-button.ts): the colour, the stroke, a
+// 24-unit grid on the icon box snapped to device pixels, and the "off" slash. Written by Claude Code.
+import type { Graphics } from "pixi.js";
 import { snapToDevicePixels, type Layout, type Rect } from "../core/layout.ts";
 import { cornerIconBox } from "./input/corner-geometry.ts";
 import { VOICE_GREY } from "./story/script.ts";
@@ -32,4 +33,13 @@ export const iconGrid = (layout: Layout, rect: Rect): IconGrid => {
     unit,
     width: Math.max(1, snap(STROKE)),
   };
+};
+
+/** A slash across the whole icon, with a black edge so it reads where it crosses the icon's shape. */
+export const drawSlash = (graphics: Graphics, at: IconPoint, width: number) => {
+  const [x0, y0] = at(3, 3);
+  const [x1, y1] = at(21, 21);
+
+  graphics.moveTo(x0, y0).lineTo(x1, y1).stroke({ width: width * 3, color: 0x000000, cap: "round" });
+  graphics.moveTo(x0, y0).lineTo(x1, y1).stroke({ width, color: ICON_COLOR, cap: "round" });
 };

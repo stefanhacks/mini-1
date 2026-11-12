@@ -28,6 +28,7 @@ const setUp = (state: string, { paused = false } = {}) => {
   const activateListeners: (() => void)[] = [];
   const muteListeners: (() => void)[] = [];
   const pauseListeners: (() => void)[] = [];
+  const flashesListeners: (() => void)[] = [];
   const router = {
     onActivate: (listener: () => void) => {
       activateListeners.push(listener);
@@ -41,6 +42,11 @@ const setUp = (state: string, { paused = false } = {}) => {
     },
     onPause: (listener: () => void) => {
       pauseListeners.push(listener);
+
+      return () => undefined;
+    },
+    onFlashes: (listener: () => void) => {
+      flashesListeners.push(listener);
 
       return () => undefined;
     },
@@ -66,9 +72,25 @@ const setUp = (state: string, { paused = false } = {}) => {
     resume: () => calls.push("pause.resume"),
   } as unknown as Pause;
 
-  wireGestures({ router, audio, muteButton, lifecycle, machine: { current: state }, gate, pause });
+  let reduced = false;
+  const reduceFlashes = {
+    get on() {
+      return reduced;
+    },
+    toggle: () => {
+      reduced = !reduced;
+      calls.push(`reduceFlashes.toggle:${reduced}`);
 
-  return { calls, activateListeners, muteListeners, pauseListeners };
+      return reduced;
+    },
+  };
+  const flashesButton = { setReduced: (value: boolean) => calls.push(`flashesButton.setReduced:${value}`) };
+
+  wireGestures({
+    router, audio, muteButton, lifecycle, machine: { current: state }, gate, pause, reduceFlashes, flashesButton,
+  });
+
+  return { calls, activateListeners, muteListeners, pauseListeners, flashesListeners };
 };
 
 describe("wireGestures", () => {
@@ -117,5 +139,21 @@ describe("wireGestures", () => {
 
     paused.pauseListeners[0]?.();
     assert.deepEqual(paused.calls, ["lifecycle.activate", "pause.resume"]);
+  });
+
+  it("the reduce-flashes toggle flips the setting and its icon, and only that, paused or not", () => {
+    for (const paused of [false, true]) {
+      const { calls, flashesListeners } = setUp("round", { paused });
+
+      assert.equal(flashesListeners.length, 1);
+      flashesListeners[0]?.();
+      flashesListeners[0]?.();
+      assert.deepEqual(calls, [
+        "reduceFlashes.toggle:true",
+        "flashesButton.setReduced:true",
+        "reduceFlashes.toggle:false",
+        "flashesButton.setReduced:false",
+      ]);
+    }
   });
 });

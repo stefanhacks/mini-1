@@ -5,7 +5,7 @@
 import type { Container, Sprite } from "pixi.js";
 import { CLIPS, TARGETS } from "../../assets/anims.ts";
 import type { Clip } from "../../core/anim/clip.ts";
-import type { ClipPlayer } from "../../core/anim/player.ts";
+import type { ClipHandle, ClipPlayer } from "../../core/anim/player.ts";
 import { placeOnArtGrid, type Layers } from "../../core/layers.ts";
 import type { Point } from "../../core/layout.ts";
 import type { Backdrop, Boat, Fade } from "../states/types.ts";
@@ -18,6 +18,8 @@ export interface WorldView {
   readonly sprites: Readonly<Record<WorldSpriteLabel, Sprite>>;
   /** Starts the ambient loops, once (scene.ts, last in the build): they run for the page's life, replays included. */
   readonly startAmbient: () => void;
+  /** The ambient loops' speed, from their current pose on (reduced motion slows them, game/motion.ts). Default 1. */
+  readonly setAmbientSpeed: (speed: number) => void;
   readonly setBackdrop: (backdrop: Backdrop, visible: boolean, fade?: Fade) => void;
   readonly setBoat: (state: Boat) => void;
   readonly setKraken: (visible: boolean, fade?: Fade) => void;
@@ -57,12 +59,9 @@ const AMBIENT_LOOPS: readonly AmbientLoop[] = [
 
 type WorldSprites = Readonly<Record<WorldSpriteLabel, Sprite>>;
 
-/** Starts AMBIENT_LOOPS on `sprites`. */
-const playAmbientLoops = (clips: ClipPlayer, sprites: WorldSprites) => {
-  for (const { label, clip, origin } of AMBIENT_LOOPS) {
-    clips.play(clip, { node: sprites[label], origin });
-  }
-};
+/** Starts AMBIENT_LOOPS on `sprites`, at `speed`. */
+const playAmbientLoops = (clips: ClipPlayer, sprites: WorldSprites, speed: number) =>
+  AMBIENT_LOOPS.map(({ label, clip, origin }) => clips.play(clip, { node: sprites[label], origin }, { speed }));
 
 /**
  * The boat's states: the whole boat bobbing, the broken one at its spot or thrown up (its end pose stays), or none.
@@ -137,17 +136,19 @@ export const createWorld = (
   const body = sprites["kraken-body"];
   const tail = sprites["kraken-tail"];
   const bodyOrigin = TARGETS["Stage/Monster/Body"].parentOrigin;
-  let ambientStarted = false;
+  let ambient: ClipHandle[] | null = null;
+  let ambientSpeed = 1;
 
   const placeHome = (label: WorldSpriteLabel) => placeOnArtGrid(sprites[label], homes[label].x, homes[label].y);
 
   return {
     sprites,
     startAmbient: () => {
-      if (!ambientStarted) {
-        ambientStarted = true;
-        playAmbientLoops(clips, sprites);
-      }
+      ambient ??= playAmbientLoops(clips, sprites, ambientSpeed);
+    },
+    setAmbientSpeed: (speed) => {
+      ambientSpeed = speed;
+      ambient?.forEach((handle) => handle.setSpeed(speed));
     },
     setBackdrop: (backdrop, visible, fade) => {
       const sprite = sprites[backdrop];

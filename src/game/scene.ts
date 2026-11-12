@@ -11,6 +11,7 @@ import type { Graphics, Sprite, Container, Text } from "pixi.js";
 import { createClipPlayer, type ClipPlayer } from "../core/anim/player.ts";
 import type { Layers } from "../core/layers.ts";
 import type { Layout } from "../core/layout.ts";
+import { followMotion } from "./motion.ts";
 import type { SceneView } from "./states/types.ts";
 import type { Textures } from "./scene/art-sprite.ts";
 import { createChallengeView } from "./scene/challenge-view.ts";
@@ -33,6 +34,11 @@ export interface Scene extends SceneView {
   readonly weather: Weather;
   /** Follows a new layout: the ui texts, the progress art, and story paging. Call it from `onLayout`. */
   readonly relayout: (layout: Layout) => void;
+  /**
+   * Reads reduced motion and, when it changed, applies its policy (motion.ts) to the ambient loops, the pulses and the
+   * weather. Once a frame, before the weather's sync (main.ts), so switching the setting mid-game applies at once.
+   */
+  readonly syncMotion: () => void;
   /** The display objects, labelled, for tests and the debug overlay. */
   readonly parts: {
     readonly textBox: Sprite;
@@ -52,7 +58,8 @@ export interface Scene extends SceneView {
  * Builds the whole scene into the layers, hidden but for the opening frame (see `reset`), and starts the ambient
  * loops, last, so a build that throws leaves no clip behind. Needs the textures and the font loaded. `clips` is the
  * app's player, which the frame loop syncs; the default one is never synced (tests). `reducedMotion` is read at each
- * strike: it caps the flash. `weather` takes `?debug&eyes=always`.
+ * strike, where it caps the flash, and at each `syncMotion`. `weather` takes `?debug&eyes=always`.
+ * `reduceFlashes` (reduce-flashes.ts) is read at each strike too: it caps the flash.
  */
 export const createScene = (
   layers: Layers,
@@ -61,6 +68,7 @@ export const createScene = (
   clips: ClipPlayer = createClipPlayer(),
   reducedMotion: () => boolean = watchReducedMotion(),
   weatherOptions: WeatherOptions = {},
+  reduceFlashes: () => boolean = () => false,
 ): Scene => {
   const fades = createFades(clips);
   const weatherParts = createWeatherEffects(textures);
@@ -77,6 +85,14 @@ export const createScene = (
     clips,
     revealLogo: () => title.setLogo(true),
     reducedMotion,
+    reduceFlashes,
+  });
+  const syncMotion = followMotion(reducedMotion, (policy) => {
+    world.setAmbientSpeed(policy.ambientSpeed);
+    title.setPulseHeld(policy.holdPulses);
+    challenge.setPulseHeld(policy.holdPulses);
+    weather.motion.rainRate = policy.rainRate;
+    weather.motion.speed = policy.weatherSpeed;
   });
 
   const scene: Scene = {
@@ -125,6 +141,7 @@ export const createScene = (
       challenge.relayout(next);
       title.relayout(next);
     },
+    syncMotion,
     parts: {
       textBox: story.textBox,
       storyText: story.storyText,
@@ -141,6 +158,7 @@ export const createScene = (
 
   scene.reset();
   scene.relayout(initial);
+  syncMotion();
   world.startAmbient();
 
   return scene;

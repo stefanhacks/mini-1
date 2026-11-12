@@ -4,7 +4,7 @@
 
 import { Container, Graphics } from "pixi.js";
 import type { Layout } from "../core/layout.ts";
-import { ICON_COLOR, iconGrid, type IconPoint } from "./corner-icon.ts";
+import { drawSlash, ICON_COLOR, iconGrid, type IconPoint } from "./corner-icon.ts";
 import { cornerButtonRect } from "./input/corner-geometry.ts";
 
 export interface MuteButtonView {
@@ -31,15 +31,6 @@ const drawWaves = (graphics: Graphics, at: IconPoint, unit: number, width: numbe
       .arc(cx, cy, r, -Math.PI / 4, Math.PI / 4)
       .stroke({ width, color: ICON_COLOR, cap: "round" });
   }
-};
-
-/** A slash across the whole icon, with a black edge so it reads where it crosses the speaker. */
-const drawSlash = (graphics: Graphics, at: IconPoint, width: number) => {
-  const [x0, y0] = at(3, 3);
-  const [x1, y1] = at(21, 21);
-
-  graphics.moveTo(x0, y0).lineTo(x1, y1).stroke({ width: width * 3, color: 0x000000, cap: "round" });
-  graphics.moveTo(x0, y0).lineTo(x1, y1).stroke({ width, color: ICON_COLOR, cap: "round" });
 };
 
 export const createMuteButton = (parent: Container): MuteButtonView => {

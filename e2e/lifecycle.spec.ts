@@ -156,7 +156,7 @@ test("Escape, P and the pause button pause and resume, never advancing; off at t
   expect(await pageKey(page)).toBe(shown);
 });
 
-test("the pause button sits right under mute, in the safe area, clear of every control zone and pad", {
+test("the pause button and the reduce-flashes toggle stack under mute, in the safe area, clear of zones and pads", {
   tag: "@device",
 }, async ({ page }) => {
   // The router has its layout as soon as `window.debug` exists: nothing needs to load.
@@ -176,27 +176,30 @@ test("the pause button sits right under mute, in the safe area, clear of every c
       .toBe(size.width > size.height ? "landscape" : "portrait");
 
     const layout = await readLayout(page);
-    const { muteRect, pauseRect } = await page.evaluate(() => ({
+    const { muteRect, pauseRect, flashesRect } = await page.evaluate(() => ({
       muteRect: window.debug.router.muteRect,
       pauseRect: window.debug.router.pauseRect,
+      flashesRect: window.debug.router.flashesRect,
     }));
 
-    if (muteRect === null || pauseRect === null) {
+    if (muteRect === null || pauseRect === null || flashesRect === null) {
       throw new Error(`no room for the corner buttons at ${size.width}×${size.height}`);
     }
 
-    expect(pauseRect.x).toBe(muteRect.x);
-    expect(pauseRect.y).toBeCloseTo(muteRect.y + muteRect.height, 9);
-    expect(pauseRect.x).toBeGreaterThanOrEqual(layout.safe.x);
-    expect(pauseRect.x + pauseRect.width).toBeLessThanOrEqual(layout.safe.x + layout.safe.width + 1e-9);
-    expect(pauseRect.y + pauseRect.height).toBeLessThanOrEqual(layout.safe.y + layout.safe.height + 1e-9);
+    for (const [above, rect] of [[muteRect, pauseRect], [pauseRect, flashesRect]]) {
+      expect(rect.x).toBe(above.x);
+      expect(rect.y).toBeCloseTo(above.y + above.height, 9);
+      expect(rect.x).toBeGreaterThanOrEqual(layout.safe.x);
+      expect(rect.x + rect.width).toBeLessThanOrEqual(layout.safe.x + layout.safe.width + 1e-9);
+      expect(rect.y + rect.height).toBeLessThanOrEqual(layout.safe.y + layout.safe.height + 1e-9);
 
-    for (const zone of layout.zones) {
-      expect(overlaps(zone, pauseRect)).toBe(false);
-    }
+      for (const zone of layout.zones) {
+        expect(overlaps(zone, rect)).toBe(false);
+      }
 
-    for (const pad of computePads(layout)) {
-      expect(overlaps(pad.hitBounds, pauseRect)).toBe(false);
+      for (const pad of computePads(layout)) {
+        expect(overlaps(pad.hitBounds, rect)).toBe(false);
+      }
     }
   }
 });

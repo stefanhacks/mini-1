@@ -24,6 +24,8 @@ export interface ChallengeView {
   readonly setProgress: (progress: ChallengeProgress | null) => void;
   /** Follows a new layout: the prompt and the progress art. */
   readonly relayout: (layout: Layout) => void;
+  /** Reduced motion (game/motion.ts): an arrow's pulse held at full alpha and scale 1 instead, now and from then on. */
+  readonly setPulseHeld: (held: boolean) => void;
 }
 
 /**
@@ -47,6 +49,8 @@ export const createChallengeView = (
   const cursorSprites: Sprite[] = [];
   const pulseSprites: Sprite[] = [];
   let pulse: ClipHandle | null = null;
+  let pulseKind: keyof typeof PULSES | null = null;
+  let pulseHeld = false;
 
   layers.top.addChild(arrows);
 
@@ -81,10 +85,30 @@ export const createChallengeView = (
   const stopPulse = () => {
     pulse?.stop();
     pulse = null;
+    pulseKind = null;
 
     for (const sprite of pulseSprites) {
       sprite.visible = false;
       sprite.scale.set(1);
+    }
+  };
+
+  /** Plays the pulse on arrow 0's overlay, from its start, or holds it there at alpha 1 and scale 1. */
+  const playPulse = () => {
+    const [sprite] = pulseSprites;
+
+    pulse?.stop();
+    pulse = null;
+
+    if (pulseKind === null) {
+      return;
+    }
+
+    if (pulseHeld) {
+      sprite.alpha = 1;
+      sprite.scale.set(1);
+    } else {
+      pulse = clips.play(PULSES[pulseKind], { node: sprite });
     }
   };
 
@@ -96,7 +120,8 @@ export const createChallengeView = (
     sprite.texture = arrow.texture;
     sprite.position.copyFrom(arrow.position);
     sprite.visible = true;
-    pulse = clips.play(PULSES[kind], { node: sprite });
+    pulseKind = kind;
+    playPulse();
   };
 
   /** Shows pair `index` as arrow `dir` in a row of `count`, the cursor under it. */
@@ -202,6 +227,10 @@ export const createChallengeView = (
       layout = next;
       placeUiText(prompt, CHALLENGE_PROMPT, next);
       drawProgress();
+    },
+    setPulseHeld: (held) => {
+      pulseHeld = held;
+      playPulse();
     },
   };
 };

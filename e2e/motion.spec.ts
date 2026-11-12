@@ -1,10 +1,12 @@
 // Scene motion in the real page (m4-plan, deliverable 4): Title's intro and exit, the ambient loops on whole art
-// pixels, the vignette over the sea's right-edge gap, the arrow pulses, the backdrop's fade and the ending's phases.
+// pixels, the vignette over the sea's right-edge gap, the arrow pulses, the backdrop's fade and the ending's phases;
+// and reduced motion switched on and off mid-game (m5-plan, deliverable 4; src/game/motion.ts).
 // Frame-stepped, not real time: an init script holds every requestAnimationFrame, and the tests run Pixi's ticker
 // themselves, FRAME_MS of game time per frame, recording the scene after each one. Desktop only (untagged,
 // playwright.config.ts): nothing here depends on the device. Written by Claude Code.
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import type { GameSnapshot } from "../src/debug-api.ts";
+import { REDUCED_MOTION } from "../src/game/motion.ts";
 import { AFTER_ROUND_MS, ENDING_MS, TITLE_EXIT_MS, TITLE_PROMPT_MS } from "../src/game/states/timings.ts";
 import { SEED } from "./game.ts";
 
@@ -41,6 +43,8 @@ interface Frame {
   readonly state: string | undefined;
   readonly phase: string;
   readonly clips: number;
+  /** Live raindrops. */
+  readonly drops: number;
   readonly nodes: Readonly<Record<string, NodeSample | null>>;
 }
 
@@ -155,6 +159,7 @@ const run = (page: Page, until: Until) => page.evaluate(({ until, frameMs }) => 
       state: debug.machine.current,
       phase: debug.game.phase,
       clips: debug.anim.active,
+      drops: debug.scene?.weather.stats.drops ?? 0,
       nodes: {
         logo: sample(parts?.logo),
         credits: sample(parts?.credits),
@@ -203,6 +208,19 @@ const nonDecreasing = (values: readonly number[]) =>
 
 const nonIncreasing = (values: readonly number[]) =>
   values.every((value, index) => index === 0 || value <= values[index - 1]);
+
+/** The per-frame changes of a node's `key`, wrap-arounds of a loop (over 10 px) left out. */
+const steps = (frames: readonly Frame[], name: string, key: "x" | "rotation") => frames.slice(1)
+  .map((frame, index) => Math.abs(node(frame, name)[key] - node(frames[index], name)[key]))
+  .filter((delta) => key !== "x" || delta <= 10);
+
+const sum = (values: readonly number[]) => values.reduce((total, value) => total + value, 0);
+
+const average = (values: readonly number[]) => sum(values) / values.length;
+
+/** Switches `prefers-reduced-motion`, which the game reads live. */
+const reduceMotion = (page: Page, reduce: boolean) =>
+  page.emulateMedia({ reducedMotion: reduce ? "reduce" : "no-preference" });
 
 const press = async (page: Page, key: string) => {
   await page.keyboard.down(key);
@@ -431,6 +449,64 @@ test("the sea, clouds and boat move on whole art pixels, and the vignette covers
   // The vignette's rim is at least 252/255 opaque there: at most 3/255 of the sea's white shows through.
   expect(gap.covered).toBeLessThanOrEqual(4);
   expect(gap.uncovered).toBeGreaterThan(100);
+
+  // Reduced motion, switched on mid-game on this page: the loops go on from where they are, slower but moving; the
+  // rain falls at a lower rate. The clouds scroll 8.4 px a second, the boat's tilt is unsnapped.
+  const full = [...frames, ...await stepFor(page, 1000)];
+
+  await reduceMotion(page, true);
+
+  const reduced = await stepFor(page, 2000);
+  const tiltStep = Math.max(...steps(full, "boat", "rotation"));
+  const switched = [full.at(-1) as Frame, ...reduced.slice(0, 5)];
+
+  expect(Math.max(...steps(switched, "clouds", "x")), "no jump").toBeLessThanOrEqual(1);
+  expect(Math.max(...steps(switched, "boat", "rotation")), "no jump").toBeLessThanOrEqual(tiltStep * 1.01);
+
+  const speed = (run: readonly Frame[]) => sum(steps(run, "clouds", "x")) / ((run.length - 1) * FRAME_MS);
+
+  expect(speed(reduced) / speed(full)).toBeGreaterThan(REDUCED_MOTION.ambientSpeed - 0.15);
+  expect(speed(reduced) / speed(full)).toBeLessThan(REDUCED_MOTION.ambientSpeed + 0.15);
+
+  for (const name of moving) {
+    expect(new Set(reduced.map((frame) => `${node(frame, name).x},${node(frame, name).rotation}`)).size, name)
+      .toBeGreaterThan(3);
+  }
+
+  // A drop lives about a second: the last half second is all at the reduced rate.
+  const fullDrops = average(full.map((frame) => frame.drops));
+  const reducedDrops = average(reduced.slice(-30).map((frame) => frame.drops));
+
+  expect(fullDrops).toBeGreaterThan(100);
+  expect(reducedDrops / fullDrops).toBeGreaterThan(REDUCED_MOTION.rainRate - 0.15);
+  expect(reducedDrops / fullDrops).toBeLessThan(REDUCED_MOTION.rainRate + 0.15);
+
+  // The prompt fades in as before, then holds at full alpha instead of pulsing (TMPIdle).
+  const promptAt = enteredAt + TITLE_PROMPT_MS + 1000;
+
+  await run(page, { now: promptAt + FRAME_MS, frameMs: SKIP_MS });
+
+  const held = await stepFor(page, 1700);
+
+  expect(held.every((frame) => node(frame, "prompt").visible && node(frame, "prompt").alpha === 1
+    && node(frame, "prompt").scale === 1)).toBe(true);
+
+  // Switched off mid-game: the pulse starts from full alpha, and the loops speed up from where they are.
+  await reduceMotion(page, false);
+
+  const back = await stepFor(page, 1700);
+  const resumed = [held.at(-1) as Frame, ...back.slice(0, 5)];
+
+  expect(alphas(back.slice(0, 2), "prompt").every((alpha) => alpha > 0.99)).toBe(true);
+  expect(Math.min(...alphas(back, "prompt"))).toBeCloseTo(0.647, 2);
+  expect(Math.max(...steps(resumed, "clouds", "x")), "no jump").toBeLessThanOrEqual(1);
+  expect(Math.max(...steps(resumed, "boat", "rotation")), "no jump").toBeLessThanOrEqual(tiltStep * 1.01);
+  expect(speed(back) / speed(held)).toBeGreaterThan(1 / REDUCED_MOTION.ambientSpeed - 0.6);
+
+  // And on again mid-pulse: held at once.
+  await reduceMotion(page, true);
+  expect(alphas(await step(page, 2), "prompt")).toEqual([1, 1]);
+  await reduceMotion(page, false);
 });
 
 test("Hold and Many arrows pulse, and the backdrop fades in over the wait after a won round", async ({
@@ -441,6 +517,7 @@ test("Hold and Many arrows pulse, and the backdrop fades in over the wait after 
   await page.evaluate(() => window.debug.machine.request("round"));
 
   const pulses: Record<string, Frame[]> = {};
+  const heldPulse: Frame[] = [];
   const onPulse = async (kind: string) => {
     pulses[kind] = await stepFor(page, 1100);
 
@@ -448,7 +525,16 @@ test("Hold and Many arrows pulse, and the backdrop fades in over the wait after 
       await screenshot(page, testInfo, "round-hold-pulse");
     }
 
-    return pulses[kind];
+    if (kind !== "many") {
+      return pulses[kind];
+    }
+
+    // Reduced motion, switched on mid-pulse: the overlay holds at full alpha and scale 1; off again, it pulses.
+    await reduceMotion(page, true);
+    heldPulse.push(...await step(page, 20));
+    await reduceMotion(page, false);
+
+    return [...pulses[kind], ...heldPulse, ...await step(page, 1)];
   };
 
   const round = await playRound(page, onPulse);
@@ -487,6 +573,8 @@ test("Hold and Many arrows pulse, and the backdrop fades in over the wait after 
   expect(Math.max(...many.map((sample) => sample.scale))).toBeGreaterThan(1.3);
   expect(Math.max(...many.map((sample) => sample.alpha))).toBeGreaterThan(0.9);
   expect(Math.min(...many.map((sample) => sample.alpha))).toBeLessThan(0.1);
+  expect(heldPulse.length).toBe(20);
+  expect(heldPulse.every((frame) => node(frame, "pulse").alpha === 1 && node(frame, "pulse").scale === 1)).toBe(true);
 });
 
 test("the ending throws the boat, raises the kraken, goes black at 8.5 s, then shows the card and the prompt", async ({

@@ -1,5 +1,6 @@
-// The three per-frame ticker listeners, added in one place and in order: game logic (with the animation clips), then
-// the audio tick, then the playfield's render pass, all at NORMAL priority, before Pixi renders the stage (LOW).
+// The per-frame ticker listeners, added in one place and in order: game logic (with the animation clips), then the
+// audio tick, then the screen tone and the playfield's render pass, all at NORMAL priority, before Pixi renders the
+// stage (LOW).
 // Written by Claude Code.
 import { UPDATE_PRIORITY, type Ticker } from "pixi.js";
 import type { Direction } from "../game/direction.ts";
@@ -19,6 +20,8 @@ export interface FrameLoopDeps {
   readonly clips: { sync(now: number): void };
   /** The scene's weather once it is built (scene/particles), synced like the clips. */
   readonly weather: { sync(now: number): void };
+  /** The renderer's clear colour from the flash (game/screen-tone.ts), once the clips have synced. */
+  readonly screenTone: { sync(): void };
   readonly errors: ErrorSink;
   /** The guarded render pass, shared with the renderer's "resize" handler (resize.ts). */
   readonly renderPlayfield: () => void;
@@ -26,7 +29,7 @@ export interface FrameLoopDeps {
 
 /** Every call goes through its object (`audio.tick()`, not a destructured `tick`): e2e replaces them. */
 export const startFrameLoop = ({
-  ticker, stepper, pause, padView, router, audio, timescale, clock, clips, weather, errors, renderPlayfield,
+  ticker, stepper, pause, padView, router, audio, timescale, clock, clips, weather, screenTone, errors, renderPlayfield,
 }: FrameLoopDeps) => {
   // The only thing that ticks the clock. Its first error halts the game logic: it is reported as an uncaught error and
   // kept in `debug.error` unless an earlier one is there, and the last frame keeps rendering. The pad view follows the
@@ -53,8 +56,13 @@ export const startFrameLoop = ({
   // independent of the game clock: the music runs on the AudioContext's own clock, paused game or not.
   const tickAudio = createHaltingGuard(() => audio.tick(), errors.report);
 
+  // The clear colour follows the flash's alpha as the clips left it, before the stage renders. Behind its own guard,
+  // outside the game logic's: a halted game keeps its last tone with its last frame.
+  const syncTone = createHaltingGuard(() => screenTone.sync(), errors.report);
+
   ticker.add(stepGame);
   ticker.add(tickAudio);
+  ticker.add(syncTone);
   // After the game logic (same priority, added later) and before Pixi renders the stage (LOW). Outside the game-logic
   // guard: a halted game keeps its last frame on screen.
   ticker.add(renderPlayfield, undefined, UPDATE_PRIORITY.NORMAL);

@@ -71,18 +71,26 @@ Milestone M5 from [04-implementation-difficulty.md](04-implementation-difficulty
 - **"Reduce flashes" (owner decision 9):** turns the screen tone off and caps the square's flash at 0.4. OS reduced motion keeps the screen tone, capped like the square.
 - A pause mid-flash freezes the tone with the clock; the pause overlay sits above it.
 
+**Built in wave 2 (Elf Lamplighter):**
+- `src/game/screen-tone.ts` sets `renderer.background.color` to `[a, a, a]` only when it changes, from the flash's alpha (black while it is hidden). It runs as its own guarded ticker listener after the audio tick and before the playfield's render pass (`frame-loop.ts`), so a halted game keeps its last tone. The render texture's pass passes its own `clearColor` (opaque black, `core/display.ts`), so it never takes the grey.
+- The rule is one table, `flashRule(reducedMotion, reduceFlashes)` in `src/game/lightning.ts`: the flash is capped under either; the tone is off only with the toggle. The square's cap is read at each strike (as before); the tone reads the toggle every frame, so turning it on mid-flash blacks the letterbox at once while the square finishes its strike.
+- The toggle (`src/game/reduce-flashes.ts`, key `mini-one.flashes.reduced`, `try`/`catch` like mute) is the third corner button (`flashes-button.ts`, a bolt, struck through when on). It shows from the gate on, like mute; a tap only toggles (no audio unlock, no resume, paused or not). No key.
+- The ui layer's order is now: debug overlay, pad, mute, pause, **reduce flashes**, Tap to continue, the gate's view, the scene's texts.
+
 ### 4. Reduced motion everywhere
 
 One rule per effect, decided once in a table in `src/game/motion.ts` (or the existing lightning module's cap), read live so switching mid-game works, as the flash cap does:
 
-| Effect | Under `prefers-reduced-motion: reduce` (proposal) |
+| Effect | Under `prefers-reduced-motion: reduce` (chosen in wave 2, `REDUCED_MOTION` in `src/game/motion.ts`) |
 |---|---|
 | Lightning flash, screen tone | Peak capped (0.4 today), also by the "reduce flashes" toggle |
-| Sea strips, clouds, boat bob | Slower (owner decision 5); the factor is tuned by eye |
-| Prompt and arrow pulses | Held at full alpha, no scale pulse |
-| Thrown boat, kraken rise | Kept (they're story beats), or cut to the end pose |
-| Rain | Lower rate, no slant change |
+| Sea strips, clouds, boat bob | Slower (owner decision 5): their clips at **0.5×** speed, switched from the current pose (no jump) |
+| Prompt and arrow pulses | Held at full alpha (1), no scale pulse (scale 1); the pulse restarts from alpha 1 when switched off |
+| Thrown boat, kraken rise | Kept (they're story beats) |
+| Rain | Rate **0.5×** (110 drops/s), speed **1×**, no slant change |
 | Bubbles, eyes | Kept, they're slow |
+
+The scene reads the same query as the flash cap (`watchReducedMotion`) once a frame, before the weather's sync, and applies the matching row when it changes, so switching the OS setting mid-game takes effect without a reload.
 
 - A **"reduce flashes" toggle** below mute (owner decision 7), persisted like mute. It applies the flash cap without the OS setting.
 

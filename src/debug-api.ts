@@ -44,6 +44,8 @@ export interface DebugApi {
   readonly continuePromptShown: boolean;
   /** The pause (pause.ts): `paused`, the pause input, and `pause()` as the pause button calls it. */
   readonly pause: Pause;
+  /** The "reduce flashes" toggle (reduce-flashes.ts) and the screen tone's grey (screen-tone.ts, 0..1) now. */
+  readonly flashes: { readonly reduced: boolean; readonly tone: number };
   /** Pixi's canvas text cache: its keys and how many are null; null where the private field isn't there. */
   readonly textCache: { readonly keys: number; readonly nulls: number } | null;
   /** The start gate's phase and load progress (0..1). */

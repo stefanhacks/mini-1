@@ -1,13 +1,15 @@
-// The input router's decisions, without the DOM: which pointer goes to a corner button (mute, pause) and which to the
-// pads, and the synchronous hooks (activation, mute, pause). Pure TypeScript, so it runs under `node --test`;
-// dom-router.ts only translates browser events into these calls. Coordinates are #game CSS px. Written by Claude Code.
+// The input router's decisions, without the DOM: which pointer goes to a corner button (mute, pause, reduce flashes)
+// and which to the pads, and the synchronous hooks (activation, mute, pause, reduce flashes). Pure TypeScript, so it
+// runs under `node --test`; dom-router.ts only translates browser events into these calls. Coordinates are #game CSS
+// px. Written by Claude Code.
 //
 // Contract:
 // - The corner buttons are hit-tested FIRST, before the pads: mute while a mute listener is registered, pause while a
-//   pause listener is registered and the pause input is "ready". A pointer that goes down on one belongs to it until it
-//   lifts: it never reaches the PointerMap, so it gives no press, no release, no advance and no activation. Its
-//   pointerup calls that button's listeners if it lifts still on the button; sliding off and lifting elsewhere, or a
-//   cancel, does nothing.
+//   pause listener is registered and the pause input is "ready", and the "reduce flashes" toggle while its listener is
+//   registered (paused or not: like mute, a tap on it only toggles). A pointer that goes down on one belongs to it
+//   until it lifts: it never reaches the PointerMap, so it gives no press, no release, no advance and no activation.
+//   Its pointerup calls that button's listeners if it lifts still on the button; sliding off and lifting elsewhere,
+//   or a cancel, does nothing.
 // - The pause input (`setPauseInput`, driven by pause.ts): "off" (Gate, whose own tap begins the game) makes the pause
 //   button's square and the pause keys ordinary input; "ready" turns both on; "paused" leaves only the keys on, so a
 //   tap on the button's square is an ordinary tap, which resumes through the activation hook (with its touchend
@@ -70,7 +72,7 @@ const subscribe = (listeners: Set<Listener>, listener: Listener) => {
 
 export const createRouterCore = () => {
   const activateListeners = new Set<Listener>();
-  const listeners: Record<CornerButton, Set<Listener>> = { mute: new Set(), pause: new Set() };
+  const listeners: Record<CornerButton, Set<Listener>> = { mute: new Set(), pause: new Set(), flashes: new Set() };
   let activated = false;
   let touchActivation = false;
   const map = new PointerMap(() => {
@@ -80,7 +82,7 @@ export const createRouterCore = () => {
   // Pointers that went down on a corner button, and which.
   const buttonPointers = new Map<number, CornerButton>();
   let pads: readonly Pad[] = [];
-  const rects: Record<CornerButton, Rect | null> = { mute: null, pause: null };
+  const rects: Record<CornerButton, Rect | null> = { mute: null, pause: null, flashes: null };
   let pauseInput: PauseInput = "off";
 
   const active = (button: CornerButton) => listeners[button].size > 0 && rects[button] !== null
@@ -106,6 +108,10 @@ export const createRouterCore = () => {
     /** The pause button's hit square in the current layout, or null. */
     get pauseRect() {
       return rects.pause;
+    },
+    /** The "reduce flashes" toggle's hit square in the current layout, or null. */
+    get flashesRect() {
+      return rects.flashes;
     },
     /** What the pause button and keys do from now on (pause.ts drives it). */
     setPauseInput: (input: PauseInput) => {
@@ -185,6 +191,8 @@ export const createRouterCore = () => {
     onMute: (listener: Listener) => subscribe(listeners.mute, listener),
     /** The pause button's tap and the pause keys call `listener` (to pause or resume). Returns the unsubscribe. */
     onPause: (listener: Listener) => subscribe(listeners.pause, listener),
+    /** The "reduce flashes" toggle's tap calls `listener`. Returns the unsubscribe. */
+    onFlashes: (listener: Listener) => subscribe(listeners.flashes, listener),
   };
 };
 

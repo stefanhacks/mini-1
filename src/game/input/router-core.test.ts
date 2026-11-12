@@ -175,6 +175,67 @@ describe("router core: the pause button and keys", () => {
   });
 });
 
+/** The setup above with a reduce-flashes listener, the pause input set to `input`, and the toggle's centre. */
+const setupFlashes = (input: PauseInput) => {
+  const { core, log, muteCentre } = setupPause(input);
+
+  core.onFlashes(() => log.push("flashes"));
+
+  const rect = core.flashesRect;
+
+  if (rect === null) {
+    throw new Error("no reduce-flashes button");
+  }
+
+  return { core, log, muteCentre, flashesCentre: { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 } };
+};
+
+describe("router core: the reduce-flashes toggle", () => {
+  it("sits right under the pause button", () => {
+    const { core } = setupFlashes("ready");
+
+    assert.equal(core.flashesRect?.x, core.pauseRect?.x);
+    assert.equal(core.flashesRect?.y, (core.pauseRect?.y ?? 0) + (core.pauseRect?.height ?? 0));
+  });
+
+  for (const input of ["off", "ready", "paused"] as const) {
+    it(`pause input ${input}: a tap only toggles, with no press, advance or activation`, () => {
+      const { core, log, flashesCentre } = setupFlashes(input);
+
+      core.pointerDown(1, flashesCentre.x, flashesCentre.y);
+      core.pointerUp(1, flashesCentre.x, flashesCentre.y, true);
+      core.touchEnd();
+      assert.deepEqual(log, ["flashes"]);
+      assert.deepEqual(core.map.drain(), []);
+    });
+  }
+
+  it("does nothing when the pointer slides off before lifting, or is cancelled", () => {
+    const { core, log, flashesCentre } = setupFlashes("ready");
+
+    core.pointerDown(1, flashesCentre.x, flashesCentre.y);
+    core.pointerUp(1, flashesCentre.x - 100, flashesCentre.y + 100);
+    core.pointerDown(2, flashesCentre.x, flashesCentre.y);
+    core.pointerCancel(2);
+    core.pointerUp(2, flashesCentre.x, flashesCentre.y);
+    assert.deepEqual(log, []);
+    assert.deepEqual(core.map.drain(), []);
+  });
+
+  it("is ordinary input while no listener is registered", () => {
+    const { core, log } = setupPause("ready");
+    const rect = core.flashesRect;
+
+    if (rect === null) {
+      throw new Error("no reduce-flashes button");
+    }
+
+    core.pointerDown(1, rect.x + rect.width / 2, rect.y + rect.height / 2);
+    core.pointerUp(1, rect.x + rect.width / 2, rect.y + rect.height / 2);
+    assert.deepEqual(log, ["activate(advance)"]);
+  });
+});
+
 describe("router core: activation", () => {
   it("fires inside the begin tap's pointerup, after its advance is queued, and never on pointerdown", () => {
     const { core, log } = setup();
