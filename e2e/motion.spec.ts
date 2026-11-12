@@ -1,14 +1,12 @@
 // Scene motion in the real page (m4-plan, deliverable 4): Title's intro and exit, the ambient loops on whole art
 // pixels, the vignette over the sea's right-edge gap, the arrow pulses, the backdrop's fade and the ending's phases.
 // Frame-stepped, not real time: an init script holds every requestAnimationFrame, and the tests run Pixi's ticker
-// themselves, FRAME_MS of game time per frame, recording the scene after each one. Desktop only: nothing here depends
-// on the device. Written by Claude Code.
+// themselves, FRAME_MS of game time per frame, recording the scene after each one. Desktop only (untagged,
+// playwright.config.ts): nothing here depends on the device. Written by Claude Code.
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import type { GameSnapshot } from "../src/debug-api.ts";
 import { AFTER_ROUND_MS, ENDING_MS, TITLE_EXIT_MS, TITLE_PROMPT_MS } from "../src/game/states/timings.ts";
 import { SEED } from "./game.ts";
-
-test.skip(({ isMobile }) => isMobile, "desktop only: no device-specific path");
 
 // A small viewport at DPR 1: every stepped frame renders, and the checks read the scene, not pixels.
 test.use({ deviceScaleFactor: 1, viewport: { width: 640, height: 400 } });

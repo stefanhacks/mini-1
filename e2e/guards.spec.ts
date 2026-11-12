@@ -14,8 +14,9 @@ import {
   type GameSnapshot,
 } from "./game.ts";
 
-// The guards and the ticker are the same code on every device.
-test.skip(({ isMobile }) => isMobile, "desktop only: no device-specific path");
+// The guards and the ticker are the same code on every device: desktop only (untagged, playwright.config.ts). A small
+// viewport: the checks read the game, and every frame renders cheaper.
+test.use({ viewport: { width: 640, height: 400 } });
 
 const POLL = { intervals: [20, 50, 100], timeout: 15_000 };
 
@@ -127,26 +128,9 @@ test("a game-logic throw halts the game once, suspends audio and keeps rendering
   expect(errors).toEqual(["game logic failed"]);
 });
 
-test("the first error stays in debug.error: a game-logic throw after a render throw doesn't replace it", async ({
+test("a render throw is contained, and a game-logic throw after it halts but leaves the first in debug.error", async ({
   page,
 }) => {
-  const errors = watchPageErrors(page);
-
-  await openGame(page);
-  await failOnce(page, "display", "render failed");
-  await expect.poll(() => readErrorMessage(page), POLL).toBe("render failed");
-  await failOnce(page, "machine", "game logic failed");
-  await expect.poll(() => errors, POLL).toEqual(["render failed", "game logic failed"]);
-  expect(await readErrorMessage(page)).toBe("render failed");
-
-  // The game logic did halt.
-  const now = await readNow(page);
-
-  await page.waitForTimeout(300);
-  expect(await readNow(page)).toBe(now);
-});
-
-test("a render throw is contained: a later resize doesn't throw, and the game runs on", async ({ page }) => {
   const errors = watchPageErrors(page);
 
   await openGame(page);
@@ -163,6 +147,16 @@ test("a render throw is contained: a later resize doesn't throw, and the game ru
   await page.waitForTimeout(200);
   expect(errors).toEqual(["render failed"]);
   expect((await readGame(page)).state).toBe("title");
+
+  // First error wins: the game-logic throw is reported, and halts the game, but debug.error keeps the render's.
+  await failOnce(page, "machine", "game logic failed");
+  await expect.poll(() => errors, POLL).toEqual(["render failed", "game logic failed"]);
+  expect(await readErrorMessage(page)).toBe("render failed");
+
+  const halted = await readNow(page);
+
+  await page.waitForTimeout(300);
+  expect(await readNow(page)).toBe(halted);
 });
 
 test("an audio tick throw is contained: the game runs on", async ({ page }) => {

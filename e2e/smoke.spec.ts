@@ -35,7 +35,9 @@ const expectCssSize = (actual: { width?: number; height?: number }, expected: Si
   expect(actual.height).toBeCloseTo(expected.height, 2);
 };
 
-test("loads into #game without errors, failed requests or page overflow", async ({ page }) => {
+// Every device: the sizes depend on its viewport and DPR. The checks that don't (context menu, viewport-fit, the
+// safe-area probe) ride along on the same page load.
+test("loads into #game without errors, failed requests or page overflow", { tag: "@device" }, async ({ page }) => {
   const problems: string[] = [];
 
   page.on("console", (message) => {
@@ -73,12 +75,53 @@ test("loads into #game without errors, failed requests or page overflow", async 
   expect(canvas.resolution).toBe(capResolution(canvas.devicePixelRatio));
   expectCssSize(canvas.css, deviceFloored(sizes.viewport, canvas.resolution));
   expect(canvas.backing).toEqual(backingOf(sizes.viewport, canvas.resolution));
+
+  // The game blocks the context menu.
+  const prevented = await page.evaluate(() => {
+    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+
+    document.querySelector("#game > canvas")?.dispatchEvent(event);
+
+    return event.defaultPrevented;
+  });
+
+  expect(prevented).toBe(true);
+
+  // viewport-fit=cover, so env(safe-area-inset-*) reports the notch.
+  await expect(page.locator("meta[name=viewport]")).toHaveAttribute("content", /\bviewport-fit=cover\b/);
+
+  // The probe reads the safe-area insets, and fakes them through its CSS variables. Emulation has no notch:
+  // env(safe-area-inset-*) resolves to 0.
+  const readProbe = () => page.evaluate(() => {
+    const probe = document.querySelector("#safe-area-probe");
+
+    if (!probe) {
+      return null;
+    }
+
+    const style = getComputedStyle(probe);
+
+    return [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft];
+  });
+
+  expect(await readProbe()).toEqual(["0px", "0px", "0px", "0px"]);
+
+  await page.evaluate(() => {
+    const root = document.documentElement.style;
+
+    root.setProperty("--safe-area-top", "47px");
+    root.setProperty("--safe-area-right", "0px");
+    root.setProperty("--safe-area-bottom", "34px");
+    root.setProperty("--safe-area-left", "12.5px");
+  });
+
+  expect(await readProbe()).toEqual(["47px", "0px", "34px", "12.5px"]);
   expect(problems).toEqual([]);
 });
 
 // Headless Chromium only fires the media query `change` for an emulated DPR when the emulated size changes too, so each
 // step nudges the width by 1 px and then restores it. Every resize path reads the resolution afresh (main.ts).
-test("follows device pixel ratio changes, capped", async ({ page, isMobile }) => {
+test("follows device pixel ratio changes, capped", { tag: "@device" }, async ({ page, isMobile }) => {
   await page.goto("/");
   await expect(page.locator("#game > canvas")).toHaveCount(1);
 
@@ -107,55 +150,4 @@ test("follows device pixel ratio changes, capped", async ({ page, isMobile }) =>
     expect(canvas.resolution).toBe(expected);
     expect(canvas.backing).toEqual(backingOf(viewport, expected));
   }
-});
-
-test("blocks the context menu on the game", async ({ page }) => {
-  await page.goto("/");
-  await expect(page.locator("#game > canvas")).toHaveCount(1);
-
-  const prevented = await page.evaluate(() => {
-    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
-
-    document.querySelector("#game > canvas")?.dispatchEvent(event);
-
-    return event.defaultPrevented;
-  });
-
-  expect(prevented).toBe(true);
-});
-
-test("sets viewport-fit=cover", async ({ page }) => {
-  await page.goto("/");
-
-  await expect(page.locator("meta[name=viewport]")).toHaveAttribute("content", /\bviewport-fit=cover\b/);
-});
-
-test("reads the safe-area insets through the probe, and fakes them through its CSS variables", async ({ page }) => {
-  await page.goto("/");
-
-  const readProbe = () => page.evaluate(() => {
-    const probe = document.querySelector("#safe-area-probe");
-
-    if (!probe) {
-      return null;
-    }
-
-    const style = getComputedStyle(probe);
-
-    return [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft];
-  });
-
-  // Emulation has no notch: env(safe-area-inset-*) resolves to 0.
-  expect(await readProbe()).toEqual(["0px", "0px", "0px", "0px"]);
-
-  await page.evaluate(() => {
-    const root = document.documentElement.style;
-
-    root.setProperty("--safe-area-top", "47px");
-    root.setProperty("--safe-area-right", "0px");
-    root.setProperty("--safe-area-bottom", "34px");
-    root.setProperty("--safe-area-left", "12.5px");
-  });
-
-  expect(await readProbe()).toEqual(["47px", "0px", "34px", "12.5px"]);
 });

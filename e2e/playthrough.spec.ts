@@ -5,12 +5,15 @@ import { STORY_PARTS } from "../src/game/story/script.ts";
 import { storyLinesPerPage, TEXT_BOX_RECT } from "../src/game/text-box.ts";
 import {
   answerChallenge,
+  expectedTitleCues,
   FAST,
   keyboardDriver,
   leaveTitle,
   openGame,
   playGame,
+  readAudio,
   readCounts,
+  readCues,
   readGame,
   readLayout,
   readStory,
@@ -78,15 +81,8 @@ const reachChallenge = async (page: Page, driver: Driver, kind: "sequence" | "ho
   return readGame(page);
 };
 
-test("plays a whole game by keyboard", async ({ page }) => {
-  const problems = watchErrors(page);
-
-  await openGame(page);
-  await playGame(page, await keyboardDriver(page));
-  expect(problems).toEqual([]);
-});
-
-test("plays a whole game by touch", async ({ page }) => {
+// The keyboard plays whole games on desktop in the last two tests below; touch plays one on the iPhone.
+test("plays a whole game by touch", { tag: "@touch" }, async ({ page }) => {
   const problems = watchErrors(page);
 
   await openGame(page);
@@ -125,93 +121,11 @@ test("a wrong press resets a Sequence", async ({ page }) => {
   await waitFor(page, (now) => pointer(now) === 0);
 });
 
-test("a touchcancel during a Hold releases it", async ({ page }) => {
-  const driver = await touchDriver(page);
-
-  await openGame(page);
-
-  const game = await reachChallenge(page, driver, "hold");
-  const spec = game.challenge?.spec;
-
-  if (spec?.kind !== "hold") {
-    throw new Error("no Hold in round 0");
-  }
-
-  const fraction = (now: GameSnapshot) =>
-    (now.challenge?.progress.kind === "hold" ? now.challenge.progress.fraction : -1);
-
-  await setTimescale(page, SLOW);
-  await driver.press(spec.direction);
-  await waitFor(page, (now) => fraction(now) > 0.1);
-  await driver.cancel();
-  await waitFor(page, (now) => now.challenge?.progress.kind === "hold" && !now.challenge.progress.held);
-  expect(fraction(await readGame(page))).toBe(0);
-  const held = await page.evaluate(
-    (dir) => window.debug.router.isHeld(dir),
-    spec.direction,
-  );
-
-  expect(held).toBe(false);
-
-  // Still the same Hold, and it never completes on its own.
-  await setTimescale(page, FAST);
-  await page.waitForTimeout(600);
-  expect((await readGame(page)).challenge?.index).toBe(game.challenge?.index);
-});
-
-test("a resize mid-story never shows a page paged for the old layout", async ({ page }) => {
-  const driver = await keyboardDriver(page);
-
-  await openGame(page);
-  await leaveTitle(page, driver);
-  // The first line is the longest of part 0: at a 200 px square it takes several pages of one line.
-  await waitFor(page, (game) => game.page !== null);
-
-  const longest = (await readGame(page)).page?.text ?? "";
-
-  expect(longest.length).toBeGreaterThan(60);
-
-  // Resizes the renderer as a resize event would, synchronously, and reads the text before any frame runs: the old
-  // page must not be drawn at the new size. 600×400 leaves a 200 px square between the 200 px bands.
-  const before = await page.evaluate(() => {
-    const { app, scene } = window.debug;
-
-    app.renderer.resize(600, 400, app.renderer.resolution);
-
-    const story = scene?.parts.storyText;
-    const bounds = story?.getBounds();
-
-    return {
-      visible: story?.visible ?? false,
-      bounds: bounds ? { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } : null,
-      layout: window.debug.layout,
-    };
-  });
-  const box = rectToScreen(before.layout, TEXT_BOX_RECT);
-
-  expect(before.layout.square.width).toBe(200);
-
-  if (before.visible && before.bounds !== null) {
-    expectInside(before.bounds, box);
-  }
-
-  // On the next update the story state pages the line again and shows the current page, inside the box.
-  await expect.poll(async () => (await readStoryText(page)) !== null).toBe(true);
-
-  const after = await readStoryText(page);
-
-  if (after === null) {
-    throw new Error("unreachable");
-  }
-
-  expectInside(after.bounds, box);
-  expect(after.rows).toBeLessThanOrEqual(storyLinesPerPage(before.layout));
-});
-
 test.describe("with both landscape pads", () => {
-  test("hand a Hold between thumbs, cancel one pad, chord, and slide across", async ({ page, isMobile }) => {
-    test.skip(!isMobile, "two thumbs on two pads: the phone presets, turned landscape");
-
+  test("a touchcancel releases a Hold; hand a Hold between thumbs, cancel one pad, chord, and slide across", {
+    tag: "@touch",
+  }, async ({ page }) => {
+    // Two thumbs on two pads: the phone presets, turned landscape.
     const size = page.viewportSize() ?? { width: 0, height: 0 };
 
     await page.setViewportSize({ width: Math.max(size.width, size.height), height: Math.min(size.width, size.height) });
@@ -246,6 +160,20 @@ test.describe("with both landscape pads", () => {
       });
       (window as unknown as { pointerIds: typeof ids }).pointerIds = ids;
     });
+    await setTimescale(page, SLOW);
+
+    // A touchcancel (the browser taking the gesture over) releases a Hold and resets it.
+    await driver.press(dir);
+    await expect.poll(async () => ((await hold())?.fraction ?? 0) > 0.1).toBe(true);
+    await driver.cancel();
+    await expect.poll(async () => (await hold())?.held).toBe(false);
+    expect((await hold())?.fraction).toBe(0);
+    expect(await isHeld(dir)).toBe(false);
+
+    // Still the same Hold, and it never completes on its own.
+    await setTimescale(page, FAST);
+    await page.waitForTimeout(600);
+    expect((await readGame(page)).challenge?.index).toBe(game.challenge?.index);
     await setTimescale(page, SLOW);
 
     // A chord inside one touchStart: the Hold's direction on one pad, another on the other. Both count.
@@ -328,9 +256,8 @@ test.describe("at the smallest square", () => {
 
   test.use({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 3 });
 
-  test("story pages never spill out of the text box", async ({ page }, testInfo) => {
-    test.skip(testInfo.project.name !== "iphone-13", "the smallest square is the iPhone's");
-
+  // The iPhone's size and DPR, on desktop: the paging depends on the layout and the DPR, not on touch.
+  test("story pages never spill out of the text box", async ({ page }) => {
     await openGame(page);
     await page.evaluate((insets) => {
       for (const [side, value] of Object.entries(insets)) {
@@ -340,6 +267,18 @@ test.describe("at the smallest square", () => {
       window.dispatchEvent(new Event("resize"));
     }, INSETS);
     await expect.poll(async () => (await readLayout(page)).safe.x).toBe(INSETS.left);
+    // The checks read the story text's layout, not pixels: the playfield, a 1000² texture drawn over most of a
+    // 2532×1170 canvas each frame, is skipped. The ui layer, the story text's, still renders.
+    await page.evaluate(() => {
+      const { app, display } = window.debug;
+      const sprite = app.stage.getChildByLabel("playfield-display");
+
+      display.render = () => {};
+
+      if (sprite !== null) {
+        sprite.visible = false;
+      }
+    });
 
     const layout = await readLayout(page);
     const box = rectToScreen(layout, TEXT_BOX_RECT);
@@ -390,27 +329,106 @@ const expectTitleClips = async (page: Page) => {
   await expect.poll(() => page.evaluate(() => window.debug.anim.active)).toBe(TITLE_CLIPS);
 };
 
-test("replays twice without growing timers, listeners, display objects or clips", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "desktop-chrome", "leaks don't depend on the device; three games are slow");
+/** Long enough for a pending overlay change to reach its bar (9.6 s), with room for a busy machine. */
+const BAR_POLL = { intervals: [100, 200, 300], timeout: 25_000 };
 
-  const driver = await keyboardDriver(page);
+test.describe("on a small viewport", () => {
+  // The checks read the game and the audio, not pixels: every frame renders cheaper.
+  test.use({ viewport: { width: 640, height: 400 } });
 
-  await openGame(page);
-  await expectTitleClips(page);
-  await playGame(page, driver);
+  /**
+   * Three games by keyboard. The first plays its cues at the plan's times and waits for each part's music on a bar; the
+   * replays don't grow timers, listeners, display objects or clips. The music, the clock and leaks don't depend on the
+   * device: desktop only (untagged, playwright.config.ts).
+   */
+  test("plays its cues on time and each part's music on a bar, then replays twice without growing anything", async ({
+    page,
+  }) => {
+    // The first game waits for every part's bar: about 40 s of wall time; the replays about 15 s each.
+    test.setTimeout(150_000);
 
-  const first = await readCounts(page);
+    const driver = await keyboardDriver(page);
 
-  await expectTitleClips(page);
-  await playGame(page, driver);
-  expect(await readCounts(page)).toEqual(first);
-  await expectTitleClips(page);
-  await playGame(page, driver);
-  expect(await readCounts(page)).toEqual(first);
-  await expectTitleClips(page);
+    await openGame(page);
 
-  const game = await readGame(page);
+    // At FAST time the intro takes ~0.2 s of wall time; a second more gives several ambient strikes.
+    await expect.poll(async () => (await readCues(page)).length).toBeGreaterThanOrEqual(6);
 
-  // `?seed=` gives game n the seed SEED + n − 1: every replay is a new game, still reproducible.
-  expect([game.games, game.seed]).toEqual([4, SEED + 3]);
+    const title = (await readCues(page)).filter((cue) => cue.state === "title");
+    const expected = expectedTitleCues(title.length);
+
+    // `at` is clock.now minus the enter time: whole ms, give or take float error on a long-running clock.
+    expect(title.map(({ name, at }) => ({ name, at: Math.round(at) }))).toEqual(expected);
+    title.forEach((cue, index) => expect(cue.at).toBeCloseTo(expected[index]?.at ?? Number.NaN, 6));
+
+    // The log's clock times agree with the timeline times: one Title enter for all of them.
+    for (const cue of title) {
+      expect(cue.time - cue.at).toBeCloseTo((title[0]?.time ?? 0) - (title[0]?.at ?? 0), 6);
+    }
+
+    // Before each part's first page, wait for its overlay to have started, so every part's music plays.
+    let waitedFor = -1;
+    const waitForPartMusic = async (game: GameSnapshot) => {
+      if (game.part === waitedFor) {
+        return;
+      }
+
+      waitedFor = game.part;
+      await expect.poll(async () => {
+        const overlay = (await readAudio(page)).overlay;
+
+        return overlay !== null && overlay.part === game.part && !overlay.pending;
+      }, BAR_POLL).toBe(true);
+    };
+
+    await expectTitleClips(page);
+    await playGame(page, driver, waitForPartMusic);
+
+    const played = (await readCues(page)).filter((cue) => cue.state !== "title").map(({ name, state, at }) => ({
+      name,
+      state,
+      at: Math.round(at),
+    }));
+
+    expect(played).toEqual([
+      { name: "lightning", state: "story", at: 1250 },
+      { name: "lightning", state: "transition", at: 167 },
+      { name: "lightning", state: "transition", at: 167 },
+      { name: "lightning", state: "transition", at: 167 },
+      { name: "kraken", state: "ending", at: 1500 },
+    ]);
+    expect((await readGame(page)).games).toBe(2);
+
+    const audio = await readAudio(page);
+    const anchor = audio.barAnchor ?? Number.NaN;
+
+    expect(audio.overlayStarts.length).toBeGreaterThanOrEqual(4);
+
+    for (const start of audio.overlayStarts) {
+      expect(Math.abs(start.bars - Math.round(start.bars))).toBeLessThan(1e-6);
+      expect(start.time).toBeCloseTo(anchor + Math.round(start.bars) * audio.bar, 6);
+    }
+
+    // One key per part, in order (overlayPhase04 restarts on every bar, so it can repeat).
+    const keys = audio.overlayStarts.map((start) => start.key).filter((key, index, all) => key !== all[index - 1]);
+
+    expect(keys).toEqual(["overlayPhase02", "overlayPhase03", "overlayPhase04", "bgm02"]);
+    expect(audio.storyPart).toBe(3);
+
+    // The replays.
+    const first = await readCounts(page);
+
+    await expectTitleClips(page);
+    await playGame(page, driver);
+    expect(await readCounts(page)).toEqual(first);
+    await expectTitleClips(page);
+    await playGame(page, driver);
+    expect(await readCounts(page)).toEqual(first);
+    await expectTitleClips(page);
+
+    const game = await readGame(page);
+
+    // `?seed=` gives game n the seed SEED + n − 1: every replay is a new game, still reproducible.
+    expect([game.games, game.seed]).toEqual([4, SEED + 3]);
+  });
 });

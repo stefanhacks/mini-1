@@ -10,6 +10,7 @@ import {
 import { renderTextureScale } from "../src/core/render-scale.ts";
 import { floorToDevicePixels } from "../src/core/viewport.ts";
 import type { DebugApi } from "../src/debug-api.ts";
+import { FAST } from "./game.ts";
 
 // The resize test parks the first render texture on `window.debug` to compare it later.
 type ResizeDebug = DebugApi & { firstTexture?: unknown };
@@ -159,7 +160,9 @@ const nextFrame = (page: Page) => page.evaluate(() => new Promise(requestAnimati
 
 /**
  * Waits until the page's layout matches `insets` and its viewport, then returns the state. With `card`, also for the
- * title card: the logo (revealed 5.5 s into Title) and the tap prompt (from 7.25 s).
+ * title card: the logo (revealed 5.5 s into Title) and the tap prompt (from 7.25 s). Pages opened with
+ * `?timescale=${FAST}` run that intro in a fraction of a second; once the card is up, time goes back to normal, so
+ * fewer ambient strikes land on the checks.
  */
 const settle = async (page: Page, insets: Insets, card = true) => {
   // On a fresh page, taps through the start gate first.
@@ -179,6 +182,7 @@ const settle = async (page: Page, insets: Insets, card = true) => {
 
       return parts !== undefined && parts.logo.visible && parts.tapPrompt.visible && !parts.flash.visible;
     }, undefined, { timeout: 15_000 });
+    await page.evaluate(() => window.debug.setTimescale(1));
   }
 
   await expect.poll(async () => {
@@ -266,19 +270,16 @@ const screenshot = async (page: Page, testInfo: TestInfo, name: string) => {
   await testInfo.attach(name, { path, contentType: "image/png" });
 };
 
-// The Title intro (the logo at 5.5 s, the prompt at 7.25 s) runs inside `settle`, at 4× time where the page has
-// `?debug`: these need more than 30 s under load.
-test.describe.configure({ timeout: 60_000 });
-
-test("renders the playfield through the render texture in both orientations, with and without insets", async ({
-  page,
-}, testInfo) => {
+// Every device: the layout, k and the art's pixel blocks depend on its viewport and DPR (playwright.config.ts).
+test("renders the playfield through the render texture in both orientations, with and without insets", {
+  tag: "@device",
+}, async ({ page }, testInfo) => {
   const problems = watchErrors(page);
   const initial = page.viewportSize() ?? { width: 0, height: 0 };
   const short = Math.min(initial.width, initial.height);
   const long = Math.max(initial.width, initial.height);
 
-  await page.goto("/?debug&timescale=4");
+  await page.goto(`/?debug&timescale=${FAST}`);
 
   for (const orientation of ["portrait", "landscape"] as const) {
     await page.setViewportSize(orientation === "portrait"
@@ -309,10 +310,11 @@ test("renders the playfield through the render texture in both orientations, wit
   expect(problems).toEqual([]);
 });
 
+// The rest sets its own sizes and DPR: desktop only.
 test("resizes the same render texture when k changes, already drawn when the resize returns", async ({ page }) => {
   const problems = watchErrors(page);
 
-  await page.goto("/?debug&timescale=4");
+  await page.goto(`/?debug&timescale=${FAST}`);
   await page.setViewportSize({ width: 600, height: 400 });
 
   const small = await settle(page, ZERO_INSETS);
@@ -354,22 +356,16 @@ test("resizes the same render texture when k changes, already drawn when the res
   expect(problems).toEqual([]);
 });
 
-test("shows the debug overlay only with ?debug", async ({ page }) => {
-  await page.goto("/");
-  await settle(page, ZERO_INSETS, false);
-  expect((await readState(page)).overlay).toBe(false);
-
-  await page.goto("/?debug");
-  await settle(page, ZERO_INSETS, false);
-  expect((await readState(page)).overlay).toBe(true);
-});
-
 test.describe("at a fractional device pixel ratio", () => {
   test.use({ viewport: { width: 412, height: 915 }, deviceScaleFactor: 2.625 });
 
-  test("backs the canvas with exactly its CSS size × resolution, in whole device pixels", async ({ page }) => {
+  test("backs the canvas with its CSS size × resolution in whole device pixels; no overlay without ?debug", async ({
+    page,
+  }) => {
     await page.goto("/");
     await settle(page, ZERO_INSETS, false);
+    // The overlay shows only with ?debug: the first test checks it does there.
+    expect((await readState(page)).overlay).toBe(false);
 
     const canvas = await page.evaluate(() => {
       const element = document.querySelector<HTMLCanvasElement>("#game > canvas");

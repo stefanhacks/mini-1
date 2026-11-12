@@ -1,16 +1,15 @@
 // Lightning in the real page: the bolt and the flash on every strike cue, the logo revealed at the reveal's flash
 // peak, and the flash capped under `prefers-reduced-motion`. A recorder on the ticker samples every frame after the
 // game step and the clips' sync, so the checks read what each rendered frame showed, against the cue log's times.
-// Desktop only: nothing here depends on the device. Written by Claude Code.
+// Desktop only (untagged, playwright.config.ts): nothing here depends on the device. Written by Claude Code.
 import { expect, test, type Page } from "@playwright/test";
 import type { CueLogEntry } from "../src/debug-api.ts";
 import { FLASH_REDUCED_PEAK } from "../src/game/lightning.ts";
 import { TITLE_REVEAL_FLASH_MS } from "../src/game/states/timings.ts";
 import { keyboardDriver, leaveTitle, readStory, SEED, waitFor, waitForGateReady } from "./game.ts";
 
-test.use({ deviceScaleFactor: 1 });
-
-const DESKTOP_ONLY = "lightning doesn't depend on the device";
+// A small viewport at DPR 1: the checks read the scene, and every frame renders cheaper.
+test.use({ deviceScaleFactor: 1, viewport: { width: 640, height: 400 } });
 
 /** `Raio.anim` lasts 0.67 s and `Flash.anim` 0.5 s: past this, a strike's bolt and flash are hidden again. */
 const STRIKE_MS = 700;
@@ -119,10 +118,13 @@ const expectStrikes = (cues: readonly CueLogEntry[], samples: readonly Sample[],
   });
 };
 
-test("Title strikes twice, then reveals the logo at the reveal's flash peak", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "desktop-chrome", DESKTOP_ONLY);
+// One game at real time: the intro under reduced motion, then the story with it turned off again.
+test("Title strikes and reveals the logo at the flash peak, capped by reduced motion; then the story strikes", async ({
+  page,
+}) => {
+  const driver = await keyboardDriver(page);
 
-  await openAtRealTime(page, false);
+  await openAtRealTime(page, true);
 
   const { cues, samples } = await recordTitleIntro(page);
   const reveal = cues[2];
@@ -136,29 +138,14 @@ test("Title strikes twice, then reveals the logo at the reveal's flash peak", as
   expect(after.length).toBeGreaterThan(5);
   expect(after.every((sample) => sample.logo)).toBe(true);
   // The first frame with the logo is within a frame of the flash's peak, past it.
-  expect(after[0].flash.alpha).toBeGreaterThan(0.6);
+  expect(after[0].flash.alpha).toBeGreaterThan(0.6 * FLASH_REDUCED_PEAK);
 
-  expectStrikes(cues, samples, 1);
-});
-
-test("reduced motion caps the flash's peak, and leaves the bolt", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "desktop-chrome", DESKTOP_ONLY);
-
-  await openAtRealTime(page, true);
-
-  const { cues, samples } = await recordTitleIntro(page);
-
+  // Reduced motion caps the flash's peak, the reveal's included, and leaves the bolt.
   expectStrikes(cues, samples, FLASH_REDUCED_PEAK);
-  expect(samples.at(-1)?.logo).toBe(true);
-});
 
-test("story part 0's preamble and the Transition strike too", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "desktop-chrome", DESKTOP_ONLY);
-
-  const driver = await keyboardDriver(page);
-
-  await openAtRealTime(page, false);
-  // The intro runs at FAST time (leaveTitle), the tap, the exit fade and the rest at real time.
+  // Turned off while the game runs: the scene reads the media query at each strike, so the next ones flash in full.
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  // The rest of the intro runs at FAST time (leaveTitle), the tap, the exit fade and the story at real time.
   await leaveTitle(page, driver);
   // At real time throughout: a faster clock would sample the 0.5 s flash in a few coarse frames.
   await readStory(page, driver);
@@ -173,11 +160,11 @@ test("story part 0's preamble and the Transition strike too", async ({ page }, t
     return cue !== undefined && now > cue.time + STRIKE_MS + 100;
   }, POLL).toBe(true);
 
-  const cues = (await readCues(page)).filter((cue) => cue.state !== "title");
+  const later = (await readCues(page)).filter((cue) => cue.state !== "title");
 
-  expect(cues.map(({ name, state, at }) => ({ name, state, at: Math.round(at) }))).toEqual([
+  expect(later.map(({ name, state, at }) => ({ name, state, at: Math.round(at) }))).toEqual([
     { name: "lightning", state: "story", at: 1250 },
     { name: "lightning", state: "transition", at: 167 },
   ]);
-  expectStrikes(cues, await readSamples(page), 1);
+  expectStrikes(later, await readSamples(page), 1);
 });

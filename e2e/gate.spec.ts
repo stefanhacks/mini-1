@@ -2,6 +2,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import { openGame, readGame, readGatePhase, readLayout, SEED, touchDriver, waitForGateReady } from "./game.ts";
 
+// A tap's pointer path doesn't depend on the DPR: at DPR 1 the software-rendered frames are several times cheaper. The
+// presets keep their viewport, touch and user agent.
+test.use({ deviceScaleFactor: 1 });
+
 const POLL = { intervals: [20, 50, 100], timeout: 45_000 };
 
 interface ResumeCall {
@@ -139,9 +143,11 @@ const expectBeginResumes = (calls: readonly ResumeCall[], first: string) => {
   expect(calls).toEqual([{ type: first, active: true, phase: "ready" }]);
 };
 
-test("shows progress and the warning, then Tap to begin, whose tap starts the music and goes to Title", async ({
-  page,
-}) => {
+// The tap tests are tagged `@tap`: on the iPhone, the tap is a real touch sequence (playwright.config.ts). The rest is
+// the same code on every device and runs on desktop only.
+test("shows progress and the warning, then Tap to begin, whose tap starts the music and goes to Title", {
+  tag: "@tap",
+}, async ({ page }) => {
   let release = () => {};
   const held = new Promise<void>((resolve) => {
     release = resolve;
@@ -192,8 +198,9 @@ test("a key begins too, resuming audio inside its keydown", async ({ page }) => 
   expectBeginResumes(await readResumes(page), "keydown");
 });
 
-test("on touch, a pointerup that doesn't unlock is rescued by the touchend that follows", async ({ page }) => {
-  test.skip(!hasTouch(), "touch only");
+test("on touch, a pointerup that doesn't unlock is rescued by the touchend that follows", { tag: "@touch" }, async ({
+  page,
+}) => {
   await recordResumes(page, ["pointerup"]);
   await page.goto(`/?debug&seed=${SEED}`);
   await waitForGateReady(page);
@@ -228,7 +235,9 @@ test("a failed load shows Tap to retry, and the tap reloads what failed", async 
   expect(failures).toBe(1);
 });
 
-test("the mute button and the M key toggle mute without advancing, and mute persists", async ({ page }) => {
+test("the mute button and the M key toggle mute without advancing, and mute persists", { tag: "@tap" }, async ({
+  page,
+}) => {
   await openGame(page);
   expect(await page.evaluate(() => window.debug.audio.muted)).toBe(false);
 

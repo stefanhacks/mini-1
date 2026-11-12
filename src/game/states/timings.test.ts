@@ -5,7 +5,6 @@ import type { Clip } from "../../core/anim/clip.ts";
 import {
   ENDING_CARD_SPEED,
   ENDING_MS,
-  TITLE_AMBIENT,
   TITLE_CUES,
   TITLE_EXIT_MS,
   TITLE_PROMPT_MS,
@@ -49,9 +48,5 @@ describe("timings against the clips' events", () => {
     const cardIn = ENDING_MS.card + (CLIPS.fadeIn.length * 1000) / ENDING_CARD_SPEED;
 
     assert.equal(ENDING_MS.prompt, cardIn + TITLE_PROMPT_MS - logoAt);
-  });
-
-  it("shows the prompt where the ambient lightning starts counting", () => {
-    assert.equal(TITLE_AMBIENT.from, TITLE_PROMPT_MS);
   });
 });

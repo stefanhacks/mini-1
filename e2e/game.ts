@@ -3,7 +3,11 @@ import { expect, type CDPSession, type Page } from "@playwright/test";
 import type { Container } from "pixi.js";
 import type { GameSnapshot } from "../src/debug-api.ts";
 import type { Direction } from "../src/game/direction.ts";
+import { createRng, seedFromString } from "../src/game/challenges/rng.ts";
 import { computePads, type Pad } from "../src/game/input/pad-geometry.ts";
+import { ambientDelay } from "../src/game/states/cues.ts";
+import { TITLE_AMBIENT, TITLE_CUES } from "../src/game/states/timings.ts";
+import { AMBIENT_SALT } from "../src/game/states/title.ts";
 
 export type { GameSnapshot } from "../src/debug-api.ts";
 
@@ -28,6 +32,24 @@ const OPEN_POLL = { intervals: [50, 100, 200], timeout: 45_000 };
 export const readGame = (page: Page) => page.evaluate(() => window.debug.game);
 
 export const readLayout = (page: Page) => page.evaluate(() => window.debug.layout);
+
+export const readCues = (page: Page) => page.evaluate(() => window.debug.cues);
+
+export const readAudio = (page: Page) => page.evaluate(() => window.debug.audio.debug);
+
+/** Title's cues for the first e2e game, from its seed, as the original's timer would strike them. */
+export const expectedTitleCues = (count: number) => {
+  const rng = createRng((seedFromString(String(SEED)) ^ AMBIENT_SALT) >>> 0);
+  const cues = TITLE_CUES.map(({ name, at }) => ({ name, at }));
+  let at = TITLE_AMBIENT.from + ambientDelay(rng, TITLE_AMBIENT.first);
+
+  while (cues.length < count) {
+    cues.push({ name: "lightning", at });
+    at += ambientDelay(rng, TITLE_AMBIENT.next);
+  }
+
+  return cues;
+};
 
 export const setTimescale = (page: Page, value: number) =>
   page.evaluate((scale) => window.debug.setTimescale(scale), value);
