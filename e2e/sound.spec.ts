@@ -1,22 +1,15 @@
-// Sound cues, music per story part, and the audio lifecycle with "Tap to continue" (m3-plan, deliverables 3, 5, 6).
-// Written by Claude Code.
+// The audio lifecycle with "Tap to continue" (m3-plan, deliverable 6). The sound cues and the music per story part
+// (deliverables 3, 5) are checked on a whole game in playthrough.spec.ts. Written by Claude Code.
 import { expect, test, type Page } from "@playwright/test";
-import { createRng, seedFromString } from "../src/game/challenges/rng.ts";
-import { ambientDelay } from "../src/game/states/cues.ts";
-import { TITLE_AMBIENT, TITLE_CUES } from "../src/game/states/timings.ts";
-import { AMBIENT_SALT } from "../src/game/states/title.ts";
-import { keyboardDriver, openGame, playGame, readGame, readLayout, SEED, type GameSnapshot } from "./game.ts";
+import { openGame, readAudio, readGame, readLayout } from "./game.ts";
+
+// A tap's pointer path doesn't depend on the DPR: at DPR 1 the software-rendered frames are several times cheaper. The
+// presets keep their viewport, touch and user agent.
+test.use({ deviceScaleFactor: 1 });
 
 const POLL = { intervals: [20, 50, 100], timeout: 15_000 };
 
-/** Long enough for a pending overlay change to reach its bar (9.6 s), with room for a busy machine. */
-const BAR_POLL = { intervals: [100, 200, 300], timeout: 25_000 };
-
 const hasTouch = () => test.info().project.use.hasTouch === true;
-
-const readCues = (page: Page) => page.evaluate(() => window.debug.cues);
-
-const readAudio = (page: Page) => page.evaluate(() => window.debug.audio.debug);
 
 /** Emulates the tab being hidden or shown: `visibilityState` overridden, then the `visibilitychange` event. */
 const setHidden = (page: Page, hidden: boolean, dispatch = true) => page.evaluate(([hide, send]) => {
@@ -65,95 +58,8 @@ const tapPlayfield = async (page: Page) => {
   }
 };
 
-/** Title's cues for the first e2e game, from its seed, as the original's timer would strike them. */
-const expectedTitleCues = (count: number) => {
-  const rng = createRng((seedFromString(String(SEED)) ^ AMBIENT_SALT) >>> 0);
-  const cues = TITLE_CUES.map(({ name, at }) => ({ name, at }));
-  let at = TITLE_AMBIENT.from + ambientDelay(rng, TITLE_AMBIENT.first);
-
-  while (cues.length < count) {
-    cues.push({ name: "lightning", at });
-    at += ambientDelay(rng, TITLE_AMBIENT.next);
-  }
-
-  return cues;
-};
-
-test("a game plays its cues at the plan's times, and each part's music on a bar", async ({ page, isMobile }) => {
-  // A game that waits for every part's bar: about 40 s of wall time. The music and the clock don't depend on the
-  // device, so one project is enough.
-  test.skip(isMobile, "desktop only");
-  test.setTimeout(150_000);
-
-  await openGame(page);
-
-  // At FAST time the intro takes ~0.2 s of wall time; a second more gives several ambient strikes.
-  await expect.poll(async () => (await readCues(page)).length, POLL).toBeGreaterThanOrEqual(6);
-
-  const title = (await readCues(page)).filter((cue) => cue.state === "title");
-
-  const expected = expectedTitleCues(title.length);
-
-  // `at` is clock.now minus the enter time: whole ms, give or take float error on a long-running clock.
-  expect(title.map(({ name, at }) => ({ name, at: Math.round(at) }))).toEqual(expected);
-  title.forEach((cue, index) => expect(cue.at).toBeCloseTo(expected[index]?.at ?? Number.NaN, 6));
-
-  // The log's clock times agree with the timeline times: one Title enter for all of them.
-  for (const cue of title) {
-    expect(cue.time - cue.at).toBeCloseTo((title[0]?.time ?? 0) - (title[0]?.at ?? 0), 6);
-  }
-
-  // Before each part's first page, wait for its overlay to have started, so every part's music plays.
-  let waitedFor = -1;
-  const waitForPartMusic = async (game: GameSnapshot) => {
-    if (game.part === waitedFor) {
-      return;
-    }
-
-    waitedFor = game.part;
-    await expect.poll(async () => {
-      const overlay = (await readAudio(page)).overlay;
-
-      return overlay !== null && overlay.part === game.part && !overlay.pending;
-    }, BAR_POLL).toBe(true);
-  };
-
-  await playGame(page, await keyboardDriver(page), waitForPartMusic);
-
-  const game = (await readCues(page)).filter((cue) => cue.state !== "title").map(({ name, state, at }) => ({
-    name,
-    state,
-    at: Math.round(at),
-  }));
-
-  expect(game).toEqual([
-    { name: "lightning", state: "story", at: 1250 },
-    { name: "lightning", state: "transition", at: 167 },
-    { name: "lightning", state: "transition", at: 167 },
-    { name: "lightning", state: "transition", at: 167 },
-    { name: "kraken", state: "ending", at: 1500 },
-  ]);
-  expect((await readGame(page)).games).toBe(2);
-
-  const audio = await readAudio(page);
-  const anchor = audio.barAnchor ?? Number.NaN;
-
-  expect(audio.overlayStarts.length).toBeGreaterThanOrEqual(4);
-
-  for (const start of audio.overlayStarts) {
-    expect(Math.abs(start.bars - Math.round(start.bars))).toBeLessThan(1e-6);
-    expect(start.time).toBeCloseTo(anchor + Math.round(start.bars) * audio.bar, 6);
-  }
-
-  // One key per part, in order (overlayPhase04 restarts on every bar, so it can repeat).
-  const keys = audio.overlayStarts.map((start) => start.key).filter((key, index, all) => key !== all[index - 1]);
-
-  expect(keys).toEqual(["overlayPhase02", "overlayPhase03", "overlayPhase04", "bgm02"]);
-  expect(audio.storyPart).toBe(3);
-});
-
-test("a hidden tab suspends audio, and showing it again resumes it", async ({ page, isMobile }) => {
-  test.skip(isMobile, "desktop only: no device-specific path");
+// Desktop only (untagged): no device-specific path.
+test("a hidden tab suspends audio, and showing it again resumes it", async ({ page }) => {
   await openGame(page);
   expect((await readAudio(page)).contextState).toBe("running");
 
@@ -168,9 +74,10 @@ test("a hidden tab suspends audio, and showing it again resumes it", async ({ pa
   expect((await readGame(page)).state).toBe("title");
 });
 
-test("a failed resume shows Tap to continue; its tap resumes audio without advancing, and mute still works", async ({
-  page,
-}) => {
+// On the iPhone, the unlocking tap is a real touch sequence (`@tap`, playwright.config.ts).
+test("a failed resume shows Tap to continue; its tap resumes audio without advancing, and mute still works", {
+  tag: "@tap",
+}, async ({ page }) => {
   await recordResumes(page);
   await openGame(page);
 

@@ -11,7 +11,9 @@ A knowledge base for porting [After the Waves Crash](https://github.com/stefanha
 | [m0-plan.md](m0-plan.md) | M0 foundations plan (done), with review carry-overs for later milestones. |
 | [m1-plan.md](m1-plan.md) | M1 display skeleton plan (done). |
 | [m2-plan.md](m2-plan.md) | M2 playable loop plan (done). |
-| [m3-plan.md](m3-plan.md) | M3 audio and start gate plan. |
+| [m3-plan.md](m3-plan.md) | M3 audio and start gate plan (done). |
+| [m4-plan.md](m4-plan.md) | Review of M0–M3, and the M4 story and presentation plan. |
+| [m4-refactor.md](m4-refactor.md) | M4 wave 0: the readability refactor proposal for the scene, main and the states. |
 
 ## How it was produced
 

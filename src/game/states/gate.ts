@@ -1,11 +1,20 @@
+import type { StateMachine } from "../../core/state-machine.ts";
+import { drainAdvanced } from "./common.ts";
 import { TAP_TO_BEGIN } from "./title.ts";
-import type { GameDeps, GameState } from "./types.ts";
+import type { GameDeps, GameState, GameStateId } from "./types.ts";
 
 export const LOAD_FAILED = "Couldn't load. Tap to retry";
 
 export type GatePhase = "loading" | "ready" | "failed";
 
-/** The gate's side main.ts uses, besides its state. */
+/** The line under the warning in each phase, once the texts show. */
+const GATE_PROMPTS: Readonly<Record<GatePhase, string | null>> = {
+  loading: null,
+  ready: TAP_TO_BEGIN,
+  failed: LOAD_FAILED,
+};
+
+/** The gate's side the app uses (app/audio-wiring.ts), besides its state. */
 export interface GateControl {
   /**
    * Call synchronously from the input router's `onActivate` hook (inside the DOM gesture). On the begin tap, the one
@@ -47,26 +56,50 @@ export const createGate = (
     }).then(() => {
       result = "loaded";
     }, () => {
-      // The loader reports the error itself (main.ts: reportError); Gate only shows the retry.
+      // The loader reports the error itself (app/game-loader.ts: reportError); Gate only shows the retry.
       result = "failed";
     });
   };
 
-  const show = () => {
+  const showScreen = () => {
     // The texts wait for the font, unless the load failed: then a fallback font beats a silent black screen.
     const text = loader.fontReady || phase === "failed";
 
     gateView.show({
       progress: phase === "loading" ? progress : null,
       warning: text,
-      prompt: !text ? null : phase === "ready" ? TAP_TO_BEGIN : phase === "failed" ? LOAD_FAILED : null,
+      prompt: text ? GATE_PROMPTS[phase] : null,
     });
   };
 
   const enterPhase = (next: GatePhase) => {
     phase = next;
     input.beginEpoch();
-    show();
+    showScreen();
+  };
+
+  /** While loading: the settled result moves the phase on; until then the bar follows the progress. */
+  const applyLoadResult = () => {
+    if (result === "loaded") {
+      // The scene is built now: keep it under the black overlay, as the original's black Load scene. Title's reset
+      // lifts it.
+      scene().setBlack(true);
+      enterPhase("ready");
+    } else if (result === "failed") {
+      enterPhase("failed");
+    } else {
+      showScreen();
+    }
+  };
+
+  /** A tap once loading is over: "Tap to begin" goes to Title, "Tap to retry" retries what failed. */
+  const onAdvance = (machine: StateMachine<GameStateId>) => {
+    if (phase === "ready") {
+      machine.request("title");
+    } else if (phase === "failed") {
+      startLoad();
+      enterPhase("loading");
+    }
   };
 
   return {
@@ -78,27 +111,15 @@ export const createGate = (
         startLoad();
       }
 
-      show();
+      showScreen();
     },
     update: (_deltaMS, machine) => {
-      const advanced = input.drain().some((event) => event.kind === "advance");
+      const advanced = drainAdvanced(input);
 
       if (phase === "loading") {
-        if (result === "loaded") {
-          // The scene is built now: keep it under the black overlay, as the original's black Load scene. Title's
-          // reset lifts it.
-          scene().setBlack(true);
-          enterPhase("ready");
-        } else if (result === "failed") {
-          enterPhase("failed");
-        } else {
-          show();
-        }
-      } else if (advanced && phase === "ready") {
-        machine.request("title");
-      } else if (advanced && phase === "failed") {
-        startLoad();
-        enterPhase("loading");
+        applyLoadResult();
+      } else if (advanced) {
+        onAdvance(machine);
       }
     },
     exit: () => {

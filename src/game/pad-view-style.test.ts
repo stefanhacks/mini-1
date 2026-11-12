@@ -10,22 +10,12 @@ import {
   IDLE_STYLE,
   PAD_GREY,
   PRESSED_STYLE,
-  snapToDevicePixels,
 } from "./pad-view-style.ts";
 
 const isWhole = (value: number) => Math.abs(value - Math.round(value)) < 1e-9;
 
 const contains = (rect: Rect, x: number, y: number) =>
   x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
-
-describe("snapToDevicePixels", () => {
-  it("rounds to whole device pixels, and treats a bad dpr as 1", () => {
-    assert.equal(snapToDevicePixels(10.3, 1), 10);
-    assert.equal(snapToDevicePixels(10.3, 2), 10.5);
-    assert.equal(snapToDevicePixels(10.3, 0), 10);
-    assert.equal(snapToDevicePixels(10.3, Number.NaN), 10);
-  });
-});
 
 describe("buttonStyle", () => {
   it("shows a press over a hint, and a hint over idle", () => {

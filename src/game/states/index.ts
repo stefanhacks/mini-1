@@ -21,7 +21,7 @@ export interface Game {
   readonly states: Record<GameStateId, GameState>;
   /** The current game, read by `window.debug`. */
   readonly session: GameSession;
-  /** The start gate: main wires `activate` to the input router's `onActivate`. */
+  /** The start gate: app/audio-wiring.ts wires `activate` to the input router's `onActivate`. */
   readonly gate: GateControl;
 }
 

@@ -48,11 +48,13 @@ export interface DebugApi {
   readonly layout: Layout;
   readonly game: GameSnapshot;
   readonly counts: DebugCounts;
+  /** The clip player: how many animation clips are playing. */
+  readonly anim: { readonly active: number };
   readonly timescale: number;
   /** Changes the time scale. Does nothing without `?debug`. */
   readonly setTimescale: (value: number) => void;
   /** Set once the scene is built. */
-  scene?: Scene;
-  /** The first error that halted the game logic or the render passes. */
-  error?: unknown;
+  readonly scene?: Scene;
+  /** The first error that halted the game logic, the render passes or the audio tick. Later ones don't replace it. */
+  readonly error?: unknown;
 }

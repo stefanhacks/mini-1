@@ -95,12 +95,17 @@ export const createInputRouter = (canvas: HTMLElement, frame: HTMLElement = getG
     }
   };
 
-  canvas.addEventListener("pointerdown", onPointerDown);
-  canvas.addEventListener("pointerup", onPointerUp);
-  canvas.addEventListener("pointercancel", onPointerCancel);
-  canvas.addEventListener("touchend", onTouchEnd, { passive: true });
-  canvas.addEventListener("lostpointercapture", onLostPointerCapture);
-  document.addEventListener("visibilitychange", onVisibilityChange);
+  // One signal removes them all (`destroy`).
+  const listeners = new AbortController();
+  const { signal } = listeners;
+
+  canvas.addEventListener("pointerdown", onPointerDown, { signal });
+  canvas.addEventListener("pointerup", onPointerUp, { signal });
+  canvas.addEventListener("pointercancel", onPointerCancel, { signal });
+  canvas.addEventListener("touchend", onTouchEnd, { passive: true, signal });
+  canvas.addEventListener("lostpointercapture", onLostPointerCapture, { signal });
+  // Added before main's (app/page-lifecycle.ts), so held input is cancelled first when the page hides.
+  document.addEventListener("visibilitychange", onVisibilityChange, { signal });
 
   // keydown, keyup and blur.
   const detachKeyboard = attachKeyboard(core.map, { onMuteKey: core.muteKey });
@@ -116,12 +121,7 @@ export const createInputRouter = (canvas: HTMLElement, frame: HTMLElement = getG
     onMute: (listener) => core.onMute(listener),
     isHeld: (dir) => core.isHeld(dir),
     destroy: () => {
-      canvas.removeEventListener("pointerdown", onPointerDown);
-      canvas.removeEventListener("pointerup", onPointerUp);
-      canvas.removeEventListener("pointercancel", onPointerCancel);
-      canvas.removeEventListener("touchend", onTouchEnd);
-      canvas.removeEventListener("lostpointercapture", onLostPointerCapture);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
+      listeners.abort();
       detachKeyboard();
     },
   };

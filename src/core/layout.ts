@@ -191,6 +191,13 @@ export const computeLayout = (screen: ScreenInfo): Layout => {
   };
 };
 
+/** Rounds a CSS px value to the nearest whole device pixel. A `dpr` that isn't finite and positive counts as 1. */
+export const snapToDevicePixels = (value: number, dpr: number) => {
+  const ratio = Number.isFinite(dpr) && dpr > 0 ? dpr : 1;
+
+  return Math.round(value * ratio) / ratio;
+};
+
 /** Maps a point in playfield art px (0..PLAYFIELD_SIZE) to screen CSS px. */
 export const playfieldToScreen = (layout: Layout, point: Point): Point => ({
   x: layout.square.x + point.x * layout.scale,

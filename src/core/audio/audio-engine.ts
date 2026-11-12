@@ -236,6 +236,27 @@ const realTimeout = (ms: number): Promise<void> =>
     }
   });
 
+/** The graph at the top of this file, from the buses down; the overlay gain starts silent. */
+const createBuses = (ctx: AudioContext) => {
+  const master = ctx.createGain();
+  // The music bus sums BGM01 (1.0) and the overlay (0.9), as the original did. Their peaks reached 1.2 in part 2
+  // (BGM01 + overlayPhase04) and clipped, so the bus is lowered to MUSIC_BUS_GAIN (owner decision, wave-2 review):
+  // the bus, not the tracks, so their balance stays the original's.
+  const musicBus = ctx.createGain();
+  const worldBus = ctx.createGain();
+  const uiBus = ctx.createGain();
+  const bgmGain = ctx.createGain();
+  const overlayGain = ctx.createGain();
+
+  master.connect(ctx.destination);
+  [musicBus, worldBus, uiBus].forEach((bus) => bus.connect(master));
+  [bgmGain, overlayGain].forEach((gain) => gain.connect(musicBus));
+  overlayGain.gain.value = 0;
+  musicBus.gain.value = MUSIC_BUS_GAIN;
+
+  return { master, worldBus, uiBus, bgmGain, overlayGain };
+};
+
 /** Creates the engine and its AudioContext, which stays suspended until `unlock()` (or runs if autoplay allows). */
 export const createAudioEngine = (
   manifest: AudioManifest = AUDIO,
@@ -256,22 +277,7 @@ export const createAudioEngine = (
   // `ended` (or a missed frame) can't drop a bar.
   const schedulingHorizon = 2 * bar;
 
-  const master = ctx.createGain();
-  // The music bus sums BGM01 (1.0) and the overlay (0.9), as the original did. Their peaks reached 1.2 in part 2
-  // (BGM01 + overlayPhase04) and clipped, so the bus is lowered to MUSIC_BUS_GAIN (owner decision, wave-2 review):
-  // the bus, not the tracks, so their balance stays the original's.
-  const musicBus = ctx.createGain();
-  const worldBus = ctx.createGain();
-  const uiBus = ctx.createGain();
-  const bgmGain = ctx.createGain();
-  const overlayGain = ctx.createGain();
-
-  master.connect(ctx.destination);
-  [musicBus, worldBus, uiBus].forEach((bus) => bus.connect(master));
-  [bgmGain, overlayGain].forEach((gain) => gain.connect(musicBus));
-  overlayGain.gain.value = 0;
-  musicBus.gain.value = MUSIC_BUS_GAIN;
-
+  const { master, worldBus, uiBus, bgmGain, overlayGain } = createBuses(ctx);
   let muted = readStoredMute();
 
   master.gain.value = muted ? 0 : 1;
@@ -351,6 +357,30 @@ export const createAudioEngine = (
     progressListeners.forEach((listener) => listener(loaded, keys.length));
   };
 
+  /** Fetches and decodes every entry not decoded yet, in parallel; rejects once all settled if any failed. */
+  const loadPending = async () => {
+    const pending = keys.filter((key) => !buffers.has(key));
+
+    reportProgress(keys.length - pending.length);
+
+    const results = await Promise.allSettled(
+      pending.map(async (key) => {
+        const buffer = await fetchAndDecode(ctx, manifest[key].url);
+
+        buffers.set(key, buffer);
+        reportProgress(loadedCount + 1);
+      }),
+    );
+
+    failed = pending.filter((_, i) => results[i]?.status === "rejected");
+
+    const rejection = results.find((result) => result.status === "rejected");
+
+    if (rejection !== undefined) {
+      throw new AudioLoadError(failed, rejection.reason);
+    }
+  };
+
   const load = (onProgress?: ProgressListener): Promise<void> => {
     if (onProgress !== undefined) {
       progressListeners.add(onProgress);
@@ -362,28 +392,7 @@ export const createAudioEngine = (
       return loading;
     }
 
-    loading = (async () => {
-      const pending = keys.filter((key) => !buffers.has(key));
-
-      reportProgress(keys.length - pending.length);
-
-      const results = await Promise.allSettled(
-        pending.map(async (key) => {
-          const buffer = await fetchAndDecode(ctx, manifest[key].url);
-
-          buffers.set(key, buffer);
-          reportProgress(loadedCount + 1);
-        }),
-      );
-
-      failed = pending.filter((_, i) => results[i]?.status === "rejected");
-
-      const rejection = results.find((result) => result.status === "rejected");
-
-      if (rejection !== undefined) {
-        throw new AudioLoadError(failed, rejection.reason);
-      }
-    })().finally(() => {
+    loading = loadPending().finally(() => {
       loading = null;
       progressListeners.clear();
     });
@@ -542,6 +551,55 @@ export const createAudioEngine = (
   const mustFinishBy = (track: OverlayTrack | null): number =>
     track?.plan?.mode === "once" ? Math.max(track.startAt, ...[...track.voices].map((voice) => voice.end)) : -Infinity;
 
+  /** Withdraws `pending`, the track asked for last whose bar hasn't come: the one before it plays on. */
+  const withdrawPending = (pending: OverlayTrack) => {
+    cancelPending(pending);
+    overlay = outgoing;
+    outgoing = null;
+  };
+
+  /** Whether `base` already plays `part` (or nothing plays and `part` is none). */
+  const alreadyPlaying = (base: OverlayTrack | null, part: number | null, now: number) =>
+    base === null ? part === null : base.part === part && isLive(base, now);
+
+  /** Stops `base` at the new track's start (a one-shot plays out) and makes the new track the current one. */
+  const handOver = (base: OverlayTrack | null, next: Pick<OverlayTrack, "part" | "plan" | "startAt" | "nextIndex">) => {
+    if (base !== null && base.plan?.mode !== "once") {
+      stopTrack(base, next.startAt);
+    }
+
+    const track: OverlayTrack = { ...next, stopAt: Infinity, voices: new Set(), upBefore: overlayUp };
+
+    overlay = track;
+    outgoing = base;
+
+    return track;
+  };
+
+  /** No overlay from `time`: the gain drops to silence there. */
+  const silenceOverlay = (time: number) => {
+    const gain = overlayGain.gain;
+
+    gain.cancelScheduledValues(time);
+    gain.setValueAtTime(0, time);
+    overlayUp = false;
+  };
+
+  /** An overlay starting from silence fades in from `time`; one replacing another keeps the gain up. */
+  const fadeInOverlay = (time: number) => {
+    if (overlayUp) {
+      return;
+    }
+
+    const gain = overlayGain.gain;
+
+    gain.cancelScheduledValues(time);
+    gain.setValueAtTime(0, time);
+    gain.linearRampToValueAtTime(OVERLAY_GAIN, time + OVERLAY_FADE);
+    overlayUp = true;
+  };
+
+  /** Moves the overlay to `part`'s on the next bar it can change at (bar-clock `changeBarTime`). */
   const applyStoryPart = (part: number | null) => {
     if (anchor === null) {
       return;
@@ -554,53 +612,27 @@ export const createAudioEngine = (
         return;
       }
 
-      cancelPending(overlay);
-      overlay = outgoing;
-      outgoing = null;
+      withdrawPending(overlay);
     }
 
     const base = overlay;
 
-    if (base === null ? part === null : base.part === part && isLive(base, now)) {
+    if (alreadyPlaying(base, part, now)) {
       return;
     }
 
     const plan = overlayForPart(part);
     const time = changeBarTime(now, anchor, bar, mustFinishBy(base));
-
-    if (base !== null && base.plan?.mode !== "once") {
-      stopTrack(base, time);
-    }
-
-    const track: OverlayTrack = {
-      part,
-      plan,
-      startAt: time,
-      stopAt: Infinity,
-      nextIndex: barIndexAtOrAfter(time, anchor, bar),
-      voices: new Set(),
-      upBefore: overlayUp,
-    };
-
-    overlay = track;
-    outgoing = base;
-
-    const gain = overlayGain.gain;
+    const nextIndex = barIndexAtOrAfter(time, anchor, bar);
+    const track = handOver(base, { part, plan, startAt: time, nextIndex });
 
     if (plan === null) {
-      gain.cancelScheduledValues(time);
-      gain.setValueAtTime(0, time);
-      overlayUp = false;
+      silenceOverlay(time);
 
       return;
     }
 
-    if (!overlayUp) {
-      gain.cancelScheduledValues(time);
-      gain.setValueAtTime(0, time);
-      gain.linearRampToValueAtTime(OVERLAY_GAIN, time + OVERLAY_FADE);
-      overlayUp = true;
-    }
+    fadeInOverlay(time);
 
     if (plan.mode === "per-bar") {
       refillPerBar(track, plan);
@@ -792,6 +824,28 @@ export const createAudioEngine = (
     };
   };
 
+  const debugSnapshot = (): AudioDebugSnapshot => ({
+    contextState: ctx.state,
+    status: status(),
+    currentTime: ctx.currentTime,
+    sampleRate: ctx.sampleRate,
+    unlocked,
+    muted,
+    barAnchor: anchor,
+    bar,
+    storyPart,
+    overlay: overlaySnapshot(),
+    overlayStarts: overlayLog.map((entry) => ({ ...entry })),
+    voices: {
+      music: bgmVoice === null ? 0 : 1,
+      overlay: overlayVoices.size,
+      world: worldVoice === null ? 0 : 1,
+      ui: uiVoices.size,
+    },
+    decoded: keys.filter((key) => buffers.has(key)),
+    failed,
+  });
+
   return {
     load,
     get failed() {
@@ -820,28 +874,8 @@ export const createAudioEngine = (
       };
     },
     tick,
-    get debug(): AudioDebugSnapshot {
-      return {
-        contextState: ctx.state,
-        status: status(),
-        currentTime: ctx.currentTime,
-        sampleRate: ctx.sampleRate,
-        unlocked,
-        muted,
-        barAnchor: anchor,
-        bar,
-        storyPart,
-        overlay: overlaySnapshot(),
-        overlayStarts: overlayLog.map((entry) => ({ ...entry })),
-        voices: {
-          music: bgmVoice === null ? 0 : 1,
-          overlay: overlayVoices.size,
-          world: worldVoice === null ? 0 : 1,
-          ui: uiVoices.size,
-        },
-        decoded: keys.filter((key) => buffers.has(key)),
-        failed,
-      };
+    get debug() {
+      return debugSnapshot();
     },
     destroy,
   };

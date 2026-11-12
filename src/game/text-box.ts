@@ -1,7 +1,14 @@
 // Where the story text box sits, and where its text goes. Pure TypeScript with no Pixi import, so it runs under
 // `node --test`. From the original Main.unity: UI/TextBox (the art) and HistoryText (the text rect) both sit at
 // y −160 on the 500×500 canvas (centre origin, y up), which is playfield (250, 410) (top-left origin, y down).
-import { PLAYFIELD_SIZE, rectToScreen, type Layout, type Point, type Rect } from "../core/layout.ts";
+import {
+  PLAYFIELD_SIZE,
+  rectToScreen,
+  snapToDevicePixels,
+  type Layout,
+  type Point,
+  type Rect,
+} from "../core/layout.ts";
 
 /** The text box's centre in playfield px. `text_box.png` is centre-anchored in the manifest. */
 export const TEXT_BOX_CENTER: Point = { x: PLAYFIELD_SIZE / 2, y: PLAYFIELD_SIZE / 2 + 160 };
@@ -72,7 +79,7 @@ export interface TextPlacement {
  */
 export const placeStoryText = (layout: Layout): TextPlacement => {
   const area = rectToScreen(layout, TEXT_AREA);
-  const snap = (value: number) => Math.round(value * layout.dpr) / layout.dpr;
+  const snap = (value: number) => snapToDevicePixels(value, layout.dpr);
   const fontSize = Math.max(MIN_TEXT_FONT_SIZE, TEXT_FONT_SIZE * layout.scale);
 
   return {

@@ -83,6 +83,22 @@ export default tseslint.config(
     },
   },
   {
+    // The state machine ticks the clock before it updates the state (state-machine.ts): a second caller would advance
+    // game time twice a frame, or outside the machine's order. Matches `clock.tick(…)`, `deps.clock.tick(…)`,
+    // `this.clock.tick(…)` and the like, not `audio.tick()`.
+    files: ["src/**/*.ts", "e2e/**/*.ts"],
+    ignores: ["src/core/state-machine.ts", "src/**/*.test.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        ...["object.name", "object.property.name"].map((path) => ({
+          selector: `CallExpression > MemberExpression.callee[property.name="tick"][${path}=/clock/i]`,
+          message: "Only the StateMachine ticks the clock (src/core/state-machine.ts): call machine.update instead.",
+        })),
+      ],
+    },
+  },
+  {
     files: ["src/**/*.test.ts"],
     rules: {
       "@typescript-eslint/no-floating-promises": [
@@ -92,7 +108,12 @@ export default tseslint.config(
     },
   },
   {
-    files: ["eslint.config.mjs"],
+    files: ["eslint.config.mjs", "scripts/**/*.mjs"],
     ...tseslint.configs.disableTypeChecked,
+  },
+  {
+    // Node scripts (scripts/import-anims.mjs): plain JavaScript, run by Node, not bundled.
+    files: ["scripts/**/*.mjs"],
+    languageOptions: { globals: { process: "readonly", console: "readonly" } },
   },
 );

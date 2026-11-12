@@ -10,6 +10,7 @@ import {
 import { renderTextureScale } from "../src/core/render-scale.ts";
 import { floorToDevicePixels } from "../src/core/viewport.ts";
 import type { DebugApi } from "../src/debug-api.ts";
+import { FAST } from "./game.ts";
 
 // The resize test parks the first render texture on `window.debug` to compare it later.
 type ResizeDebug = DebugApi & { firstTexture?: unknown };
@@ -20,9 +21,15 @@ const FAKE_INSETS: Record<"portrait" | "landscape", Insets> = {
   landscape: { top: 0, right: 47, bottom: 21, left: 47 },
 };
 
-// Art the pixel checks sample, in playfield px: the title logo (330×64 at 250, 215) and the boat (32×32 at 250, 310).
+// Art the pixel checks sample, in playfield px: the title logo (330×64 at 250, 215), and the sea either side of the
+// boat, where the vignette is clear. The sea strips slide on whole art pixels; the boat is left out, as its ±7° tilt
+// (Barco.anim) can't keep k×k blocks.
 const TITLE_RECT: Rect = { x: 85, y: 183, width: 330, height: 64 };
-const BOAT_RECT: Rect = { x: 234, y: 294, width: 32, height: 32 };
+const SEA_RECTS: readonly Rect[] = [
+  { x: 190, y: 316, width: 38, height: 42 },
+  { x: 272, y: 316, width: 38, height: 42 },
+];
+const ART_RECTS: readonly Rect[] = [TITLE_RECT, ...SEA_RECTS];
 
 const EPSILON_DIGITS = 6;
 
@@ -85,6 +92,7 @@ const readArt = (page: Page, rects: readonly Rect[], ownResize?: { width: number
     const at = (x: number, y: number) => (y * width + x) * 4;
     let lit = 0;
     let torn = 0;
+    let firstTorn: { x: number; y: number } | null = null;
 
     for (const rect of rects) {
       for (let artY = rect.y; artY < rect.y + rect.height; artY++) {
@@ -103,12 +111,17 @@ const readArt = (page: Page, rects: readonly Rect[], ownResize?: { width: number
           }
 
           torn += uniform ? 0 : 1;
+          firstTorn ??= uniform ? null : { x: artX, y: artY };
           lit += pixels[first] + pixels[first + 1] + pixels[first + 2] > 3 * 128 ? 1 : 0;
         }
       }
     }
 
-    return { k, size: width, lit, torn };
+    // For a failure message: what could draw over the art.
+    const parts = window.debug.scene?.parts;
+    const over = { bolt: parts?.bolt.visible, flash: parts?.flash.visible, paused: window.debug.clock.paused };
+
+    return { k, size: width, lit, torn, firstTorn, over };
   }, { rects, ownResize });
 
 // The layout main.ts computes: from #game (the viewport) floored to whole device pixels.
@@ -149,8 +162,12 @@ const clearInsets = (page: Page) => page.evaluate(() => {
 
 const nextFrame = (page: Page) => page.evaluate(() => new Promise(requestAnimationFrame));
 
-/** Waits until the page's layout matches `insets` and its viewport, then returns the state. */
-const settle = async (page: Page, insets: Insets) => {
+/**
+ * Waits until the page's layout matches `insets` and its viewport, then returns the state. With `card`, also for the
+ * title card: the logo (revealed 5.5 s into Title) and the tap prompt (from 7.25 s), with no strike showing; then game
+ * time stops. Pages opened with `?timescale=${FAST}` run that intro in a fraction of a second.
+ */
+const settle = async (page: Page, insets: Insets, card = true) => {
   // On a fresh page, taps through the start gate first.
   await page.waitForFunction(() => window.debug?.game.state === "title" || window.debug?.gate.phase === "ready");
 
@@ -159,10 +176,33 @@ const settle = async (page: Page, insets: Insets) => {
   }
 
   await page.waitForFunction(() => window.debug.game.state === "title");
+
+  if (card) {
+    // The logo shows at the reveal's flash peak and the prompt at the end of the intro; the art checks read the logo,
+    // once no strike shows. The bolt outlives the flash (0.67 s against 0.5 s), and a lit bolt under the vignette
+    // (scaled 1.05) splits k×k blocks, so both must be gone. Game time then stops in the same frame check, so no
+    // ambient strike lands on the checks: a paused clock stands every clip still (anim/player.ts). The time scale
+    // can't do it, as it takes only values above zero.
+    await page.waitForFunction(() => {
+      const { clock, scene } = window.debug;
+      const parts = scene?.parts;
+      const quiet = parts !== undefined && parts.logo.visible && parts.tapPrompt.visible && !parts.flash.visible
+        && !parts.bolt.visible;
+
+      if (quiet) {
+        clock.paused = true;
+      }
+
+      return quiet;
+    }, undefined, { timeout: 15_000 });
+  }
+
   await expect.poll(async () => {
     const state = await readState(page);
 
-    return state.prompt !== null && JSON.stringify(state.layout) === JSON.stringify(expectedLayout(state, insets));
+    const laidOut = JSON.stringify(state.layout) === JSON.stringify(expectedLayout(state, insets));
+
+    return laidOut && (!card || state.prompt !== null);
   }).toBe(true);
 
   // Two more frames, so the render texture, the text and the stage have all drawn the new layout.
@@ -219,7 +259,7 @@ const expectSharpArt = (art: Awaited<ReturnType<typeof readArt>>, k: number) => 
   expect(art.k).toBe(k);
   expect(art.size).toBe(PLAYFIELD_SIZE * k);
   expect(art.lit).toBeGreaterThan(1000);
-  expect(art.torn).toBe(0);
+  expect(art.torn, `first torn art pixel: ${JSON.stringify(art.firstTorn)}, over: ${JSON.stringify(art.over)}`).toBe(0);
 };
 
 const watchErrors = (page: Page) => {
@@ -242,15 +282,16 @@ const screenshot = async (page: Page, testInfo: TestInfo, name: string) => {
   await testInfo.attach(name, { path, contentType: "image/png" });
 };
 
-test("renders the playfield through the render texture in both orientations, with and without insets", async ({
-  page,
-}, testInfo) => {
+// Every device: the layout, k and the art's pixel blocks depend on its viewport and DPR (playwright.config.ts).
+test("renders the playfield through the render texture in both orientations, with and without insets", {
+  tag: "@device",
+}, async ({ page }, testInfo) => {
   const problems = watchErrors(page);
   const initial = page.viewportSize() ?? { width: 0, height: 0 };
   const short = Math.min(initial.width, initial.height);
   const long = Math.max(initial.width, initial.height);
 
-  await page.goto("/?debug");
+  await page.goto(`/?debug&timescale=${FAST}`);
 
   for (const orientation of ["portrait", "landscape"] as const) {
     await page.setViewportSize(orientation === "portrait"
@@ -262,7 +303,7 @@ test("renders the playfield through the render texture in both orientations, wit
     const plain = await settle(page, ZERO_INSETS);
 
     expectDisplay(plain, ZERO_INSETS);
-    expectSharpArt(await readArt(page, [TITLE_RECT, BOAT_RECT]), plain.k);
+    expectSharpArt(await readArt(page, ART_RECTS), plain.k);
     await screenshot(page, testInfo, `${orientation}`);
 
     const insets = FAKE_INSETS[orientation];
@@ -281,67 +322,69 @@ test("renders the playfield through the render texture in both orientations, wit
   expect(problems).toEqual([]);
 });
 
-test("resizes the same render texture when k changes, already drawn when the resize returns", async ({ page }) => {
-  const problems = watchErrors(page);
+// The rest sets its own sizes and DPR: desktop only.
+test.describe("at DPR 3", () => {
+  // k goes from 2 at 600×400 to 6 at 1500×1100: at DPR 1 it would stay low, and k = 1 blocks are trivially sharp.
+  test.use({ deviceScaleFactor: 3 });
+  // Three 3000² read-backs, under load.
+  test.describe.configure({ timeout: 90_000 });
 
-  await page.goto("/");
-  await page.setViewportSize({ width: 600, height: 400 });
+  test("resizes the same render texture when k changes, already drawn when the resize returns", async ({ page }) => {
+    const problems = watchErrors(page);
 
-  const small = await settle(page, ZERO_INSETS);
+    await page.goto(`/?debug&timescale=${FAST}`);
+    await page.setViewportSize({ width: 600, height: 400 });
 
-  await page.evaluate(() => {
-    const debug = window.debug as ResizeDebug;
+    const small = await settle(page, ZERO_INSETS);
 
-    debug.firstTexture = debug.display.renderTexture;
+    await page.evaluate(() => {
+      const debug = window.debug as ResizeDebug;
+
+      debug.firstTexture = debug.display.renderTexture;
+    });
+
+    // A 1100 px square is 1100 device px or more at any DPR ≥ 1: k ≥ 2, larger than the 600×400 window's. Read before
+    // any frame runs, the texture already holds the art at the new size: the stage drawn right after shows no gap.
+    const resized = await readArt(page, ART_RECTS, { width: 1500, height: 1100 });
+
+    expect(resized.k).toBeGreaterThan(small.k);
+    expectSharpArt(resized, resized.k);
+
+    // Then the real viewport, and every size check.
+    await page.setViewportSize({ width: 1500, height: 1100 });
+
+    const large = await settle(page, ZERO_INSETS);
+
+    expectDisplay(large, ZERO_INSETS);
+    expect(large.k).toBe(resized.k);
+    expectSharpArt(await readArt(page, ART_RECTS), large.k);
+
+    // And back down: the same texture throughout, with no stale size left in the sprite.
+    await page.setViewportSize({ width: 600, height: 400 });
+
+    const again = await settle(page, ZERO_INSETS);
+
+    expectDisplay(again, ZERO_INSETS);
+    expectSharpArt(await readArt(page, ART_RECTS), small.k);
+    expect(await page.evaluate(() => {
+      const debug = window.debug as ResizeDebug;
+
+      return debug.firstTexture === debug.display.renderTexture;
+    })).toBe(true);
+    expect(problems).toEqual([]);
   });
-
-  // A 1100 px square is 1100 device px or more at any DPR ≥ 1: k ≥ 2, larger than the 600×400 window's. Read before
-  // any frame runs, the texture already holds the art at the new size: the stage drawn right after shows no gap.
-  const resized = await readArt(page, [TITLE_RECT, BOAT_RECT], { width: 1500, height: 1100 });
-
-  expect(resized.k).toBeGreaterThan(small.k);
-  expectSharpArt(resized, resized.k);
-
-  // Then the real viewport, and every size check.
-  await page.setViewportSize({ width: 1500, height: 1100 });
-
-  const large = await settle(page, ZERO_INSETS);
-
-  expectDisplay(large, ZERO_INSETS);
-  expect(large.k).toBe(resized.k);
-  expectSharpArt(await readArt(page, [TITLE_RECT, BOAT_RECT]), large.k);
-
-  // And back down: the same texture throughout, with no stale size left in the sprite.
-  await page.setViewportSize({ width: 600, height: 400 });
-
-  const again = await settle(page, ZERO_INSETS);
-
-  expectDisplay(again, ZERO_INSETS);
-  expectSharpArt(await readArt(page, [TITLE_RECT, BOAT_RECT]), small.k);
-  expect(await page.evaluate(() => {
-    const debug = window.debug as ResizeDebug;
-
-    return debug.firstTexture === debug.display.renderTexture;
-  })).toBe(true);
-  expect(problems).toEqual([]);
-});
-
-test("shows the debug overlay only with ?debug", async ({ page }) => {
-  await page.goto("/");
-  await settle(page, ZERO_INSETS);
-  expect((await readState(page)).overlay).toBe(false);
-
-  await page.goto("/?debug");
-  await settle(page, ZERO_INSETS);
-  expect((await readState(page)).overlay).toBe(true);
 });
 
 test.describe("at a fractional device pixel ratio", () => {
   test.use({ viewport: { width: 412, height: 915 }, deviceScaleFactor: 2.625 });
 
-  test("backs the canvas with exactly its CSS size × resolution, in whole device pixels", async ({ page }) => {
+  test("backs the canvas with its CSS size × resolution in whole device pixels; no overlay without ?debug", async ({
+    page,
+  }) => {
     await page.goto("/");
-    await settle(page, ZERO_INSETS);
+    await settle(page, ZERO_INSETS, false);
+    // The overlay shows only with ?debug: the first test checks it does there.
+    expect((await readState(page)).overlay).toBe(false);
 
     const canvas = await page.evaluate(() => {
       const element = document.querySelector<HTMLCanvasElement>("#game > canvas");

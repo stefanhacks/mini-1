@@ -1,9 +1,11 @@
-import { generateRounds } from "../challenges/generate.ts";
+import type { TimerScope } from "../../core/clock.ts";
+import type { StateMachine } from "../../core/state-machine.ts";
 import { createRng } from "../challenges/rng.ts";
-import { ambientDelay, createCuePlayer } from "./cues.ts";
-import type { GameSession } from "./session.ts";
-import { TITLE_AMBIENT, TITLE_CUES, TITLE_DEBOUNCE_MS } from "./timings.ts";
-import type { GameDeps, GameState } from "./types.ts";
+import { drainAdvanced, hidePad } from "./common.ts";
+import { ambientDelay, createCuePlayer, type CuePlayer } from "./cues.ts";
+import { startNewGame, type GameSession } from "./session.ts";
+import { FADE, TITLE_AMBIENT, TITLE_CUES, TITLE_EXIT_MS, TITLE_PROMPT_MS } from "./timings.ts";
+import type { GameDeps, GameState, GameStateId, SceneView } from "./types.ts";
 
 export const TAP_TO_BEGIN = "Tap to begin";
 
@@ -11,62 +13,88 @@ export const TAP_TO_BEGIN = "Tap to begin";
 export const AMBIENT_SALT = 0x7a11e7;
 
 /**
- * Title: the static frame of the original's title (the logo, the credits and the prompt; M4 adds the visuals of the
- * timed lightning and the reveal). Every game starts here, the first and every replay: entering it starts a new game
- * with a new seed and resets the scene, which is the soft reset of owner decision 2. Any tap or key goes to story
- * part 0, once TITLE_DEBOUNCE_MS have passed.
+ * Title: the original's title frame. Every game starts here, the first and every replay: entering it starts a new game
+ * with a new seed and resets the scene, which is the soft reset of owner decision 2. Its phases:
+ * - `title`, the intro: the logo shows at the reveal strike's flash peak (`SceneView.strike`); taps are dropped.
+ * - `prompt`, from TITLE_PROMPT_MS: the credits and "Tap to begin" fade in, the prompt pulsing. A tap or key starts
+ *   the exit.
+ * - `leaving`, the exit (`Inicio.anim`, m4-plan owner decision 1): the logo, the credits and the prompt fade out over
+ *   TITLE_EXIT_MS, then story part 0 starts. Taps are dropped.
  *
  * Its cues: the intro's strikes (TITLE_CUES), then ambient lightning at the original's random intervals
  * (TITLE_AMBIENT), drawn from the game's seed. The music is left alone: BGM01 loops on, and after a game bgm02 plays
  * out (owner decision 5); Story 0 asks for part 0's overlay again.
  */
 export const createTitle = (deps: GameDeps, session: GameSession): GameState => {
-  let enteredAt = 0;
+  const { input, pad, scene, nextSeed, tuning } = deps;
+
+  /**
+   * Ambient lightning after the intro's strikes, from its own RNG stream. Draws the first delay now, at the enter (the
+   * draw order is part of a seed's replay), and returns what starts the strikes.
+   */
+  const scheduleAmbient = (scope: TimerScope, cues: CuePlayer) => {
+    const rng = createRng((session.seed ^ AMBIENT_SALT) >>> 0);
+    // Times from the enter, as the cues'.
+    let nextAt = TITLE_AMBIENT.from + ambientDelay(rng, TITLE_AMBIENT.first);
+    const strike = () => {
+      cues.fire("lightning");
+      nextAt += ambientDelay(rng, TITLE_AMBIENT.next);
+      cues.at(scope, nextAt, strike);
+    };
+
+    return () => cues.at(scope, nextAt, strike);
+  };
+
+  /** The end of the intro: the credits and the prompt fade in, and taps count from now. */
+  const showPrompt = (view: SceneView) => {
+    session.phase = "prompt";
+    input.beginEpoch();
+    view.setCredits(true, FADE);
+    view.setPrompt(TAP_TO_BEGIN, FADE);
+  };
+
+  /** `Inicio`: everything fades out, and the story starts at its end (`FimInicio`). */
+  const leave = (scope: TimerScope, machine: StateMachine<GameStateId>) => {
+    const view = scene();
+
+    session.phase = "leaving";
+    input.beginEpoch();
+    view.setTitle(false, FADE);
+    view.setPrompt(null, FADE);
+    scope.after(TITLE_EXIT_MS, () => machine.request("story"));
+  };
 
   return {
     enter: (scope) => {
-      const { input, pad, scene, nextSeed, tuning } = deps;
-
       input.beginEpoch();
-      enteredAt = deps.clock.now;
-      session.seed = nextSeed();
-      session.games += 1;
-      session.rounds = generateRounds(createRng(session.seed), tuning);
-      session.part = 0;
+      startNewGame(session, nextSeed(), tuning);
       session.phase = "title";
-      session.round = null;
-      session.cursor = null;
 
       const view = scene();
 
-      pad.setVisible(false);
-      pad.setHint(null);
+      hidePad(pad);
       view.reset();
-      view.setTitle(true);
-      view.setPrompt(TAP_TO_BEGIN);
 
-      const cues = createCuePlayer(deps, "title");
-      const rng = createRng((session.seed ^ AMBIENT_SALT) >>> 0);
-      // Times from the enter, as the cues'.
-      let nextAt = TITLE_AMBIENT.from + ambientDelay(rng, TITLE_AMBIENT.first);
-      const strike = () => {
-        cues.fire("lightning");
-        nextAt += ambientDelay(rng, TITLE_AMBIENT.next);
-        cues.at(scope, nextAt, strike);
-      };
+      const cues = createCuePlayer(deps, session, "title");
+      const startAmbient = scheduleAmbient(scope, cues);
 
-      cues.schedule(scope, TITLE_CUES, () => cues.at(scope, nextAt, strike));
+      // One timer pending, as the cues': the intro's strikes, then the prompt, then the ambient strikes; plus the exit
+      // timer while leaving.
+      cues.schedule(scope, TITLE_CUES, () => cues.at(scope, TITLE_PROMPT_MS, () => {
+        showPrompt(view);
+        startAmbient();
+      }));
     },
-    update: (_deltaMS, machine) => {
-      const advanced = deps.input.drain().some((event) => event.kind === "advance");
-
-      if (advanced && deps.clock.now - enteredAt >= TITLE_DEBOUNCE_MS) {
-        machine.request("story");
+    update: (_deltaMS, machine, scope) => {
+      if (drainAdvanced(input) && session.phase === "prompt") {
+        leave(scope, machine);
       }
     },
     exit: () => {
-      deps.scene().setTitle(false);
-      deps.scene().setPrompt(null);
+      const view = scene();
+
+      view.setTitle(false);
+      view.setPrompt(null);
     },
   };
 };

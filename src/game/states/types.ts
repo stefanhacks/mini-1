@@ -4,10 +4,12 @@
 import type { WorldSfxKey } from "../../core/audio/audio-engine.ts";
 import type { GameClock } from "../../core/clock.ts";
 import type { State } from "../../core/state-machine.ts";
+import type { Rng } from "../challenges/rng.ts";
 import type { ChallengeProgress, ChallengeSpec } from "../challenges/rule.ts";
 import type { Tuning } from "../challenges/tuning.ts";
 import type { Direction } from "../direction.ts";
 import type { InputEvent } from "../input/pointer-map.ts";
+import type { StrikeKind } from "../lightning.ts";
 import type { StoryPage } from "../story/cursor.ts";
 import type { Measure } from "../story/paging.ts";
 import type { CueName } from "./timings.ts";
@@ -39,34 +41,74 @@ export interface Paging {
 
 export type Backdrop = "pillars" | "tentacles";
 
-export type Boat = "whole" | "broken" | "none";
+/**
+ * - `whole`: the boat, bobbing (`Barco`).
+ * - `broken`: the broken boat at its Main.unity spot.
+ * - `thrown`: the broken boat thrown up (`BarcoQuebradoJogadoCima`), then kept at its end pose.
+ * - `none`: neither.
+ */
+export type Boat = "whole" | "broken" | "thrown" | "none";
 
 /**
- * The scene as the states see it: show and hide per scene state, all instant in M2 (M4 adds the tweens). Every call
- * is idempotent.
+ * How a show or hide plays: the original's fade clip for that object (`FadeIn`/`FadeOut`, `TMPFadeIn`/`TMPFadeOut`,
+ * `FadeKrakenA`/`B`), at `speed` clip seconds per game second. Without one, it is a cut.
+ */
+export interface Fade {
+  readonly speed: number;
+}
+
+/**
+ * The scene as the states see it: show and hide per scene state. Each call is a cut unless it takes a `fade`; the
+ * fades run in the scene on the game clock. A shown object is visible at once (a fade-in starts at alpha 0); a hidden
+ * one ends invisible at alpha 0 (after its fade-out). Every call is idempotent: asking for what an object shows, or
+ * is fading to, changes nothing. A new call cuts a fade still running on the same object. The ambient loops (sea,
+ * clouds, the whole boat's bob) run from the scene's build on, through every replay.
  */
 export interface SceneView {
-  /** Back to the opening frame: sea, sky, the whole boat and the vignette. Everything else hidden. */
+  /**
+   * Back to the opening frame, as cuts: sea, sky, the whole boat and the vignette; everything else hidden, every fade
+   * and pulse stopped, the moved sprites back at their places.
+   */
   reset(): void;
-  /** The title logo and the credits. */
-  setTitle(visible: boolean): void;
-  /** The tap prompt under the logo ("Tap to begin", "Tap to play again"), or none. */
-  setPrompt(text: string | null): void;
-  /** The text box with a story page, or neither. */
-  setStoryPage(page: StoryPage | null): void;
-  /** The arrows, cursors and prompt of a challenge, or none. Same spec object again: nothing is rebuilt. */
+  /** The logo and the credits (`FadeIn`/`FadeOut`, `TMPFadeIn`/`TMPFadeOut`). Hiding them drops a pending reveal. */
+  setTitle(visible: boolean, fade?: Fade): void;
+  /** The credits alone (`TMPFadeIn`/`TMPFadeOut`): Title fades them in at the end of its intro. */
+  setCredits(visible: boolean, fade?: Fade): void;
+  /**
+   * A lightning strike (`DoTheThunder`): the bolt and the flash, drawn from `rng` (the game's lightning stream). A
+   * `title-reveal` also shows the logo at the flash's peak (TITLE_REVEAL_FLASH_MS later). A strike cuts the one before.
+   */
+  strike(kind: StrikeKind, rng: Rng): void;
+  /**
+   * The tap prompt under the logo ("Tap to begin", "Tap to play again"), or none. Shown, it pulses (`TMPIdle`), after
+   * its fade-in (`TMPFadeIn`) if it has one; hidden with a fade, it fades out (`TMPFadeOut`). A new text on a shown
+   * prompt only changes the text.
+   */
+  setPrompt(text: string | null, fade?: Fade): void;
+  /**
+   * The text box with a story page, or neither. Only the page's first `revealed` characters show (all by default):
+   * the typewriter. The page is laid out whole, so typing never moves what already shows. Calling it again with the
+   * same page object and a new count is cheap (the story state does every frame while typing).
+   */
+  setStoryPage(page: StoryPage | null, revealed?: number): void;
+  /**
+   * The arrows, cursors and prompt of a challenge, or none. A Hold or Many arrow pulses (`ArrowHold`, `ArrowMany`).
+   * Same spec object again: nothing is rebuilt.
+   */
   setChallenge(spec: ChallengeSpec | null): void;
   /** The cursors and the hold ring / press pips for the shown challenge. Cheap to call every frame. */
   setProgress(progress: ChallengeProgress | null): void;
-  setBackdrop(backdrop: Backdrop, visible: boolean): void;
+  /** A backdrop (`FadeIn`/`FadeOut`). */
+  setBackdrop(backdrop: Backdrop, visible: boolean, fade?: Fade): void;
   setBoat(boat: Boat): void;
-  setKraken(visible: boolean): void;
-  /** The black overlay (the original's `TelaPreta`) over the world, under the text box. */
-  setBlack(visible: boolean): void;
+  /** The kraken's body and tail. Shown with a fade they fade in (`FadeKrakenA`/`B`), the body rising; hiding cuts. */
+  setKraken(visible: boolean, fade?: Fade): void;
+  /** The black overlay (the original's `TelaPreta`, `FadeIn`/`FadeOut`) over the world, under the text box. */
+  setBlack(visible: boolean, fade?: Fade): void;
   readonly paging: Paging;
 }
 
-/** What the start gate loads (main.ts: sprites, font and audio through a LoadPlan, then the scene is built). */
+/** What the start gate loads (app/game-loader.ts: sprites, font and audio, then the scene is built). */
 export interface GateLoader {
   /**
    * Loads everything not loaded yet and builds the scene, reporting progress (0..1). Resolves once the scene exists;
@@ -129,8 +171,8 @@ export interface GameDeps {
   readonly gateView: GateView;
   readonly audio: GameAudio;
   /**
-   * Called on every cue, right after its sound was asked for, inside the clock tick that reached it. main.ts logs it
-   * for `window.debug`; M4 hangs the visuals here.
+   * Called on every cue, right after its sound and (for a strike) `SceneView.strike`, inside the clock tick that
+   * reached it. app/cue-log.ts logs it for `window.debug`.
    */
   readonly onCue: (event: CueEvent) => void;
   readonly clock: GameClock;

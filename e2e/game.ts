@@ -3,7 +3,11 @@ import { expect, type CDPSession, type Page } from "@playwright/test";
 import type { Container } from "pixi.js";
 import type { GameSnapshot } from "../src/debug-api.ts";
 import type { Direction } from "../src/game/direction.ts";
+import { createRng, seedFromString } from "../src/game/challenges/rng.ts";
 import { computePads, type Pad } from "../src/game/input/pad-geometry.ts";
+import { ambientDelay } from "../src/game/states/cues.ts";
+import { TITLE_AMBIENT, TITLE_CUES } from "../src/game/states/timings.ts";
+import { AMBIENT_SALT } from "../src/game/states/title.ts";
 
 export type { GameSnapshot } from "../src/debug-api.ts";
 
@@ -28,6 +32,24 @@ const OPEN_POLL = { intervals: [50, 100, 200], timeout: 45_000 };
 export const readGame = (page: Page) => page.evaluate(() => window.debug.game);
 
 export const readLayout = (page: Page) => page.evaluate(() => window.debug.layout);
+
+export const readCues = (page: Page) => page.evaluate(() => window.debug.cues);
+
+export const readAudio = (page: Page) => page.evaluate(() => window.debug.audio.debug);
+
+/** Title's cues for the first e2e game, from its seed, as the original's timer would strike them. */
+export const expectedTitleCues = (count: number) => {
+  const rng = createRng((seedFromString(String(SEED)) ^ AMBIENT_SALT) >>> 0);
+  const cues = TITLE_CUES.map(({ name, at }) => ({ name, at }));
+  let at = TITLE_AMBIENT.from + ambientDelay(rng, TITLE_AMBIENT.first);
+
+  while (cues.length < count) {
+    cues.push({ name: "lightning", at });
+    at += ambientDelay(rng, TITLE_AMBIENT.next);
+  }
+
+  return cues;
+};
 
 export const setTimescale = (page: Page, value: number) =>
   page.evaluate((scale) => window.debug.setTimescale(scale), value);
@@ -213,25 +235,32 @@ export const touchDriver = async (page: Page): Promise<TouchDriver> => {
 };
 
 /**
- * Advances from Title to story part 0. Title drops taps for its first 500 ms of game time (TITLE_DEBOUNCE_MS), so one
- * that changes nothing is sent again.
+ * Advances from Title to story part 0. Title takes a tap only once its prompt is up, at the end of its 7.25 s intro,
+ * then fades out for 1 s before the story starts. The intro runs at FAST time at least (nothing in it is answered),
+ * then the tap is sent at the test's own time scale, again if it changed nothing.
  */
 export const leaveTitle = async (page: Page, driver: Driver) => {
+  const scale = await page.evaluate(() => window.debug.timescale);
+
+  await setTimescale(page, Math.max(scale, FAST));
+  await waitFor(page, (game) => game.state !== "title" || game.phase !== "title");
+  await setTimescale(page, scale);
   await expect.poll(async () => {
-    if ((await readGame(page)).state === "title") {
+    if ((await readGame(page)).phase === "prompt") {
       await driver.advance();
       await page.waitForTimeout(15);
     }
 
-    return (await readGame(page)).state;
-  }, POLL).not.toBe("title");
+    return (await readGame(page)).phase;
+  }, POLL).not.toBe("prompt");
+  await waitFor(page, (game) => game.state !== "title");
 };
 
 const pageKey = (game: GameSnapshot) => `${game.state}:${game.part}:${game.page?.line}:${game.page?.page}`;
 
 /**
- * Reads the current story part to its end. `onPage` runs on every page as it is shown. An advance inside the debounce
- * is dropped by the game, so one that changes nothing is sent again.
+ * Reads the current story part to its end. `onPage` runs on every page as it is shown. An advance while the page types
+ * only completes it, and one inside the debounce is dropped, so one that changes nothing is sent again.
  */
 export const readStory = async (page: Page, driver: Driver, onPage?: (game: GameSnapshot) => Promise<void>) => {
   await waitFor(page, (game) => game.state !== "story" || game.page !== null);
@@ -319,7 +348,8 @@ export const playGame = async (page: Page, driver: Driver, onPage?: (game: GameS
 
   await waitFor(page, (game) => game.state === "ending");
   expect(await isPadVisible(page)).toBe(false);
-  await waitFor(page, (game) => game.phase === "card");
+  // The ending takes the replay tap once its prompt is up, after the card.
+  await waitFor(page, (game) => game.state === "ending" && game.phase === "prompt");
   await driver.advance();
   await waitFor(page, (game) => game.state === "title" && game.games === start.games + 1);
 };

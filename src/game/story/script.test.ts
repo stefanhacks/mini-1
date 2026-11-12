@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { fixedWidthMeasure } from "./fake-measure.ts";
-import { lineSegments, lineText, segmentLines, speakerLabel, STORY_PARTS, STORY_TONE_COLORS } from "./script.ts";
+import {
+  lineSegments,
+  lineStarts,
+  lineText,
+  segmentLines,
+  speakerLabel,
+  STORY_PARTS,
+  STORY_TONE_COLORS,
+} from "./script.ts";
 
 // TextManager.prefab's `special` arrays, hex-encoded bools: one byte per line, `01` for a whisper.
 const SPECIAL_HEX = ["0000000100000001", "00000001", "00000000", "000000000001"];
@@ -86,5 +94,15 @@ describe("line segments", () => {
     assert.deepEqual(spread.map((line) => line.map(({ text: piece }) => piece).join("")), lines);
     assert.deepEqual(spread[0], [{ tone: "speaker", text: "[Captain]: " }, { tone: "speech", text: "\"Men!" }]);
     assert.ok(spread.slice(1).every((line) => line.every(({ tone }) => tone === "speech")));
+  });
+
+  it("finds where each wrapped line starts in the page text, skipping the spaces dropped at breaks", () => {
+    const text = "[Captain]: \"Men! Get a grip\"";
+    const lines = fixedWidthMeasure(12)(text);
+    const starts = lineStarts(text, lines);
+
+    lines.forEach((line, index) => assert.equal(text.slice(starts[index], starts[index] + line.length), line));
+    assert.deepEqual(starts, [0, 11, 23]);
+    assert.deepEqual(lineStarts("", [""]), [0]);
   });
 });
