@@ -158,3 +158,4 @@ The scene reads the same query as the flash cap (`watchReducedMotion`) once a fr
 Notes from the wave-1 fixes:
 - Title's prompt and "Tap to play again" hide whenever "Tap to continue" shows (paused or audio-only), so two prompts never show at once. The pause box sits at y 405, where the hidden prompt was, clear of the logo.
 - If the resume tap's audio unlock fails, "Tap to continue" stays up over the running game and its taps don't advance until audio is `running`, as in M3.
+18. **Test cuts accepted to get e2e under 3 min:** the full-game test waits for the music bar only in part 0 and at bgm02 (unit tests keep the part → track mapping), and the iPhone touch game plays rounds 0–1 by touch, then jumps to the ending (desktop still plays the whole game).
