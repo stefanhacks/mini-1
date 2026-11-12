@@ -30,9 +30,10 @@ Milestone M5 from [04-implementation-difficulty.md](04-implementation-difficulty
 
 ### 1. Rain, splashes and bubbles (`src/game/scene/particles/`)
 
+- **Spec:** [m5-particles-spec.md](m5-particles-spec.md) (wave 0, every number cited). Rain 220/s, 1 s life, (−375, +375) px/s, dying at the sea line y ≈ 331 or on the boat, 3-particle splash bursts; bubbles 5 s life rising 30 px/s. Splash spread, the sea line ±4 px and the eye band are tuned by eye.
 - **Source of truth:** Main.unity holds 3 `ParticleSystem`s (rain, its splash sub-emitter, the bubbles). A spec agent extracts every used module first: rate, lifetime, start speed and size, shape, gravity, colour over lifetime, sub-emitter trigger, `maxParticles`, simulation space. Only values the YAML gives are taken as is; the canvas-scale-dependent ones are tuned by eye (04, point 12).
 - **Rain:** 220/s, pooled on a v8 `ParticleContainer` inside the render texture (so its cost doesn't grow with the screen). A drop dies at the sea line and spawns a splash. No physics.
-- **Bubbles:** in the underwater band, at the original's intensity 2, 4, 6 after each round (`GameManager.SetBubbles`). The original's rate 1 at the end is replaced: none once the kraken shows (owner decision 4).
+- **Bubbles:** in the underwater band, 1/s, then 2, 4, 6 after each round, as `GameManager.SetBubbles` intends (owner decision 10: the original most likely never showed the ramp, since the rate is stored in two-curves mode, which those calls don't change). The original's rate 1 at the end is replaced: none once the kraken shows (owner decision 4).
 - **Determinism:** salted seeded streams; the particle step runs inside the game-logic guard, on the clock.
 - **Budget:** at most +1 ms CPU per frame on the 4× throttled iPhone-13 profile used in the M4 runtime review. Halve the rain rate only if a low-end device needs it (02).
 
@@ -54,7 +55,7 @@ Milestone M5 from [04-implementation-difficulty.md](04-implementation-difficulty
 
 | Option | How | Cost and risk | Verdict |
 |---|---|---|---|
-| **A. Pixi screen layer** | A full-canvas rect on the stage, behind the playfield sprite (outside the render texture), whose alpha follows the same `Flash.anim` value each frame. | One extra quad per frame, nothing when hidden. Same frame as the in-playfield flash, same clock (pauses with it), same reduced-motion cap. Testable with the existing pixel reads. About 0.5 day. | **Recommended.** |
+| A. Pixi screen layer | A full-canvas rect on the stage, behind the playfield sprite (outside the render texture), whose alpha follows the same `Flash.anim` value each frame. | One extra quad per frame, nothing when hidden. Same frame as the in-playfield flash, same clock (pauses with it), same reduced-motion cap. Testable with the existing pixel reads. About 0.5 day. | Measured in wave 0: too costly on a CPU renderer. Replaced by the clear colour (below). |
 | B. CSS body background | Make the canvas transparent (`backgroundAlpha: 0`) and animate `body` `background-color` from JS. | Changes how the canvas composites on every frame, all game long, for an effect that lasts 0.5 s. A style change per frame during the flash. DOM timing can drift a frame from the canvas. | Possible, not advisable. |
 | C. CSS overlay `<div>` | A fixed, `pointer-events: none` div over or under the canvas, with JS-driven `opacity`. | Opacity is compositor-cheap, but above the canvas it would also wash out the UI text and the mute button; under it, it needs B's transparent canvas. | Only if A fails. |
 | D. Browser chrome tint | Change `<meta name="theme-color">` with the flash, tinting the address bar where the browser supports it. | Support and update smoothness vary by browser and version, and I haven't verified it. Discrete colour steps, not an alpha curve. | Optional extra, after a spike on real devices. |
@@ -62,6 +63,13 @@ Milestone M5 from [04-implementation-difficulty.md](04-implementation-difficulty
 - **Colour:** the same white as the flash, with the same curve (owner decision 2).
 - **Photosensitivity:** the strike rate stays at most 1 flash/s, under WCAG 2.3.1's 3/s, so a larger area doesn't break the threshold. But a full-screen flash is stronger for sensitive viewers. So the screen layer **follows the reduced-motion cap** and the optional "reduce flashes" setting (Deliverable 4), and the gate's warning stays.
 - **Where:** the real playfield flash stays as it is; the screen layer only adds the letterbox. The vignette stays inside the playfield.
+
+**Wave 0 result (Elf Seer: Flash Screen-tone, prototype in scratch):**
+- A drawn full-screen layer matched the flash's alpha on every frame and left the square's pixels bit-identical, but its blended draw added about 35% (iPhone, DPR 3) to 45% (desktop) to the frame interval in headless Chromium's CPU renderer. A real GPU is probably far cheaper, but that's unmeasured.
+- **Chosen instead (owner decision 8): the renderer's clear colour.** Each frame, after the clips sync and before the stage renders, the clear colour becomes grey `a` (white at the flash's alpha `a` over black). It costs about nothing, needs no new layer, stage child or `Layout` field, and covers the whole canvas, insets included. It can differ from the square's flash by 1 level in 255 at the square's edge, from rounding.
+- **Photosensitivity, measured over the whole screen** (WCAG relative luminance): the full flash goes 0.007 → 1.0 at its peak (today 0.46 in portrait, since the letterbox is 54% of the screen in portrait and 63% in landscape); reduced motion goes 0.007 → 0.14, still one WCAG flash (rise above 0.10). The rate stays at most 1 flash per 1.25 s.
+- **"Reduce flashes" (owner decision 9):** turns the screen tone off and caps the square's flash at 0.4. OS reduced motion keeps the screen tone, capped like the square.
+- A pause mid-flash freezes the tone with the clock; the pause overlay sits above it.
 
 ### 4. Reduced motion everywhere
 
@@ -125,3 +133,6 @@ One rule per effect, decided once in a table in `src/game/motion.ts` (or the exi
 5. **Reduced motion: the sea, clouds and boat move slower** (not stilled).
 6. **A pause button just below mute,** in the same corner of the safe area.
 7. **A "reduce flashes" toggle in M5, below mute.** Assumed order, top to bottom: mute, pause, reduce flashes. Each is hit-tested before the pads and never inside a control zone.
+8. **The screen tone uses the renderer's clear colour,** not a drawn layer (wave 0 measured the layer's cost).
+9. **"Reduce flashes" turns the screen tone off** and caps the square's flash at 0.4. OS reduced motion keeps the tone, capped.
+10. **Bubbles follow the script's intent:** 1/s, then 2, 4, 6 after each round; none once the kraken shows.

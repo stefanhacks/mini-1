@@ -15,6 +15,7 @@ A knowledge base for porting [After the Waves Crash](https://github.com/stefanha
 | [m4-plan.md](m4-plan.md) | Review of M0–M3, and the M4 story and presentation plan (done). |
 | [m4-refactor.md](m4-refactor.md) | M4 wave 0: the readability refactor proposal for the scene, main and the states. |
 | [m5-plan.md](m5-plan.md) | M5 effects and lifecycle plan, with the screen-tone flash options. |
+| [m5-particles-spec.md](m5-particles-spec.md) | The original's rain, splash and bubble particle systems, converted to playfield units. |
 
 ## How it was produced
 
