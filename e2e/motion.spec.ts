@@ -513,12 +513,12 @@ test("the ending throws the boat, raises the kraken, goes black at 8.5 s, then s
     await screenshot(page, testInfo, name);
   }
 
-  frames.push(...await run(page, { now: startedAt + ENDING_MS.prompt + 1100, frameMs: ENDING_FRAME_MS }));
+  frames.push(...await run(page, { now: startedAt + ENDING_MS.replay + 1100, frameMs: ENDING_FRAME_MS }));
 
   const span = (from: number, to: number) => between(frames, startedAt + from, startedAt + to);
   const phases = frames.map((frame) => frame.phase).filter((phase, index, all) => phase !== all[index - 1]);
 
-  expect(phases).toEqual(["boat", "thrown", "kraken", "black", "sea", "card", "prompt"]);
+  expect(phases).toEqual(["boat", "thrown", "kraken", "black", "sea", "card", "replay"]);
 
   // The broken boat waits at its spot, is thrown up (1.67 s) and stays at the top until FimFinal.
   expect(span(0, ENDING_MS.thrown).every((frame) => node(frame, "broken-boat").y === 294)).toBe(true);
@@ -577,12 +577,12 @@ test("the ending throws the boat, raises the kraken, goes black at 8.5 s, then s
   }
 
   // Then the prompt, at the clip's own speed (1 s).
-  const prompt = span(ENDING_MS.prompt, ENDING_MS.prompt + 1000);
+  const prompt = span(ENDING_MS.replay, ENDING_MS.replay + 1000);
 
-  expect(span(0, ENDING_MS.prompt).every((frame) => !node(frame, "prompt").visible)).toBe(true);
+  expect(span(0, ENDING_MS.replay).every((frame) => !node(frame, "prompt").visible)).toBe(true);
   expect(nonDecreasing(alphas(prompt, "prompt"))).toBe(true);
   expect(alphas(prompt, "prompt")[0]).toBeLessThan(0.05);
-  expect(alphas(span(ENDING_MS.prompt + 400, ENDING_MS.prompt + 600), "prompt")
+  expect(alphas(span(ENDING_MS.replay + 400, ENDING_MS.replay + 600), "prompt")
     .some((alpha) => alpha > 0.3 && alpha < 0.7)).toBe(true);
   expect(node(frames.at(-1) as Frame, "logo").alpha).toBe(1);
 

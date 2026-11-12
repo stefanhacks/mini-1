@@ -873,8 +873,8 @@ describe("a full game", () => {
       t.frame();
       assert.equal(t.machine.current, "ending");
 
-      t.wait(ENDING_MS.prompt - ENDING_MS.card);
-      assert.equal(t.game.session.phase, "prompt");
+      t.wait(ENDING_MS.replay - ENDING_MS.card);
+      assert.equal(t.game.session.phase, "replay");
       assert.equal(t.scene.prompt, TAP_TO_PLAY_AGAIN);
 
       t.input.advance();
@@ -915,7 +915,7 @@ describe("ending", () => {
     const enteredAt = t.clock.now;
     const phases: string[] = [];
 
-    while (t.clock.now - enteredAt <= ENDING_MS.prompt) {
+    while (t.clock.now - enteredAt <= ENDING_MS.replay) {
       if (phases.at(-1) !== t.game.session.phase) {
         phases.push(t.game.session.phase);
       }
@@ -925,7 +925,7 @@ describe("ending", () => {
 
     phases.push(t.game.session.phase);
 
-    assert.deepEqual(phases, ["boat", "thrown", "kraken", "black", "sea", "card", "prompt"]);
+    assert.deepEqual(phases, ["boat", "thrown", "kraken", "black", "sea", "card", "replay"]);
     assert.deepEqual(t.scene.callsSince(enteredAt), [
       "boat broken@0",
       `black false@${ENDING_MS.lift} ×1`,
@@ -938,7 +938,7 @@ describe("ending", () => {
       `tentacles false@${ENDING_MS.sea}`,
       `black false@${ENDING_MS.seaLift} ×1`,
       `title true@${ENDING_MS.card} ×${ENDING_CARD_SPEED}`,
-      `prompt ${TAP_TO_PLAY_AGAIN}@${ENDING_MS.prompt} ×1`,
+      `prompt ${TAP_TO_PLAY_AGAIN}@${ENDING_MS.replay} ×1`,
     ]);
   });
 });
@@ -1262,7 +1262,7 @@ describe("cues", () => {
         }
       }
 
-      t.wait(ENDING_MS.prompt);
+      t.wait(ENDING_MS.replay);
       assert.deepEqual(t.cues.map(({ name, state, at }) => ({ name, state, at })), [
         { name: "lightning", state: "story", at: 1250 },
         ...Array.from({ length: 3 }, () => ({ name: "lightning", state: "transition", at: 167 })),

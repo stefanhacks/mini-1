@@ -58,14 +58,14 @@ export const createEnding = (deps: GameDeps, session: GameSession): GameState =>
       enterPhaseAt(scope, "sea", ENDING_MS.sea, () => clearToSea(view));
       scope.after(ENDING_MS.seaLift, () => view.setBlack(false, FADE));
       enterPhaseAt(scope, "card", ENDING_MS.card, () => view.setTitle(true, CARD_FADE));
-      enterPhaseAt(scope, "prompt", ENDING_MS.prompt, () => view.setPrompt(TAP_TO_PLAY_AGAIN, FADE));
+      enterPhaseAt(scope, "replay", ENDING_MS.replay, () => view.setPrompt(TAP_TO_PLAY_AGAIN, FADE));
     },
     update: (_deltaMS, machine) => {
       const advanced = drainAdvanced(input);
 
       // Only once the prompt is up, as on Title: earlier taps were dropped by each phase's epoch, and this drops the
       // rest.
-      if (session.phase === "prompt" && advanced) {
+      if (session.phase === "replay" && advanced) {
         machine.request("title");
       }
     },
