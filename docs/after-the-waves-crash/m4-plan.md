@@ -222,5 +222,7 @@ Once wave 2 lands and before M4 is merged, a dedicated step trims the test suite
 - **Safety:** a reviewer checks that every contract listed in `m4-refactor.md` (Safety net) and the guards specs keeps at least one test. The trim reports before/after counts and times.
 - Agents: **Halfling Pruner: Test Trim** (build), **Gnome Warden: Coverage Review** (review).
 - **Input for the trim:** the full suite is now about 6–7 min. `display.spec` runs the real-time 5.5 s Title intro inside `settle`, so its timeout had to go to 60 s. Stepping the clock (or the snapshot harness's frame-locking) instead would cut most of that.
+- **Result:** e2e 80 passed / 40 skipped (5.1 min) → 39 passed / 0 skipped (2.5 min). Tests are scoped by tag (untagged: desktop; `@device`: all three; `@tap`: desktop and iphone-13; `@touch`: iphone-13). Gnome Warden: Coverage Review confirmed every Safety-net contract keeps a test; its restores (resize mid-story, k up to 6 at DPR 3, console errors in keyboard games) are in.
+- **Torn art pixels in `display.spec`:** a race with the ambient bolt, which outlives the flash; the 1.05× vignette splits k×k blocks over it. `settle` now waits for the bolt too and pauses the clock. A rarer tear was seen twice under heavy load and not reproduced in 129 later runs; recheck during M7's device matrix.
 - **For M5:** Pixi's text cache (`canvasText._activeTextures`) leaves one null key per distinct typed prefix: up to about 840 per game, never pruned. Small, but it grows over long sessions. Consider pruning the null entries on Title.
 

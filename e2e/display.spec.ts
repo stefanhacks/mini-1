@@ -117,7 +117,11 @@ const readArt = (page: Page, rects: readonly Rect[], ownResize?: { width: number
       }
     }
 
-    return { k, size: width, lit, torn, firstTorn };
+    // For a failure message: what could draw over the art.
+    const parts = window.debug.scene?.parts;
+    const over = { bolt: parts?.bolt.visible, flash: parts?.flash.visible, paused: window.debug.clock.paused };
+
+    return { k, size: width, lit, torn, firstTorn, over };
   }, { rects, ownResize });
 
 // The layout main.ts computes: from #game (the viewport) floored to whole device pixels.
@@ -160,9 +164,8 @@ const nextFrame = (page: Page) => page.evaluate(() => new Promise(requestAnimati
 
 /**
  * Waits until the page's layout matches `insets` and its viewport, then returns the state. With `card`, also for the
- * title card: the logo (revealed 5.5 s into Title) and the tap prompt (from 7.25 s). Pages opened with
- * `?timescale=${FAST}` run that intro in a fraction of a second; once the card is up, time goes back to normal, so
- * fewer ambient strikes land on the checks.
+ * title card: the logo (revealed 5.5 s into Title) and the tap prompt (from 7.25 s), with no strike showing; then game
+ * time stops. Pages opened with `?timescale=${FAST}` run that intro in a fraction of a second.
  */
 const settle = async (page: Page, insets: Insets, card = true) => {
   // On a fresh page, taps through the start gate first.
@@ -176,13 +179,22 @@ const settle = async (page: Page, insets: Insets, card = true) => {
 
   if (card) {
     // The logo shows at the reveal's flash peak and the prompt at the end of the intro; the art checks read the logo,
-    // after the flash is gone.
+    // once no strike shows. The bolt outlives the flash (0.67 s against 0.5 s), and a lit bolt under the vignette
+    // (scaled 1.05) splits k×k blocks, so both must be gone. Game time then stops in the same frame check, so no
+    // ambient strike lands on the checks: a paused clock stands every clip still (anim/player.ts). The time scale
+    // can't do it, as it takes only values above zero.
     await page.waitForFunction(() => {
-      const parts = window.debug.scene?.parts;
+      const { clock, scene } = window.debug;
+      const parts = scene?.parts;
+      const quiet = parts !== undefined && parts.logo.visible && parts.tapPrompt.visible && !parts.flash.visible
+        && !parts.bolt.visible;
 
-      return parts !== undefined && parts.logo.visible && parts.tapPrompt.visible && !parts.flash.visible;
+      if (quiet) {
+        clock.paused = true;
+      }
+
+      return quiet;
     }, undefined, { timeout: 15_000 });
-    await page.evaluate(() => window.debug.setTimescale(1));
   }
 
   await expect.poll(async () => {
@@ -247,7 +259,7 @@ const expectSharpArt = (art: Awaited<ReturnType<typeof readArt>>, k: number) => 
   expect(art.k).toBe(k);
   expect(art.size).toBe(PLAYFIELD_SIZE * k);
   expect(art.lit).toBeGreaterThan(1000);
-  expect(art.torn, `first torn art pixel: ${JSON.stringify(art.firstTorn)}`).toBe(0);
+  expect(art.torn, `first torn art pixel: ${JSON.stringify(art.firstTorn)}, over: ${JSON.stringify(art.over)}`).toBe(0);
 };
 
 const watchErrors = (page: Page) => {
@@ -311,49 +323,56 @@ test("renders the playfield through the render texture in both orientations, wit
 });
 
 // The rest sets its own sizes and DPR: desktop only.
-test("resizes the same render texture when k changes, already drawn when the resize returns", async ({ page }) => {
-  const problems = watchErrors(page);
+test.describe("at DPR 3", () => {
+  // k goes from 2 at 600×400 to 6 at 1500×1100: at DPR 1 it would stay low, and k = 1 blocks are trivially sharp.
+  test.use({ deviceScaleFactor: 3 });
+  // Three 3000² read-backs, under load.
+  test.describe.configure({ timeout: 90_000 });
 
-  await page.goto(`/?debug&timescale=${FAST}`);
-  await page.setViewportSize({ width: 600, height: 400 });
+  test("resizes the same render texture when k changes, already drawn when the resize returns", async ({ page }) => {
+    const problems = watchErrors(page);
 
-  const small = await settle(page, ZERO_INSETS);
+    await page.goto(`/?debug&timescale=${FAST}`);
+    await page.setViewportSize({ width: 600, height: 400 });
 
-  await page.evaluate(() => {
-    const debug = window.debug as ResizeDebug;
+    const small = await settle(page, ZERO_INSETS);
 
-    debug.firstTexture = debug.display.renderTexture;
+    await page.evaluate(() => {
+      const debug = window.debug as ResizeDebug;
+
+      debug.firstTexture = debug.display.renderTexture;
+    });
+
+    // A 1100 px square is 1100 device px or more at any DPR ≥ 1: k ≥ 2, larger than the 600×400 window's. Read before
+    // any frame runs, the texture already holds the art at the new size: the stage drawn right after shows no gap.
+    const resized = await readArt(page, ART_RECTS, { width: 1500, height: 1100 });
+
+    expect(resized.k).toBeGreaterThan(small.k);
+    expectSharpArt(resized, resized.k);
+
+    // Then the real viewport, and every size check.
+    await page.setViewportSize({ width: 1500, height: 1100 });
+
+    const large = await settle(page, ZERO_INSETS);
+
+    expectDisplay(large, ZERO_INSETS);
+    expect(large.k).toBe(resized.k);
+    expectSharpArt(await readArt(page, ART_RECTS), large.k);
+
+    // And back down: the same texture throughout, with no stale size left in the sprite.
+    await page.setViewportSize({ width: 600, height: 400 });
+
+    const again = await settle(page, ZERO_INSETS);
+
+    expectDisplay(again, ZERO_INSETS);
+    expectSharpArt(await readArt(page, ART_RECTS), small.k);
+    expect(await page.evaluate(() => {
+      const debug = window.debug as ResizeDebug;
+
+      return debug.firstTexture === debug.display.renderTexture;
+    })).toBe(true);
+    expect(problems).toEqual([]);
   });
-
-  // A 1100 px square is 1100 device px or more at any DPR ≥ 1: k ≥ 2, larger than the 600×400 window's. Read before
-  // any frame runs, the texture already holds the art at the new size: the stage drawn right after shows no gap.
-  const resized = await readArt(page, ART_RECTS, { width: 1500, height: 1100 });
-
-  expect(resized.k).toBeGreaterThan(small.k);
-  expectSharpArt(resized, resized.k);
-
-  // Then the real viewport, and every size check.
-  await page.setViewportSize({ width: 1500, height: 1100 });
-
-  const large = await settle(page, ZERO_INSETS);
-
-  expectDisplay(large, ZERO_INSETS);
-  expect(large.k).toBe(resized.k);
-  expectSharpArt(await readArt(page, ART_RECTS), large.k);
-
-  // And back down: the same texture throughout, with no stale size left in the sprite.
-  await page.setViewportSize({ width: 600, height: 400 });
-
-  const again = await settle(page, ZERO_INSETS);
-
-  expectDisplay(again, ZERO_INSETS);
-  expectSharpArt(await readArt(page, ART_RECTS), small.k);
-  expect(await page.evaluate(() => {
-    const debug = window.debug as ResizeDebug;
-
-    return debug.firstTexture === debug.display.renderTexture;
-  })).toBe(true);
-  expect(problems).toEqual([]);
 });
 
 test.describe("at a fractional device pixel ratio", () => {

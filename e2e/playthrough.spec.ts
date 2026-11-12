@@ -48,6 +48,9 @@ const readStoryText = (page: Page) => page.evaluate(() => {
   return { bounds: { x, y, width, height }, rows: new Set(pieces.map((piece) => piece.y)).size };
 });
 
+const isInside = (inner: Rect, outer: Rect) => inner.x >= outer.x && inner.x + inner.width <= outer.x + outer.width
+  && inner.y >= outer.y && inner.y + inner.height <= outer.y + outer.height;
+
 const expectInside = (inner: Rect, outer: Rect) => {
   expect(inner.x).toBeGreaterThanOrEqual(outer.x);
   expect(inner.x + inner.width).toBeLessThanOrEqual(outer.x + outer.width);
@@ -119,6 +122,61 @@ test("a wrong press resets a Sequence", async ({ page }) => {
   await driver.press(wrong);
   await driver.release(wrong);
   await waitFor(page, (now) => pointer(now) === 0);
+});
+
+test("a resize mid-story never shows a page paged for the old layout", async ({ page }) => {
+  const driver = await keyboardDriver(page);
+
+  await openGame(page);
+  await leaveTitle(page, driver);
+  // The first line is the longest of part 0: at a 200 px square it takes several pages of one line.
+  await waitFor(page, (game) => game.page !== null);
+
+  const longest = (await readGame(page)).page?.text ?? "";
+
+  expect(longest.length).toBeGreaterThan(60);
+
+  // Fully typed, so the whole page is drawn: a tap completes the typing without advancing.
+  if ((await readGame(page)).page?.typed !== true) {
+    await driver.advance();
+    await waitFor(page, (game) => game.page?.typed === true);
+  }
+
+  // Resizes the renderer as a resize event would, synchronously, and reads the text before any frame runs: the old
+  // page must not be drawn at the new size. From the default 1280×720, 600×400 leaves a 200 px square between the
+  // 200 px bands.
+  const before = await page.evaluate(() => {
+    const { app, scene } = window.debug;
+
+    app.renderer.resize(600, 400, app.renderer.resolution);
+
+    const story = scene?.parts.storyText;
+    const bounds = story?.getBounds();
+
+    return {
+      visible: story?.visible ?? false,
+      bounds: bounds ? { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } : null,
+      layout: window.debug.layout,
+    };
+  });
+  const box = rectToScreen(before.layout, TEXT_BOX_RECT);
+
+  expect(before.layout.square.width).toBe(200);
+  // Hidden until it is paged again, or drawn inside the new box: never the old page at the new size.
+  expect(!before.visible || (before.bounds !== null && isInside(before.bounds, box)), JSON.stringify(before))
+    .toBe(true);
+
+  // On the next update the story state pages the line again and shows the current page, inside the box.
+  await expect.poll(async () => (await readStoryText(page)) !== null).toBe(true);
+
+  const after = await readStoryText(page);
+
+  if (after === null) {
+    throw new Error("unreachable");
+  }
+
+  expectInside(after.bounds, box);
+  expect(after.rows).toBeLessThanOrEqual(storyLinesPerPage(before.layout));
 });
 
 test.describe("with both landscape pads", () => {
@@ -329,6 +387,8 @@ const expectTitleClips = async (page: Page) => {
   await expect.poll(() => page.evaluate(() => window.debug.anim.active)).toBe(TITLE_CLIPS);
 };
 
+const POLL = { intervals: [20, 50, 100], timeout: 15_000 };
+
 /** Long enough for a pending overlay change to reach its bar (9.6 s), with room for a busy machine. */
 const BAR_POLL = { intervals: [100, 200, 300], timeout: 25_000 };
 
@@ -347,12 +407,13 @@ test.describe("on a small viewport", () => {
     // The first game waits for every part's bar: about 40 s of wall time; the replays about 15 s each.
     test.setTimeout(150_000);
 
+    const problems = watchErrors(page);
     const driver = await keyboardDriver(page);
 
     await openGame(page);
 
     // At FAST time the intro takes ~0.2 s of wall time; a second more gives several ambient strikes.
-    await expect.poll(async () => (await readCues(page)).length).toBeGreaterThanOrEqual(6);
+    await expect.poll(async () => (await readCues(page)).length, POLL).toBeGreaterThanOrEqual(6);
 
     const title = (await readCues(page)).filter((cue) => cue.state === "title");
     const expected = expectedTitleCues(title.length);
@@ -430,5 +491,6 @@ test.describe("on a small viewport", () => {
 
     // `?seed=` gives game n the seed SEED + n − 1: every replay is a new game, still reproducible.
     expect([game.games, game.seed]).toEqual([4, SEED + 3]);
+    expect(problems).toEqual([]);
   });
 });

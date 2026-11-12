@@ -6,8 +6,7 @@ import { rectToScreen, type Rect } from "../src/core/layout.ts";
 import { storyLinesPerPage, TEXT_BOX_RECT } from "../src/game/text-box.ts";
 import { keyboardDriver, leaveTitle, openGame, readGame, setTimescale, waitFor, type GameSnapshot } from "./game.ts";
 
-// A small viewport at DPR 1: the checks read the text's layout, and every frame renders cheaper.
-test.use({ deviceScaleFactor: 1, viewport: { width: 640, height: 400 } });
+test.use({ deviceScaleFactor: 1 });
 
 // Slow enough that a page of 60+ characters takes seconds to type, so a tap surely lands while it types.
 const CRAWL = 0.25;
@@ -102,37 +101,21 @@ test("a page types in, a tap completes it without advancing, the next tap advanc
   expect(next.page?.revealed).toBeLessThan(next.page?.text.length ?? 0);
 });
 
-test("a resize mid-typing never shows a page paged for the old layout, keeps what shows, and never spills", async ({
-  page,
-}) => {
+test("a resize mid-typing keeps what shows and never spills out of the text box", async ({ page }) => {
   const { driver } = await toTypingPage(page);
 
-  // Resizes the renderer as a resize event would, synchronously, and reads the text before any frame runs: the old
-  // page must not be drawn at the new size. 600×400 leaves a 200 px square between the 200 px bands, so the line
-  // pages again.
+  // Resizes the renderer as a resize event would: 600×400 leaves a 200 px square, so the line pages again.
   const before = await page.evaluate(() => {
-    const { app, scene } = window.debug;
+    const { app } = window.debug;
     const shown = window.debug.game.page?.revealed ?? 0;
 
     app.renderer.resize(600, 400, app.renderer.resolution);
 
-    const story = scene?.parts.storyText;
-    const bounds = story?.getBounds();
-
-    return {
-      shown,
-      visible: story?.visible ?? false,
-      bounds: bounds ? { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } : null,
-      layout: window.debug.layout,
-    };
+    return { shown, layout: window.debug.layout };
   });
   const box = rectToScreen(before.layout, TEXT_BOX_RECT);
 
   expect(before.layout.square.width).toBe(200);
-
-  if (before.visible && before.bounds !== null) {
-    expectInside(before.bounds, box);
-  }
 
   await expect.poll(async () => (await readStoryText(page)) !== null, POLL).toBe(true);
 
