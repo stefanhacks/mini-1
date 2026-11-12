@@ -32,7 +32,7 @@ Milestone M5 from [04-implementation-difficulty.md](04-implementation-difficulty
 
 - **Source of truth:** Main.unity holds 3 `ParticleSystem`s (rain, its splash sub-emitter, the bubbles). A spec agent extracts every used module first: rate, lifetime, start speed and size, shape, gravity, colour over lifetime, sub-emitter trigger, `maxParticles`, simulation space. Only values the YAML gives are taken as is; the canvas-scale-dependent ones are tuned by eye (04, point 12).
 - **Rain:** 220/s, pooled on a v8 `ParticleContainer` inside the render texture (so its cost doesn't grow with the screen). A drop dies at the sea line and spawns a splash. No physics.
-- **Bubbles:** in the underwater band, at the original's intensity 2, 4, 6 after each round, and 1 at the end (`GameManager.SetBubbles`).
+- **Bubbles:** in the underwater band, at the original's intensity 2, 4, 6 after each round (`GameManager.SetBubbles`). The original's rate 1 at the end is replaced: none once the kraken shows (owner decision 4).
 - **Determinism:** salted seeded streams; the particle step runs inside the game-logic guard, on the clock.
 - **Budget:** at most +1 ms CPU per frame on the 4× throttled iPhone-13 profile used in the M4 runtime review. Halve the rain rate only if a low-end device needs it (02).
 
@@ -43,9 +43,10 @@ Milestone M5 from [04-implementation-difficulty.md](04-implementation-difficulty
 - **Rarity, from a seeded eye stream:**
   - parts 0–1: at most one per game, 5%, `eye_small` only;
   - part 2 on: about 1 in 6 per bubble slot;
-  - `eye_large` from part 3, and in the ending's empty sea before the card.
+  - `eye_large` from part 3;
+  - never on Title, and none (nor bubbles) once the kraken shows (owner decision 4).
 - `?debug&eyes=always` forces them for review.
-- The numbers are drafts for the owner to confirm (questions below).
+- The numbers are confirmed (owner decision 3).
 
 ### 3. Screen-tone flash (owner request: can the page flash with the thunder?)
 
@@ -58,7 +59,7 @@ Milestone M5 from [04-implementation-difficulty.md](04-implementation-difficulty
 | C. CSS overlay `<div>` | A fixed, `pointer-events: none` div over or under the canvas, with JS-driven `opacity`. | Opacity is compositor-cheap, but above the canvas it would also wash out the UI text and the mute button; under it, it needs B's transparent canvas. | Only if A fails. |
 | D. Browser chrome tint | Change `<meta name="theme-color">` with the flash, tinting the address bar where the browser supports it. | Support and update smoothness vary by browser and version, and I haven't verified it. Discrete colour steps, not an alpha curve. | Optional extra, after a spike on real devices. |
 
-- **Tone, not only white:** with A, the screen layer can take its own colour and peak (for example a cold blue-white, or a lower peak than the playfield flash) so the letterbox "tints" rather than whites out. This is an owner choice after seeing it (question below).
+- **Colour:** the same white as the flash, with the same curve (owner decision 2).
 - **Photosensitivity:** the strike rate stays at most 1 flash/s, under WCAG 2.3.1's 3/s, so a larger area doesn't break the threshold. But a full-screen flash is stronger for sensitive viewers. So the screen layer **follows the reduced-motion cap** and the optional "reduce flashes" setting (Deliverable 4), and the gate's warning stays.
 - **Where:** the real playfield flash stays as it is; the screen layer only adds the letterbox. The vignette stays inside the playfield.
 
@@ -68,21 +69,21 @@ One rule per effect, decided once in a table in `src/game/motion.ts` (or the exi
 
 | Effect | Under `prefers-reduced-motion: reduce` (proposal) |
 |---|---|
-| Lightning flash, screen tone | Peak capped (0.4 today) |
-| Sea strips, clouds, boat bob | Slower amplitude or stilled? (question) |
+| Lightning flash, screen tone | Peak capped (0.4 today), also by the "reduce flashes" toggle |
+| Sea strips, clouds, boat bob | Slower (owner decision 5); the factor is tuned by eye |
 | Prompt and arrow pulses | Held at full alpha, no scale pulse |
 | Thrown boat, kraken rise | Kept (they're story beats), or cut to the end pose |
 | Rain | Lower rate, no slant change |
 | Bubbles, eyes | Kept, they're slow |
 
-- Optional **"reduce flashes" toggle** next to mute (02), persisted like mute. It applies the flash cap without the OS setting.
+- A **"reduce flashes" toggle** below mute (owner decision 7), persisted like mute. It applies the flash cap without the OS setting.
 
 ### 5. Pause and resume
 
 - **Pause** on `visibilitychange` (hidden) and `pagehide`; the clock stops, which freezes clips, particles and timers.
 - **On return:** a pause overlay with "Tap to continue" (merged with the audio prompt: one tap resumes audio and the game). During a round, the current challenge's progress resets (02).
 - **Soft restart:** replay already keeps textures, buffers and the audio context. M5 makes sure the new particle and eye pools and their streams reset too, and leak tests cover them.
-- An in-game pause button is not in the original; whether to add one is an owner question.
+- **A pause button just below mute** (owner decision 6), new in this port. It shows the same overlay; a tap on the overlay resumes.
 
 ### 6. Housekeeping
 
@@ -98,8 +99,8 @@ One rule per effect, decided once in a table in `src/game/motion.ts` (or the exi
 
 | Wave | Agents | Work |
 |---|---|---|
-| 0, spike (read-only and scratch, in parallel) | **Dwarf Surveyor: Particles Unity-spec**, **Elf Seer: Flash Screen-tone** | The particle spec from Main.unity. A scratch prototype of options A, B and C (and D's support where it can be checked), measured on the throttled profile, with screenshots for the owner. |
-| — | **Owner** | Picks the screen-tone option and colour, confirms the eye numbers and the reduced-motion table. |
+| 0, spike (read-only and scratch, in parallel) | **Dwarf Surveyor: Particles Unity-spec**, **Elf Seer: Flash Screen-tone** | The particle spec from Main.unity. A scratch prototype of option A, measured on the throttled profile, with screenshots for the owner. |
+| — | **Owner** | Looks at the screen-tone prototype's screenshots (option A, white, already chosen). |
 | 1, build | **Gnome Tinker: Particles Rain-bubbles**, **Human Keeper: Lifecycle Pause** | Deliverables 1 and 2; Deliverables 5 and 6. Separate files, in parallel. |
 | 1, review | **Lizard Warden: Runtime Review**, **Halfling Eye: Visual Fidelity Review** | Cost, leaks, pause and replay; particles against the Unity spec. |
 | — | **Owner** | Android check of rain and pause. |
@@ -118,10 +119,9 @@ One rule per effect, decided once in a table in `src/game/motion.ts` (or the exi
 
 1. **"Tap to play again" comes 5 s later than planned in M4** (22.25 s into the ending, `REPLAY_EXTRA_MS`), unusually long, to suggest there's no way back. The ending's last phase is renamed `replay`.
 
-## Owner questions
-
-1. **Screen tone:** go with option A (Pixi layer) after the spike, and should it be white like the playfield flash, or a tint (colour and peak picked from the spike's screenshots)?
-2. **Eyes:** keep the draft numbers (5% once in parts 0–1, 1 in 6 later, large from part 3)? Do they blink (alpha only, no art), and can they appear on Title after a replay?
-3. **Reduced motion:** for the sea, clouds and boat, slow them down or still them?
-4. **Pause button:** add an in-game pause button next to mute, or pause only when the page is hidden?
-5. **"Reduce flashes" toggle:** add it next to mute in M5?
+2. **Screen tone: option A** (a Pixi layer behind the playfield, outside the render texture), in **the same colour as the flash** (white), following the same curve and the reduced-motion cap. Wave 0 still prototypes it to measure the cost.
+3. **Eyes:** keep the draft numbers, with an alpha fade in and out (no blink). **Never on Title.**
+4. **Nothing under the sea once the kraken shows:** from the ending's kraken phase (1.5 s) on, no bubbles and no eyes. This replaces the original's bubble rate 1 at the end, and drops the draft's large eye in the ending's empty sea.
+5. **Reduced motion: the sea, clouds and boat move slower** (not stilled).
+6. **A pause button just below mute,** in the same corner of the safe area.
+7. **A "reduce flashes" toggle in M5, below mute.** Assumed order, top to bottom: mute, pause, reduce flashes. Each is hit-tested before the pads and never inside a control zone.
