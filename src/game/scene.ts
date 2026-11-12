@@ -3,9 +3,10 @@
 // fades through one scene/fades.ts, the ambient loops and the strikes on their own handles). Composition only: each
 // part lives in scene/, the positions and draw order in scene/positions.ts.
 //
-// The parts are built in draw order, each appending to its layers: world → fx → story → challenge → title. That gives
-// fx: bolt, black, vignette, flash; top: text box, arrows, logo; ui: story text, challenge progress, challenge prompt,
-// tap prompt, credits. scene/lightning.ts drives the bolt and the flash, and adds no display object.
+// The parts are built in draw order, each appending to its layers: world → fx → story → challenge → title. The world
+// draws the weather's containers (scene/particles) in between its sprites. That gives fx: bolt, black, vignette,
+// flash; top: text box, arrows, logo; ui: story text, challenge progress, challenge prompt, tap prompt, credits.
+// scene/lightning.ts drives the bolt and the flash, and adds no display object.
 import type { Graphics, Sprite, Container, Text } from "pixi.js";
 import { createClipPlayer, type ClipPlayer } from "../core/anim/player.ts";
 import type { Layers } from "../core/layers.ts";
@@ -16,7 +17,9 @@ import { createChallengeView } from "./scene/challenge-view.ts";
 import { createFades } from "./scene/fades.ts";
 import { createFx } from "./scene/fx.ts";
 import { createLightning, watchReducedMotion } from "./scene/lightning.ts";
+import { createWeather, createWeatherEffects, type Weather, type WeatherOptions } from "./scene/particles/weather.ts";
 import { createStoryView } from "./scene/story-view.ts";
+import { TITLE_UNDERSEA } from "./scene/particles/undersea.ts";
 import { createTitleCard } from "./scene/title-card.ts";
 import { createWorld } from "./scene/world.ts";
 
@@ -26,6 +29,8 @@ export { createGateView } from "./scene/gate-view.ts";
 export interface Scene extends SceneView {
   /** The app's animation clips, played on the parts; the frame loop syncs it. */
   readonly clips: ClipPlayer;
+  /** The rain, splashes, bubbles and eyes; the frame loop syncs it after the clips. */
+  readonly weather: Weather;
   /** Follows a new layout: the ui texts, the progress art, and story paging. Call it from `onLayout`. */
   readonly relayout: (layout: Layout) => void;
   /** The display objects, labelled, for tests and the debug overlay. */
@@ -47,7 +52,7 @@ export interface Scene extends SceneView {
  * Builds the whole scene into the layers, hidden but for the opening frame (see `reset`), and starts the ambient
  * loops, last, so a build that throws leaves no clip behind. Needs the textures and the font loaded. `clips` is the
  * app's player, which the frame loop syncs; the default one is never synced (tests). `reducedMotion` is read at each
- * strike: it caps the flash.
+ * strike: it caps the flash. `weather` takes `?debug&eyes=always`.
  */
 export const createScene = (
   layers: Layers,
@@ -55,9 +60,12 @@ export const createScene = (
   initial: Layout,
   clips: ClipPlayer = createClipPlayer(),
   reducedMotion: () => boolean = watchReducedMotion(),
+  weatherOptions: WeatherOptions = {},
 ): Scene => {
   const fades = createFades(clips);
-  const world = createWorld(layers, textures, clips, fades);
+  const weatherParts = createWeatherEffects(textures);
+  const world = createWorld(layers, textures, clips, fades, weatherParts.effects);
+  const weather = createWeather(weatherParts, world.sprites.boat, weatherOptions);
   const fx = createFx(layers, textures, fades);
   const story = createStoryView(layers, textures, initial);
   const challenge = createChallengeView(layers, textures, initial, clips);
@@ -73,6 +81,7 @@ export const createScene = (
 
   const scene: Scene = {
     clips,
+    weather,
     reset: () => {
       lightning.reset();
       scene.setTitle(false);
@@ -84,6 +93,7 @@ export const createScene = (
       scene.setBoat("whole");
       scene.setKraken(false);
       scene.setBlack(false);
+      scene.setUndersea(TITLE_UNDERSEA);
       world.resetPoses();
     },
     setTitle: (visible, fade) => {
@@ -104,6 +114,8 @@ export const createScene = (
     setBoat: (state) => world.setBoat(state),
     setKraken: (visible, fade) => world.setKraken(visible, fade),
     setBlack: (visible, fade) => fx.setBlack(visible, fade),
+    startWeather: (seed) => weather.start(seed),
+    setUndersea: (undersea) => weather.setUndersea(undersea),
     // Forwarded, never copied: a new object after every relayout.
     get paging() {
       return story.paging;

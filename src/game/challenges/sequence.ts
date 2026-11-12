@@ -72,6 +72,13 @@ export class SequenceRule implements ChallengeRule {
 
   cancelAll(): void {}
 
+  reset(): void {
+    if (!this.finished) {
+      this.pointer = 0;
+      this.stopTimeout();
+    }
+  }
+
   private restartTimeout(): void {
     this.stopTimeout();
     this.timeout = this.context.scope.after(this.context.tuning.sequenceTimeoutMs, () => {

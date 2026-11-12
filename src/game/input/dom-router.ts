@@ -2,24 +2,27 @@
 // It uses DOM events, not Pixi's federated events: Pixi never delivers pointercancel (04, correction 1), and the
 // playfield is a render texture outside the hit-test tree. DOM handlers only queue events; the active state drains them
 // in `update`, so input runs under the state machine's error guard and in game time.
-// The decisions (mute button first, pads, the activation and mute hooks) live in router-core.ts, with their contract.
+// The decisions (corner buttons first, pads, the activation, mute and pause hooks) live in router-core.ts, with their
+// contract.
 
 import type { Direction } from "../direction.ts";
 import type { Layout, Rect } from "../../core/layout.ts";
 import { getGameElement } from "../../core/viewport.ts";
 import { attachKeyboard } from "./keyboard.ts";
 import type { InputEvent } from "./pointer-map.ts";
-import { createRouterCore } from "./router-core.ts";
+import { createRouterCore, type PauseInput } from "./router-core.ts";
 
 export interface InputRouter {
   /** The queued events, oldest first; empties the queue. See pointer-map.ts for the contract. */
   drain(): InputEvent[];
   /** Call when a state starts: drops queued events and ignores whatever is down until it lifts. */
   beginEpoch(): void;
-  /** Recomputes the pads' and the mute button's hit areas. Call it with every new layout. */
+  /** Recomputes the pads' and the corner buttons' hit areas. Call it with every new layout. */
   setLayout(layout: Layout): void;
-  /** The mute button's hit square in the current layout (mute-geometry.ts), or null. */
+  /** The mute button's hit square in the current layout (corner-geometry.ts), or null. */
   readonly muteRect: Rect | null;
+  /** The pause button's hit square in the current layout (corner-geometry.ts), or null. */
+  readonly pauseRect: Rect | null;
   /**
    * Calls `listener` synchronously inside the DOM event (pointerup or keydown) of every input that queues "advance",
    * right after it is queued: the place for `audio.unlock()` and, on Gate's begin tap, `startMusic()`. Never for a
@@ -33,6 +36,13 @@ export interface InputRouter {
    * Returns the unsubscribe.
    */
   onMute(listener: () => void): () => void;
+  /**
+   * The pause button's tap and the pause keys (Escape, P) call `listener` and give no press, advance or activation,
+   * as `setPauseInput` allows (router-core.ts has the contract). Returns the unsubscribe.
+   */
+  onPause(listener: () => void): () => void;
+  /** What the pause button and keys do from now on: "off", "ready" or "paused" (see router-core.ts). */
+  setPauseInput(input: PauseInput): void;
   /** Whether `dir` is held by any pointer or key, for the pad view. */
   isHeld(dir: Direction): boolean;
   /** Removes every listener. */
@@ -108,7 +118,7 @@ export const createInputRouter = (canvas: HTMLElement, frame: HTMLElement = getG
   document.addEventListener("visibilitychange", onVisibilityChange, { signal });
 
   // keydown, keyup and blur.
-  const detachKeyboard = attachKeyboard(core.map, { onMuteKey: core.muteKey });
+  const detachKeyboard = attachKeyboard(core.map, { onMuteKey: core.muteKey, onPauseKey: core.pauseKey });
 
   return {
     drain: () => core.map.drain(),
@@ -118,7 +128,12 @@ export const createInputRouter = (canvas: HTMLElement, frame: HTMLElement = getG
       return core.muteRect;
     },
     onActivate: (listener) => core.onActivate(listener),
+    get pauseRect() {
+      return core.pauseRect;
+    },
     onMute: (listener) => core.onMute(listener),
+    onPause: (listener) => core.onPause(listener),
+    setPauseInput: (input) => core.setPauseInput(input),
     isHeld: (dir) => core.isHeld(dir),
     destroy: () => {
       listeners.abort();

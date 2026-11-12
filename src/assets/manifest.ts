@@ -3,6 +3,8 @@
 // anchors and timings below; creak_loop and haul_tick come from scripts/make-sfx.sh. Written by Claude Code.
 import boatUrl from "./sprites/actors/boat.png?url&no-inline";
 import boatFlippedUrl from "./sprites/actors/boat_flipped.png?url&no-inline";
+import eyeLargeUrl from "./sprites/actors/eye_large.png?url&no-inline";
+import eyeSmallUrl from "./sprites/actors/eye_small.png?url&no-inline";
 import monsterAUrl from "./sprites/actors/monster_a.png?url&no-inline";
 import monsterBUrl from "./sprites/actors/monster_b.png?url&no-inline";
 import backgroundPillarsUrl from "./sprites/stage/background_pillars.png?url&no-inline";
@@ -101,6 +103,8 @@ const once = (url: string, samples: number): OneShotAudioAsset => ({
 export const SPRITES = {
   boat: { url: boatUrl, anchor: CENTER },
   boatFlipped: { url: boatFlippedUrl, anchor: CENTER },
+  eyeLarge: { url: eyeLargeUrl, anchor: CENTER },
+  eyeSmall: { url: eyeSmallUrl, anchor: CENTER },
   monsterA: { url: monsterAUrl, anchor: CENTER },
   monsterB: { url: monsterBUrl, anchor: CENTER },
   backgroundPillars: { url: backgroundPillarsUrl, anchor: CENTER },

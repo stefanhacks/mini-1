@@ -25,8 +25,8 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 # --- Sprites ---------------------------------------------------------------------------------------------------
-# Byte-identical copies. Dropped: Actors/eye_large, Actors/eye_small and Graphics/icon.png (unused).
-ACTORS=(boat boat_flipped monster_a monster_b)
+# Byte-identical copies. Dropped: Graphics/icon.png (unused).
+ACTORS=(boat boat_flipped eye_large eye_small monster_a monster_b)
 STAGE=(background_pillars background_tentacles bubble clouds flash raindrop sea_b sea_f sea_m
   thunder_0 thunder_1 thunder_2 thunder_3 thunder_4 vignette)
 UI=(arrow_down arrow_left arrow_right arrow_up cursor_empty cursor_past cursor_selected text_box title)

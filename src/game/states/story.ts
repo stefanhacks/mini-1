@@ -131,6 +131,8 @@ export const createStory = (deps: GameDeps, session: GameSession): GameState => 
       session.cursor = null;
       session.typewriter = null;
       audio.setStoryPart(session.part);
+      // The bubbles rise with each won round as its part begins, after `afterGamePlayDelay` (GameManager.cs:155–162).
+      scene().setUndersea({ part: session.part, eyes: true });
 
       if (session.part === 0) {
         startPreamble(scope);

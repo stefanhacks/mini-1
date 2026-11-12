@@ -33,7 +33,7 @@ import { ambientDelay } from "./cues.ts";
 import { createRng, type Rng } from "../challenges/rng.ts";
 import { drawStrike, LIGHTNING_SALT, type Strike, type StrikeKind } from "../lightning.ts";
 import { LOAD_FAILED } from "./gate.ts";
-import type { Backdrop, Boat, CueEvent, Fade, GateScreen, Paging, SceneView } from "./types.ts";
+import type { Backdrop, Boat, CueEvent, Fade, GateScreen, Paging, SceneView, Undersea } from "./types.ts";
 
 const FRAME_MS = 16;
 
@@ -77,6 +77,9 @@ class FakeScene implements SceneView {
   boat: Boat = "whole";
   kraken = false;
   black = false;
+  /** Every `startWeather` seed, and every undersea set, `reset`'s included, as "part eyes" or "none". */
+  weathers: number[] = [];
+  undersea: string[] = [];
   paging: Paging = { linesPerPage: 2, measure: fixedWidthMeasure(30) };
 
   constructor(clock: GameClock) {
@@ -106,6 +109,7 @@ class FakeScene implements SceneView {
     this.boat = "whole";
     this.kraken = false;
     this.black = false;
+    this.setUndersea({ part: 0, eyes: false });
   }
 
   /** Logo and credits both. */
@@ -174,6 +178,14 @@ class FakeScene implements SceneView {
   setBlack(visible: boolean, fade?: Fade) {
     this.note(`black ${visible}`, fade);
     this.black = visible;
+  }
+
+  startWeather(seed: number) {
+    this.weathers.push(seed);
+  }
+
+  setUndersea(undersea: Undersea | null) {
+    this.undersea.push(undersea === null ? "none" : `${undersea.part} ${undersea.eyes ? "eyes" : "no eyes"}`);
   }
 }
 
@@ -885,6 +897,42 @@ describe("a full game", () => {
     }
 
     assert.deepEqual([t.game.session.games, t.game.session.seed], [4, 45], "each game has a new seed");
+  });
+
+  it("sets the bubbles per part as each part begins, eyes only while reading, none from the kraken on", async () => {
+    const t = setup();
+
+    await toTitle(t);
+    assert.deepEqual(t.scene.weathers, [t.game.session.seed], "Title restarts the weather from the game's seed");
+    assert.deepEqual(t.scene.undersea, ["0 no eyes"], "never an eye on Title");
+    leaveTitle(t);
+    t.wait(STORY_PREAMBLE_MS);
+
+    for (let part = 0; part < STORY_PARTS.length - 1; part++) {
+      readPart(t);
+      playRound(t);
+    }
+
+    readPart(t);
+    assert.deepEqual(t.scene.undersea, [
+      "0 no eyes",
+      "0 eyes", "0 no eyes",
+      "1 eyes", "1 no eyes",
+      "2 eyes", "2 no eyes",
+      "3 eyes",
+      "3 eyes",
+    ], "a won round's bubbles start with the next part; no eye from the Transition to the end of the round");
+
+    t.wait(ENDING_MS.kraken - FRAME_MS);
+    assert.equal(t.scene.undersea.at(-1), "3 eyes");
+    t.wait(FRAME_MS);
+    assert.equal(t.scene.undersea.at(-1), "none");
+    t.wait(ENDING_MS.replay - ENDING_MS.kraken);
+    t.input.advance();
+    t.frame();
+    assert.equal(t.machine.current, "title");
+    assert.deepEqual(t.scene.undersea.slice(-2), ["none", "0 no eyes"], "a replay starts from Title's again");
+    assert.deepEqual(t.scene.weathers, [t.game.session.seed - 1, t.game.session.seed]);
   });
 });
 

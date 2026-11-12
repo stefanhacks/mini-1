@@ -7,6 +7,8 @@ import {
   arrowX,
   GATE_PROMPT,
   TAP_PROMPT,
+  WORLD_EFFECTS,
+  WORLD_ORDER,
   WORLD_SPRITES,
 } from "./positions.ts";
 
@@ -50,6 +52,34 @@ describe("WORLD_SPRITES", () => {
       "seaF",
       "broken-boat",
     ]);
+  });
+});
+
+describe("WORLD_ORDER", () => {
+  it("draws the weather in by the original's sortingOrder (m5-particles-spec §5)", () => {
+    assert.deepEqual(WORLD_ORDER, [
+      "tentacles",
+      "pillars",
+      "seaB",
+      "kraken-tail",
+      "boat",
+      "seaM",
+      "clouds",
+      "clouds-2",
+      "splash",
+      "kraken-body",
+      "rain",
+      "seaF",
+      "bubbles",
+      "eye-small",
+      "eye-large",
+      "broken-boat",
+    ]);
+
+    const orders = WORLD_ORDER.map((label) => [...WORLD_SPRITES, ...WORLD_EFFECTS]
+      .find((row) => row.label === label)?.sortingOrder ?? NaN);
+
+    assert.deepEqual(orders, [...orders].sort((a, b) => a - b));
   });
 });
 

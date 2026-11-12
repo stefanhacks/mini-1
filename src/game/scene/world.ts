@@ -1,7 +1,8 @@
 // The world layer: sea, sky, boat, backdrops and the kraken (WORLD_SPRITES), with their clips: the ambient loops
-// (sea, clouds, the boat's bob), the backdrops' and the kraken's fades, and the broken boat thrown up.
+// (sea, clouds, the boat's bob), the backdrops' and the kraken's fades, and the broken boat thrown up. The weather's
+// containers (scene/particles) are drawn in between, as WORLD_EFFECTS places them.
 // Written by Claude Code.
-import type { Sprite } from "pixi.js";
+import type { Container, Sprite } from "pixi.js";
 import { CLIPS, TARGETS } from "../../assets/anims.ts";
 import type { Clip } from "../../core/anim/clip.ts";
 import type { ClipPlayer } from "../../core/anim/player.ts";
@@ -10,7 +11,7 @@ import type { Point } from "../../core/layout.ts";
 import type { Backdrop, Boat, Fade } from "../states/types.ts";
 import { addArtSprite, type Textures } from "./art-sprite.ts";
 import { faded, type Fades } from "./fades.ts";
-import { WORLD_SPRITES, type WorldSpriteLabel } from "./positions.ts";
+import { WORLD_EFFECTS, WORLD_SPRITES, type WorldEffectLabel, type WorldSpriteLabel } from "./positions.ts";
 
 export interface WorldView {
   /** Every world sprite by label, for tests and the debug overlay. */
@@ -108,12 +109,27 @@ const createBoat = (sprites: WorldSprites, fades: Fades, placeHome: (label: Worl
   };
 };
 
-/** Appends WORLD_SPRITES to the world layer, in table order. Everything starts visible; the scene's `reset` hides. */
-export const createWorld = (layers: Layers, textures: Textures, clips: ClipPlayer, fades: Fades): WorldView => {
+/**
+ * Appends WORLD_SPRITES to the world layer, in table order, each after the `effects` drawn just behind it
+ * (WORLD_EFFECTS). Every sprite starts visible; the scene's `reset` hides.
+ */
+export const createWorld = (
+  layers: Layers,
+  textures: Textures,
+  clips: ClipPlayer,
+  fades: Fades,
+  effects: Readonly<Record<WorldEffectLabel, Container>>,
+): WorldView => {
   const sprites = {} as Record<WorldSpriteLabel, Sprite>;
   const homes = {} as Record<WorldSpriteLabel, Point>;
 
   for (const { label, key, at } of WORLD_SPRITES) {
+    for (const effect of WORLD_EFFECTS) {
+      if (effect.before === label) {
+        layers.world.addChild(effects[effect.label]);
+      }
+    }
+
     sprites[label] = addArtSprite(layers.world, textures, key, at, label);
     homes[label] = at;
   }

@@ -11,7 +11,7 @@ const ARROW_KEYS: ReadonlyMap<string, Direction> = new Map([
   ["ArrowRight", "right"],
 ]);
 
-// Keys that never advance: modifiers, keys with another job (Escape is the future pause key, Tab moves focus, F1–F12
+// Keys that never advance: modifiers, keys with another job (Escape is a pause key, Tab moves focus, F1–F12
 // are browser keys), and the values of keys still being composed by an input method or a dead key.
 const NON_ADVANCE_KEYS: ReadonlySet<string> = new Set([
   "Shift",
@@ -68,10 +68,20 @@ export const readKeyDown = (event: KeyInput): KeyAction | null => {
 export const isMuteKey = (event: KeyInput) =>
   !event.repeat && !event.isComposing && !isShortcut(event) && (event.key === "m" || event.key === "M");
 
+/**
+ * Whether a keydown is a pause shortcut: Escape or P (either case), with the same filters as `isMuteKey`. When the
+ * router takes it (pause input not "off"), it pauses or resumes and neither presses nor advances.
+ */
+export const isPauseKey = (event: KeyInput) =>
+  !event.repeat && !event.isComposing && !isShortcut(event)
+  && (event.key === "Escape" || event.key === "p" || event.key === "P");
+
 export interface KeyboardOptions {
   readonly target?: Window;
   /** Called on the mute key; returns true if it handled it (then the key does nothing else). */
   readonly onMuteKey?: () => boolean;
+  /** Called on a pause key; returns true if it handled it (then the key does nothing else). */
+  readonly onPauseKey?: () => boolean;
 }
 
 /**
@@ -80,9 +90,13 @@ export interface KeyboardOptions {
  * lifted with a modifier held still releases. The Meta keyup releases every arrow: macOS sends no keyup for keys
  * released while Meta is held. Returns a function that removes the listeners.
  */
-export const attachKeyboard = (map: PointerMap, { target = window, onMuteKey }: KeyboardOptions = {}) => {
+export const attachKeyboard = (map: PointerMap, { target = window, onMuteKey, onPauseKey }: KeyboardOptions = {}) => {
   const onKeyDown = (event: KeyboardEvent) => {
     if (isMuteKey(event) && onMuteKey?.() === true) {
+      return;
+    }
+
+    if (isPauseKey(event) && onPauseKey?.() === true) {
       return;
     }
 

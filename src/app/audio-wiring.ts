@@ -1,29 +1,41 @@
-// Audio (M3): the engine, the mute button, "Tap to continue" and the lifecycle, then the gestures that drive them. The
-// states play the cues and pick the music (states/cues.ts, story.ts). Written by Claude Code.
+// Audio (M3) and the pause (M5): the engine, the corner buttons (mute, pause), "Tap to continue" and the audio
+// lifecycle, then the gestures that drive them. The states play the cues and pick the music (states/cues.ts, story.ts).
+// Written by Claude Code.
 import { createAudioEngine, type AudioEngine } from "../core/audio/audio-engine.ts";
 import type { Layers } from "../core/layers.ts";
 import { createAudioLifecycle, type AudioLifecycle } from "../game/audio-lifecycle.ts";
 import type { InputRouter } from "../game/input/dom-router.ts";
 import { createMuteButton } from "../game/mute-button.ts";
+import type { Pause } from "../game/pause.ts";
+import { createPauseButton } from "../game/pause-button.ts";
 import { createContinuePrompt } from "../game/scene.ts";
 import type { GateControl } from "../game/states/gate.ts";
 import type { LayoutBus } from "./layout-bus.ts";
 
 export const wireAudio = (layers: Layers, layouts: LayoutBus) => {
   const audio = createAudioEngine();
+  // The corner stack, top to bottom (input/corner-geometry.ts), so they are added in that order.
   const muteButton = createMuteButton(layers.ui);
+  const pauseButton = createPauseButton(layers.ui);
 
   muteButton.setMuted(audio.muted);
-  layouts.follow((next) => muteButton.setLayout(next));
+  layouts.follow((next) => {
+    muteButton.setLayout(next);
+    pauseButton.setLayout(next);
+  });
 
-  // "Tap to continue": shown by the lifecycle when audio can't resume without a gesture.
+  // "Tap to continue": while the game is paused (pause.ts), or audio can't resume without a gesture (the lifecycle).
   const continuePrompt = createContinuePrompt(layers, layouts.current);
 
   layouts.onLayout(continuePrompt.relayout);
 
-  const lifecycle = createAudioLifecycle(audio, continuePrompt, () => document.visibilityState === "visible");
+  const lifecycle = createAudioLifecycle(
+    audio,
+    { setVisible: (visible) => continuePrompt.setAudioPrompt(visible) },
+    () => document.visibilityState === "visible",
+  );
 
-  return { audio, muteButton, lifecycle };
+  return { audio, muteButton, pauseButton, continuePrompt, lifecycle };
 };
 
 export interface GestureWiring {
@@ -34,28 +46,44 @@ export interface GestureWiring {
   /** The state machine's current state, read on every gesture. */
   readonly machine: { readonly current: string | undefined };
   readonly gate: GateControl;
+  readonly pause: Pause;
 }
 
 /**
- * Registers the mute toggle, then the activation hooks: Gate's before the lifecycle's. They run inside the DOM gesture
- * (router-core.ts has the contract): Gate's begin tap unlocks audio and starts the music, and any later tap unlocks
- * audio again when it needs a gesture ("Tap to continue"). Call it once the machine exists.
+ * Registers the mute toggle and the pause toggle, then the activation hooks: Gate's before the lifecycle's. They run
+ * inside the DOM gesture (router-core.ts has the contract): Gate's begin tap unlocks audio and starts the music, and
+ * any later tap unlocks audio again when it needs a gesture and resumes a paused game ("Tap to continue"). Call it
+ * once the machine exists.
  */
-export const wireGestures = ({ router, audio, muteButton, lifecycle, machine, gate }: GestureWiring) => {
-  // Unlocks audio when it needs a gesture: any tap or key once Gate is left (at the gate the begin tap's unlock and its
-  // touchend retry are Gate's).
-  const continueAudio = () => {
+export const wireGestures = ({ router, audio, muteButton, lifecycle, machine, gate, pause }: GestureWiring) => {
+  // Any tap or key once Gate is left (at the gate the begin tap's unlock and its touchend retry are Gate's): unlocks
+  // audio when it needs a gesture, then resumes the game, in that order, inside the gesture. The touchend retry
+  // (router-core.ts) calls it again: the unlock is idempotent and the game has resumed already.
+  const continueGame = () => {
     if (machine.current !== "gate") {
       lifecycle.activate();
+      pause.resume();
     }
   };
 
   router.onMute(() => {
     audio.setMuted(!audio.muted);
     muteButton.setMuted(audio.muted);
-    // A mute tap or the M key is a gesture too: it may resume audio, without counting as an activation.
-    continueAudio();
+
+    // A mute tap or the M key is a gesture too: it may resume audio, without counting as an activation. Not while
+    // paused: audio stays suspended with the game until the tap that resumes both.
+    if (machine.current !== "gate" && !pause.paused) {
+      lifecycle.activate();
+    }
+  });
+  // The pause button (while it is "ready") and the pause keys: pause, or resume as a tap would.
+  router.onPause(() => {
+    if (pause.paused) {
+      continueGame();
+    } else {
+      pause.pause();
+    }
   });
   router.onActivate(() => gate.activate());
-  router.onActivate(continueAudio);
+  router.onActivate(continueGame);
 };

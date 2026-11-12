@@ -24,6 +24,12 @@ describe("readLaunchOptions", () => {
     assert.equal(readLaunchOptions("?debug&seed=abc", true).seed, "abc");
     assert.equal(readLaunchOptions("?debug", true).seed, null);
   });
+
+  it("reads ?eyes=always only with ?debug", () => {
+    assert.equal(readLaunchOptions("?debug&eyes=always", true).eyesAlways, true);
+    assert.equal(readLaunchOptions("?eyes=always", false).eyesAlways, false);
+    assert.equal(readLaunchOptions("?debug&eyes=never", true).eyesAlways, false);
+  });
 });
 
 describe("createTimescale", () => {

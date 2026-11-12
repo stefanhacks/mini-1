@@ -70,6 +70,11 @@ export class Round {
     this.rule?.cancelAll();
   }
 
+  /** Resets the current challenge's progress (`ChallengeRule.reset`): the pause's resume. */
+  resetCurrent(): void {
+    this.rule?.reset();
+  }
+
   private build(index: number): ChallengeRule | undefined {
     const spec = this.specs[index];
 

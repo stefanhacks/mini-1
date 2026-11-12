@@ -182,15 +182,24 @@ const settle = async (page: Page, insets: Insets, card = true) => {
     // once no strike shows. The bolt outlives the flash (0.67 s against 0.5 s), and a lit bolt under the vignette
     // (scaled 1.05) splits k×k blocks, so both must be gone. Game time then stops in the same frame check, so no
     // ambient strike lands on the checks: a paused clock stands every clip still (anim/player.ts). The time scale
-    // can't do it, as it takes only values above zero.
+    // can't do it, as it takes only values above zero. The weather is hidden too: lit rain under the vignette splits
+    // blocks as the bolt does, and the original drew its vignette over the rain as well, so the check leaves it out.
     await page.waitForFunction(() => {
-      const { clock, scene } = window.debug;
+      const { clock, scene, layers } = window.debug;
       const parts = scene?.parts;
       const quiet = parts !== undefined && parts.logo.visible && parts.tapPrompt.visible && !parts.flash.visible
         && !parts.bolt.visible;
 
       if (quiet) {
         clock.paused = true;
+
+        for (const label of ["splash", "rain", "bubbles", "eye-small", "eye-large"]) {
+          const effect = layers.world.getChildByLabel(label);
+
+          if (effect !== null) {
+            effect.visible = false;
+          }
+        }
       }
 
       return quiet;

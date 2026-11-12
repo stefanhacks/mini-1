@@ -73,4 +73,18 @@ export class ManyRule implements ChallengeRule {
   release(_dir: Direction): void {}
 
   cancelAll(): void {}
+
+  reset(): void {
+    if (this.finished) {
+      return;
+    }
+
+    if (this.timer !== undefined) {
+      this.context.scope.cancel(this.timer);
+      this.timer = undefined;
+    }
+
+    this.windowEnd = undefined;
+    this.count = 0;
+  }
 }

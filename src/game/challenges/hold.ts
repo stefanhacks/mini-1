@@ -65,7 +65,7 @@ export class HoldRule implements ChallengeRule {
     this.reset();
   }
 
-  private reset(): void {
+  reset(): void {
     if (this.finished || this.startedAt === undefined) {
       return;
     }

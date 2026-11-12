@@ -222,3 +222,71 @@ describe("Round", () => {
     }
   });
 });
+
+describe("Round.resetCurrent (the pause's resume)", () => {
+  it("starts a Sequence over: the pointer goes back to 0 and its timeout is cancelled", () => {
+    const { clock, scope, round } = setup([{ kind: "sequence", directions: ["up", "left", "down"] }]);
+
+    round.press("up");
+    round.press("left");
+    round.resetCurrent();
+    assert.deepEqual(round.current?.progress, { kind: "sequence", pointer: 0, length: 3 });
+    assert.equal(clock.pendingTimers, 0);
+
+    // A fresh attempt still completes.
+    round.press("up");
+    round.press("left");
+    round.press("down");
+    assert.equal(round.done, true);
+    scope.dispose();
+  });
+
+  it("lets a Hold go: it doesn't complete on its own, and a new press starts it over", () => {
+    const { clock, round } = setup([{ kind: "hold", direction: "up" }]);
+
+    round.press("up");
+    clock.tick(TUNING.holdMs - 1);
+    round.resetCurrent();
+    assert.deepEqual(round.current?.progress, { kind: "hold", held: false, fraction: 0 });
+    clock.tick(TUNING.holdMs * 2);
+    assert.equal(round.done, false);
+
+    round.press("up");
+    clock.tick(TUNING.holdMs);
+    assert.equal(round.done, true);
+  });
+
+  it("closes a Many's window: the count goes back to 0 and the next press opens a new window", () => {
+    const { clock, round } = setup([{ kind: "many", direction: "up" }]);
+
+    for (let i = 0; i < TUNING.manyPresses - 1; i++) {
+      round.press("up");
+    }
+
+    round.resetCurrent();
+    assert.deepEqual(round.current?.progress, {
+      kind: "many",
+      count: 0,
+      target: TUNING.manyPresses,
+      windowRemainingMs: 0,
+    });
+    assert.equal(clock.pendingTimers, 0);
+    round.press("up");
+    assert.equal(round.done, false);
+    assert.deepEqual(round.current?.progress, {
+      kind: "many",
+      count: 1,
+      target: TUNING.manyPresses,
+      windowRemainingMs: TUNING.manyWindowMs,
+    });
+  });
+
+  it("does nothing once the round is done", () => {
+    const { round } = setup([{ kind: "sequence", directions: ["up"] }]);
+
+    round.press("up");
+    round.resetCurrent();
+    assert.equal(round.done, true);
+    assert.equal(round.index, 1);
+  });
+});

@@ -1,7 +1,7 @@
 // The bootstrap, in startup order: each step is a module in src/app/. Several of these orders are contracts
-// (m4-refactor.md, rules 1–2): the ui layer's children (debug overlay, pad, mute button, Tap to continue, the gate's
-// view, then the scene's texts), the router's `visibilitychange` listener before the page lifecycle's, Gate's
-// activation hook before the lifecycle's, and the ticker's game logic → audio tick → render pass.
+// (m4-refactor.md, rules 1–2): the ui layer's children (debug overlay, pad, mute button, pause button, Tap to
+// continue, the gate's view, then the scene's texts), the router's `visibilitychange` listener before the page
+// lifecycle's, Gate's activation hook before the lifecycle's, and the ticker's game logic → audio tick → render pass.
 import "./style.css";
 import { wireAudio, wireGestures } from "./app/audio-wiring.ts";
 import { createCueLog } from "./app/cue-log.ts";
@@ -12,8 +12,10 @@ import { createErrorSink, createHaltingGuard } from "./app/halting-guard.ts";
 import { wireInput } from "./app/input-wiring.ts";
 import { createSeeder, createTimescale, readLaunchOptions } from "./app/launch-options.ts";
 import { wirePageLifecycle } from "./app/page-lifecycle.ts";
+import { wirePause } from "./app/pause-wiring.ts";
 import { wireResize } from "./app/resize.ts";
 import { createStage } from "./app/stage.ts";
+import { pruneTextCache } from "./app/text-cache.ts";
 import { createClipPlayer } from "./core/anim/player.ts";
 import { GameClock } from "./core/clock.ts";
 import { StateMachine } from "./core/state-machine.ts";
@@ -40,7 +42,7 @@ const { router, padView } = wireInput(stage, layouts);
 const clock = new GameClock();
 // The animation clips, on game time: the frame loop syncs them after each step, the scene plays them.
 const clips = createClipPlayer(clock);
-const { audio, lifecycle, muteButton } = wireAudio(layers, layouts);
+const { audio, lifecycle, muteButton, pauseButton, continuePrompt } = wireAudio(layers, layouts);
 const cueLog = createCueLog(() => clock.now);
 
 // The gate's view needs nothing loaded; the scene needs the textures and the font.
@@ -48,7 +50,9 @@ const gateView = createGateView(layers, layouts.current);
 
 layouts.onLayout(gateView.relayout);
 
-const loading = createGameLoader({ layers, layouts, gateView, audio, clips });
+const loading = createGameLoader({
+  layers, layouts, gateView, audio, clips, weather: { eyesAlways: launch.eyesAlways },
+});
 const game = createGame({
   loader: loading.loader,
   gateView,
@@ -64,20 +68,27 @@ const game = createGame({
   scene: loading.requireScene,
   nextSeed,
   tuning: TUNING,
+  // Pixi keeps a null key per text it let go (text-cache.ts); a new game starts without them.
+  onTitle: () => pruneTextCache(app.renderer),
 });
 const machine = new StateMachine<GameStateId>(clock, game.states);
 const stepper = createFrameStepper(machine);
 
-wireGestures({ router, audio, muteButton, lifecycle, machine, gate: game.gate });
-wirePageLifecycle(stepper, lifecycle);
+const pause = wirePause({ clock, machine, game, stepper, router, lifecycle, continuePrompt, pauseButton });
+
+wireGestures({ router, audio, muteButton, lifecycle, machine, gate: game.gate, pause });
+wirePageLifecycle(stepper, lifecycle, pause);
 
 window.debug = createDebugApi({
-  app, clock, machine, layers, display, layouts, router, audio, cueLog, lifecycle, game, timescale, loading, errors,
-  clips,
+  app, clock, machine, layers, display, layouts, router, audio, cueLog, game, timescale, loading, errors, clips, pause,
+  continuePrompt,
 });
 
+// The weather exists once the scene is built; until then there is nothing to move.
+const weather = { sync: (now: number) => loading.scene?.weather.sync(now) };
+
 startFrameLoop({
-  ticker: app.ticker, stepper, padView, router, audio, timescale, clock, clips, errors, renderPlayfield,
+  ticker: app.ticker, stepper, pause, padView, router, audio, timescale, clock, clips, weather, errors, renderPlayfield,
 });
 resizeRenderer();
 machine.request("gate");

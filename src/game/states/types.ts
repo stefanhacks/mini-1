@@ -50,6 +50,16 @@ export type Backdrop = "pillars" | "tentacles";
 export type Boat = "whole" | "broken" | "thrown" | "none";
 
 /**
+ * What lives under the sea from now on (scene/particles): story part `part`'s bubbles (1 a second for part 0, then 2,
+ * 4 and 6 after each won round, as GameManager.SetBubbles meant; m5-plan, owner decision 10), and whether an eye may
+ * show in place of a slot's bubbles (never on Title or around a challenge; m5-plan, deliverable 2).
+ */
+export interface Undersea {
+  readonly part: number;
+  readonly eyes: boolean;
+}
+
+/**
  * How a show or hide plays: the original's fade clip for that object (`FadeIn`/`FadeOut`, `TMPFadeIn`/`TMPFadeOut`,
  * `FadeKrakenA`/`B`), at `speed` clip seconds per game second. Without one, it is a cut.
  */
@@ -105,6 +115,16 @@ export interface SceneView {
   setKraken(visible: boolean, fade?: Fade): void;
   /** The black overlay (the original's `TelaPreta`, `FadeIn`/`FadeOut`) over the world, under the text box. */
   setBlack(visible: boolean, fade?: Fade): void;
+  /**
+   * Restarts the rain, its splashes, the bubbles and the eyes for a new game (Title, on every enter, after `reset`):
+   * their draws come from `seed`'s own streams, and they are prewarmed, as Unity's systems were at load.
+   */
+  startWeather(seed: number): void;
+  /**
+   * The bubbles and the eyes from now on. `reset` sets Title's: part 0's bubbles, no eye. `null` from the ending's
+   * kraken on: the bubbles stop and fade with any eye (m5-plan, owner decision 4).
+   */
+  setUndersea(undersea: Undersea | null): void;
   readonly paging: Paging;
 }
 
@@ -183,4 +203,6 @@ export interface GameDeps {
   /** The seed of each new game: `?seed=` based in tests and bug reports, random otherwise. */
   readonly nextSeed: () => number;
   readonly tuning: Tuning;
+  /** Called on every Title enter, before the new game starts: the app's housekeeping (app/text-cache.ts). */
+  readonly onTitle?: () => void;
 }
