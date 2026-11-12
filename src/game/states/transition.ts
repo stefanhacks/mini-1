@@ -17,8 +17,8 @@ export const createTransition = (deps: GameDeps, session: GameSession): GameStat
       pad.setDimmed(true);
       pad.setHint(null);
       session.phase = "transition";
-      // No eye from here to the next story part: it would compete with the arrows.
-      scene().setUndersea({ part: session.part, eyes: false });
+      // An eye may show until the round's first challenge (m5-plan, owner decision 11).
+      scene().setUndersea({ part: session.part, eyesFor: TRANSITION_MS });
       createCuePlayer(deps, session, "transition").schedule(scope, TRANSITION_CUES);
       scope.after(TRANSITION_MS, () => machine.request("round"));
     },

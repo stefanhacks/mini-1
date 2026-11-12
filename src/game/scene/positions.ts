@@ -167,10 +167,12 @@ export const GATE_PROMPT: UiTextSpec = { ...TAP_PROMPT, label: "gate-prompt" };
 /** The load bar, in playfield px: centred under the warning. */
 export const GATE_BAR = { x: 170, y: 290, width: 160, height: 4 } as const;
 
-// "Tap to continue" (m3-plan, deliverable 5): white text at the playfield's centre.
+// "Tap to continue" (m3-plan, deliverable 5): white text centred across, where Title's and the ending's own tap prompt
+// shows (hidden under it), so on both its box sits clear of the logo and its waves, which reach down to about y 350,
+// and of the credits (y 473), with the font clamped up to 16 CSS px on a phone too (m5-plan decision 13).
 export const CONTINUE_PROMPT: UiTextSpec = {
   label: "continue-prompt",
-  at: { x: 250, y: 250 },
+  at: { x: 250, y: 405 },
   anchorY: 0.5,
   size: 16,
   min: 16,

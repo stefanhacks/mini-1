@@ -115,7 +115,7 @@ const openToTitle = async (page: Page) => {
   expect(await page.evaluate(() => window.debug.machine.current)).toBe("title");
 };
 
-test("rain, splashes and bubbles fall from Title on, on fixed pools that don't grow over replays", async ({ page }) => {
+test("the weather falls from Title on, on pools that don't grow, the same for the same seed", async ({ page }) => {
   await openToTitle(page);
   await step(page, 30);
 
@@ -152,12 +152,9 @@ test("rain, splashes and bubbles fall from Title on, on fixed pools that don't g
       .toEqual([title.worldChildren, 224, 256, 32]);
     expect(back.stats.dropped).toBe(0);
   }
-});
 
-test("the same seed gives the same weather", async ({ page }) => {
-  await openToTitle(page);
-
-  // Without the boat, which bobs on the clock: drops that hit it would depend on when each run starts.
+  // The same seed gives the same weather, on the same page load. Without the boat, which bobs on the clock: drops that
+  // hit it would depend on when each run starts.
   await page.evaluate(() => {
     const boat = window.debug.layers.world.getChildByLabel("boat");
 

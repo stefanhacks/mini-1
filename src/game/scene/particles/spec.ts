@@ -58,10 +58,11 @@ export const SPLASH = {
   alpha: { min: 0.11764706, max: 0.19607843 },
   fadeFrom: 49730 / 65535,
   /**
-   * By eye: Unity's emitter shape can't be read from the files (§U1), and three dots on one spot read as one. Each
-   * dot starts up to this many px left or right of the hit.
+   * Unity's emitter shape can't be read from the files (§U1). The three dots land within 1 px of each other, so a
+   * splash reads as one speck, as the original's overlapping particles did (m5-plan, owner decision 12): each starts
+   * up to this many px left or right of the hit.
    */
-  spread: 3,
+  spread: 0.5,
   /** A 1 art px white dot (§2: 1.5 px drawn). */
   size: 1,
   pool: 256,
@@ -112,30 +113,40 @@ export const PREWARM = 2;
 
 export type EyeSize = "small" | "large";
 
-/** The m4-plan draft as the owner confirmed it (m5-plan, owner decision 3). */
+/**
+ * The m4-plan draft as the owner confirmed it (m5-plan, owner decision 3), shown between pages only (owner decision
+ * 11): an eye may show in a window the story states open while no text box or challenge is up (part 0's preamble,
+ * the 1.25 s after a won round, the transitions, the ending before the kraken), and fills it.
+ */
 export const EYES = {
   /**
-   * An eye may replace the bubbles of one slot: the bubble system's 2 s loop (`lengthInSec`). The slot that shows an
-   * eye emits no bubble.
+   * Story parts 0–1: at most one eye a game, in 5% of games, small only. It is drawn once a game, at the start, and
+   * shown in one of the windows there at least `minWindow` s long: part 0's preamble and the 1.25 s after rounds 0
+   * and 1, so how fast the pages are read doesn't change the odds (the 0.5 s transitions are too short for it).
    */
-  slot: 2,
-  /** Story parts 0–1: at most one eye a game, in 5% of games, small only, in one of its first 15 slots there. */
-  early: { chance: 0.05, slots: 15 },
-  /** From story part 2: about 1 chance in 6 per slot. */
+  early: { chance: 0.05, windows: 3, minWindow: 1 },
+  /** From story part 2: about 1 chance in 6 per window, the transitions' included. */
   chance: 1 / 6,
   /** `eye_large` from this part on (half the eyes there). */
   largeFrom: 3,
-  fadeIn: 0.5,
-  fadeOut: 0.5,
-  hold: { min: 1.5, max: 3 },
+  /**
+   * The draft's 0.5 s fade in and out, or `fadeShare` of a shorter window each. An eye holds between its fades, and
+   * is gone as its window closes: 0.5 s in and out over the 1.25 s after a round, 0.2 s with a 0.1 s hold over a
+   * transition. The draft's 1.5–3 s hold doesn't fit these windows.
+   */
+  fade: 0.5,
+  fadeShare: 0.4,
   /** By eye: a slow drift of up to this many art px, left or right, over the eye's life. */
   drift: 3,
   /** By eye: the bubbles' brightest, so an eye reads as part of the sea's life rather than a sprite on top of it. */
   alpha: 0.7,
-  /** Where an eye's centre goes: a whole eye under the sea line, inside the bubbles' band and the vignette's light. */
+  /**
+   * Where an eye's centre goes: the whole eye inside the clear middle under the boat (owner decision 11: about
+   * x 170–330, y 345–405), where the vignette leaves it at least 72% of its brightness, drifted or not.
+   */
   band: {
-    small: { x: { min: 100, max: 400 }, y: { min: 362, max: 490 } },
-    large: { x: { min: 120, max: 380 }, y: { min: 372, max: 478 } },
+    small: { x: { min: 184, max: 316 }, y: { min: 349, max: 390 } },
+    large: { x: { min: 191, max: 309 }, y: { min: 359, max: 392 } },
   },
 } as const;
 

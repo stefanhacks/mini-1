@@ -4,6 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
 import type { Rect } from "../src/core/layout.ts";
 import { computePads } from "../src/game/input/pad-geometry.ts";
 import {
+  FAST,
   keyboardDriver,
   leaveTitle,
   openGame,
@@ -13,6 +14,7 @@ import {
   SEED,
   waitFor,
   waitForGateReady,
+  waitFrames,
 } from "./game.ts";
 
 // A tap's pointer path doesn't depend on the DPR: at DPR 1 the software-rendered frames are several times cheaper.
@@ -73,6 +75,8 @@ const readPause = (page: Page) => page.evaluate(() => {
     prompt: continuePromptShown,
     // The overlay sits above everything in ui.
     onTop: layers.ui.children.at(-1)?.label === "continue",
+    // Title's or the ending's own tap prompt is drawn.
+    tapPrompt: layers.ui.getChildByLabel("tap-prompt")?.renderable ?? false,
   };
 });
 
@@ -88,13 +92,39 @@ const overlaps = (a: Rect, b: Rect) =>
   a.width > 0 && a.height > 0 && b.width > 0 && b.height > 0
   && a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 
-test("the pause button freezes a story page under Tap to continue; a tap on it resumes audio and the game", {
-  tag: "@tap",
-}, async ({ page }) => {
+// Keys and the button's mouse path: desktop only (untagged). The tap path on the iPhone is sound.spec.ts's `@tap`.
+test("Escape, P and the pause button pause and resume, never advancing; off at the gate", async ({ page }) => {
   await recordResumes(page);
-  await openGame(page);
-  await expect.poll(async () => (await readPause(page)).input, POLL).toBe("ready");
+  await page.goto(`/?debug&seed=${SEED}&timescale=${FAST}`);
+  await waitForGateReady(page);
+  await page.keyboard.press("Escape");
+  await waitFrames(page);
+  expect(await readPause(page)).toMatchObject({ paused: false, input: "off", button: false });
+  expect((await readGame(page)).state).toBe("gate");
 
+  // P is an ordinary key at the gate: it begins.
+  await page.keyboard.press("p");
+  await expect.poll(async () => (await readGame(page)).state, POLL).toBe("title");
+  await expect.poll(async () => (await readGame(page)).phase, POLL).toBe("prompt");
+  await expect.poll(() => readPause(page), POLL).toMatchObject({ input: "ready", button: true, tapPrompt: true });
+
+  for (const key of ["p", "Escape"]) {
+    await page.keyboard.press(key);
+    // Title's own prompt isn't drawn while paused (m5-plan decision 13).
+    await expect.poll(() => readPause(page), POLL).toMatchObject({ paused: true, prompt: true, tapPrompt: false });
+    await expect.poll(async () => (await readAudio(page)).contextState, POLL).toBe("suspended");
+
+    const before = (await readResumeEvents(page)).length;
+
+    await page.keyboard.press(key === "p" ? "Escape" : "P");
+    await expect.poll(() => readPause(page), POLL).toMatchObject({ paused: false, prompt: false, tapPrompt: true });
+    await expect.poll(async () => (await readAudio(page)).status, POLL).toBe("running");
+    expect((await readResumeEvents(page)).slice(before)[0]).toBe("keydown");
+    await waitFrames(page);
+    expect(await readGame(page)).toMatchObject({ state: "title", phase: "prompt" });
+  }
+
+  // The button, on a story page.
   const driver = await keyboardDriver(page);
 
   await leaveTitle(page, driver);
@@ -104,12 +134,12 @@ test("the pause button freezes a story page under Tap to continue; a tap on it r
 
   await tapPause(page);
   await expect.poll(() => readPause(page), POLL)
-    .toEqual({ paused: true, input: "paused", button: true, prompt: true, onTop: true });
+    .toMatchObject({ paused: true, input: "paused", button: true, prompt: true, onTop: true });
   await expect.poll(async () => (await readAudio(page)).contextState, POLL).toBe("suspended");
 
   const pausedAt = await readNow(page);
 
-  await page.waitForTimeout(300);
+  await waitFrames(page);
   expect(await readNow(page)).toBe(pausedAt);
 
   // While paused its square is an ordinary tap: the one that continues, with the unlock inside its own event.
@@ -122,40 +152,8 @@ test("the pause button freezes a story page under Tap to continue; a tap on it r
   expect((await readResumeEvents(page)).slice(before)[0]).toBe("pointerup");
   await expect.poll(() => readNow(page), POLL).toBeGreaterThan(pausedAt);
   // Give a stray advance time to land: it would turn the page.
-  await page.waitForTimeout(300);
+  await waitFrames(page);
   expect(await pageKey(page)).toBe(shown);
-});
-
-// Keys: the same code on every device, desktop only (untagged).
-test("Escape and P pause and resume, never advancing; at the gate they and the button are off", async ({ page }) => {
-  await recordResumes(page);
-  await page.goto(`/?debug&seed=${SEED}&timescale=32`);
-  await waitForGateReady(page);
-  await page.keyboard.press("Escape");
-  await page.waitForTimeout(100);
-  expect(await readPause(page)).toMatchObject({ paused: false, input: "off", button: false });
-  expect((await readGame(page)).state).toBe("gate");
-
-  // P is an ordinary key at the gate: it begins.
-  await page.keyboard.press("p");
-  await expect.poll(async () => (await readGame(page)).state, POLL).toBe("title");
-  await expect.poll(async () => (await readGame(page)).phase, POLL).toBe("prompt");
-  await expect.poll(() => readPause(page), POLL).toMatchObject({ input: "ready", button: true });
-
-  for (const key of ["p", "Escape"]) {
-    await page.keyboard.press(key);
-    await expect.poll(() => readPause(page), POLL).toMatchObject({ paused: true, prompt: true });
-    await expect.poll(async () => (await readAudio(page)).contextState, POLL).toBe("suspended");
-
-    const before = (await readResumeEvents(page)).length;
-
-    await page.keyboard.press(key === "p" ? "Escape" : "P");
-    await expect.poll(() => readPause(page), POLL).toMatchObject({ paused: false, prompt: false });
-    await expect.poll(async () => (await readAudio(page)).status, POLL).toBe("running");
-    expect((await readResumeEvents(page)).slice(before)[0]).toBe("keydown");
-    await page.waitForTimeout(200);
-    expect(await readGame(page)).toMatchObject({ state: "title", phase: "prompt" });
-  }
 });
 
 test("the pause button sits right under mute, in the safe area, clear of every control zone and pad", {

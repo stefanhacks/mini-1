@@ -90,6 +90,25 @@ export const openGame = async (page: Page, query = "") => {
   await expect.poll(() => page.evaluate(() => window.debug.game.state), OPEN_POLL).toBe("title");
 };
 
+/**
+ * Waits for `count` animation frames, each of which runs the game's ticker: long enough for a stray input to be drained
+ * and land (a tap that should not advance), or for frozen game time to show (frames run, the clock doesn't).
+ */
+export const waitFrames = (page: Page, count = 10) => page.evaluate((frames) => new Promise<void>((resolve) => {
+  let left = frames;
+  const tick = () => {
+    left -= 1;
+
+    if (left <= 0) {
+      resolve();
+    } else {
+      requestAnimationFrame(tick);
+    }
+  };
+
+  requestAnimationFrame(tick);
+}), count);
+
 export const waitFor = async (page: Page, check: (game: GameSnapshot) => boolean) => {
   await expect.poll(async () => check(await readGame(page)), POLL).toBe(true);
 };

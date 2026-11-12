@@ -49,7 +49,8 @@ export const createEnding = (deps: GameDeps, session: GameSession): GameState =>
       session.phase = "boat";
       view.setStoryPage(null);
       view.setBoat("broken");
-      view.setUndersea({ part: session.part, eyes: true });
+      // An eye may show until the kraken (m5-plan, owner decision 11).
+      view.setUndersea({ part: session.part, eyesFor: ENDING_MS.kraken });
 
       createCuePlayer(deps, session, "ending").schedule(scope, ENDING_CUES);
       scope.after(ENDING_MS.lift, () => view.setBlack(false, FADE));

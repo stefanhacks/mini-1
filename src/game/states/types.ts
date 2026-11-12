@@ -51,12 +51,17 @@ export type Boat = "whole" | "broken" | "thrown" | "none";
 
 /**
  * What lives under the sea from now on (scene/particles): story part `part`'s bubbles (1 a second for part 0, then 2,
- * 4 and 6 after each won round, as GameManager.SetBubbles meant; m5-plan, owner decision 10), and whether an eye may
- * show in place of a slot's bubbles (never on Title or around a challenge; m5-plan, deliverable 2).
+ * 4 and 6 after each won round, as GameManager.SetBubbles meant; m5-plan, owner decision 10), and the window an eye
+ * may show in, in place of the bubbles.
  */
 export interface Undersea {
   readonly part: number;
-  readonly eyes: boolean;
+  /**
+   * How long from now (game ms) an eye may show: a window with no text box or challenge up (part 0's preamble, the
+   * wait after a won round, a transition, the ending before the kraken; m5-plan, owner decision 11). 0 for none: on
+   * Title, behind a page and during a round's challenges.
+   */
+  readonly eyesFor: number;
 }
 
 /**

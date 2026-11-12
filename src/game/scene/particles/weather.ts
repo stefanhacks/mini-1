@@ -135,7 +135,7 @@ export interface Weather {
 const EYE_SIZES: readonly EyeSize[] = ["small", "large"];
 
 export interface WeatherOptions {
-  /** `?debug&eyes=always`: an eye in every slot where one may show, so they can be reviewed without waiting. */
+  /** `?debug&eyes=always`: an eye in every window where one may show, so they can be reviewed without waiting. */
   readonly eyesAlways?: boolean;
 }
 
@@ -193,11 +193,11 @@ export const createWeather = (
     },
     start: (seed) => {
       rain.reset(createRng((seed ^ RAIN_SALT) >>> 0));
-      undersea.reset(time, createRng((seed ^ BUBBLE_SALT) >>> 0), createRng((seed ^ EYE_SALT) >>> 0));
+      undersea.reset(createRng((seed ^ BUBBLE_SALT) >>> 0), createRng((seed ^ EYE_SALT) >>> 0));
       started = true;
       step(time - PREWARM, time);
     },
-    setUndersea: (next) => undersea.set(time, next),
+    setUndersea: (next) => undersea.set(time, next, motion.speed),
     motion,
     stats: {
       get drops() {

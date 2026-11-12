@@ -265,4 +265,20 @@ describe("createPause", () => {
     frame();
     assert.equal(pause.paused, true);
   });
+
+  it("doesn't pause again when the resume tap's unlock raises the audio prompt (a hidden tab's resume)", () => {
+    const { clock, pause, frame, setAudioPrompt } = setUp();
+
+    frame();
+    // Hidden: the lifecycle shows nothing while hidden, nor on the way back while paused.
+    pause.pause();
+    frame();
+    // The tap: the lifecycle's unlock doesn't take, so its prompt comes up before the resume.
+    setAudioPrompt(true);
+    pause.resume();
+    frame();
+    frame();
+    assert.equal(pause.paused, false);
+    assert.equal(clock.paused, false);
+  });
 });

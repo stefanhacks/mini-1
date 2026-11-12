@@ -1,10 +1,10 @@
-// Under the sea: the bubbles (m5-particles-spec §3) and, now and then, an eye in place of a slot's bubbles (m4-plan,
-// "Eye sprites"; m5-plan, deliverable 2 and owner decisions 3, 4 and 10). Pure TypeScript with no Pixi import.
-// Written by Claude Code.
+// Under the sea: the bubbles (m5-particles-spec §3) and, now and then, an eye in place of the bubbles between pages
+// (m4-plan, "Eye sprites"; m5-plan, deliverable 2 and owner decisions 3, 4, 10 and 11). Pure TypeScript with no Pixi
+// import. Written by Claude Code.
 import type { Rng } from "../../challenges/rng.ts";
 import type { Undersea } from "../../states/types.ts";
 import { createSlots, emitBetween, park, type Dot, type Emitter } from "./pool.ts";
-import { between, BUBBLES, bubbleRate, bubbleSway, EYES, PREWARM, type EyeSize } from "./spec.ts";
+import { between, BUBBLES, bubbleRate, bubbleSway, EYES, type EyeSize } from "./spec.ts";
 
 /** The eye as it shows at the last step. */
 export interface EyeFrame {
@@ -25,12 +25,15 @@ export interface UnderseaStats {
 
 export interface UnderseaSystem {
   /**
-   * A new game at `at` (s of weather time): no bubble or eye, Title's undersea, and the bubbles' and the eyes' draws
-   * from these streams. The eye stream draws this game's early eye now. Then step from `at − PREWARM` to prewarm.
+   * A new game: no bubble or eye, Title's undersea, and the bubbles' and the eyes' draws from these streams. The eye
+   * stream draws this game's early eye now. Then step over PREWARM s to prewarm.
    */
-  readonly reset: (at: number, bubbles: Rng, eyes: Rng) => void;
-  /** From `at` on: this part's bubbles, and eyes or not; null clears both (the kraken). */
-  readonly set: (at: number, undersea: Undersea | null) => void;
+  readonly reset: (bubbles: Rng, eyes: Rng) => void;
+  /**
+   * From `at` on: this part's bubbles, and an eye window opened or closed. Its `eyesFor` game ms last
+   * `eyesFor / 1000 × speed` s of weather time. Null clears both (the kraken).
+   */
+  readonly set: (at: number, undersea: Undersea | null, speed?: number) => void;
   readonly step: (from: number, to: number, options: { readonly rate: number }) => void;
   /** The eye shown, or null. */
   readonly eye: EyeFrame | null;
@@ -43,8 +46,10 @@ interface Eye {
   readonly y: number;
   readonly drift: number;
   readonly start: number;
-  /** When it would have ended, unhurried: the drift runs over this. */
+  /** Its window's length: the drift runs over this. */
   readonly span: number;
+  /** Each fade's length. */
+  readonly fade: number;
   /** When it starts fading out, and from which alpha (1 unless it was cut short during its fade-in). */
   outAt: number;
   outFrom: number;
@@ -53,15 +58,19 @@ interface Eye {
 
 /** The eye's alpha at `at`, before EYES.alpha: fade in, hold, fade out. */
 const eyeAlpha = (eye: Eye, at: number) => (at < eye.outAt
-  ? Math.min(1, (at - eye.start) / EYES.fadeIn)
-  : Math.max(0, eye.outFrom - (at - eye.outAt) / EYES.fadeOut));
+  ? Math.min(1, (at - eye.start) / eye.fade)
+  : Math.max(0, eye.outFrom - (at - eye.outAt) / eye.fade));
 
 /** Title's undersea, and every game's first: the scene's 1 bubble a second, no eye. */
-export const TITLE_UNDERSEA: Undersea = { part: 0, eyes: false };
+export const TITLE_UNDERSEA: Undersea = { part: 0, eyesFor: 0 };
 
 /**
  * `bubbles` are the drawn dots, one per pool slot (BUBBLES.pool). `eyesAlways` (`?debug&eyes=always`) shows an eye in
- * every slot where one may show, of either size, so they can be reviewed without waiting.
+ * every window where one may show, of either size, so they can be reviewed without waiting.
+ *
+ * An eye fills the window it shows in (EYES.fade): it fades in as the window opens and has faded out as it closes, so
+ * it never lingers over the text box or a challenge. A window closed early (a debug jump) fades it out from the
+ * alpha it reached.
  */
 export const createUndersea = (bubbles: readonly Dot[], eyesAlways = false): UnderseaSystem => {
   const slots = createSlots(bubbles.length);
@@ -76,14 +85,11 @@ export const createUndersea = (bubbles: readonly Dot[], eyesAlways = false): Und
   let undersea: Undersea | null = TITLE_UNDERSEA;
   /** When the kraken cleared the sea, or null. */
   let clearedAt: number | null = null;
-  let nextSlot = 0;
-  /** Bubbles emitted from here to here + EYES.slot are skipped: that slot shows an eye. */
-  let quietFrom = -Infinity;
   let eye: Eye | null = null;
   let frame: EyeFrame | null = null;
-  // This game's eye in parts 0–1: the slot it shows in, counted over the slots there, or −1 for none.
-  let earlySlot = -1;
-  let earlySlots = 0;
+  // This game's eye in parts 0–1: the window it shows in, counted over the long windows there, or −1 for none.
+  let earlyWindow = -1;
+  let earlyWindows = 0;
   let dropped = 0;
   let eyesShown = 0;
 
@@ -100,20 +106,27 @@ export const createUndersea = (bubbles: readonly Dot[], eyesAlways = false): Und
     if (eye !== null && at < eye.outAt) {
       eye.outFrom = eyeAlpha(eye, at);
       eye.outAt = at;
-      eye.end = at + EYES.fadeOut * eye.outFrom;
+      eye.end = at + eye.fade * eye.outFrom;
     }
   };
 
-  /** Whether the slot at `at` shows an eye. Parts 0–1 have at most this game's one; later parts draw each slot. */
-  const drawsEye = (rng: Rng, part: number) => {
+  /**
+   * Whether a window of `window` s shows an eye. Parts 0–1 have at most this game's one, in a long window; later
+   * parts draw each window.
+   */
+  const drawsEye = (rng: Rng, part: number, window: number) => {
     if (eyesAlways) {
       return true;
     }
 
     if (part < 2) {
-      earlySlots += 1;
+      if (window < EYES.early.minWindow) {
+        return false;
+      }
 
-      return earlySlots - 1 === earlySlot;
+      earlyWindows += 1;
+
+      return earlyWindows - 1 === earlyWindow;
     }
 
     return rng.next() < EYES.chance;
@@ -127,38 +140,35 @@ export const createUndersea = (bubbles: readonly Dot[], eyesAlways = false): Und
     return part >= EYES.largeFrom && rng.next() < 0.5 ? "large" : "small";
   };
 
-  const openSlot = (at: number) => {
+  /** A window of `window` s opens at `at` in part `part`: an eye fills it, or not. */
+  const openWindow = (at: number, part: number, window: number) => {
     if (eye !== null && eye.end <= at) {
       eye = null;
     }
 
-    if (undersea === null || !undersea.eyes || eye !== null) {
-      return;
-    }
-
     const rng = rngOf(eyeRng);
 
-    if (!drawsEye(rng, undersea.part)) {
+    // Never two at once: a window opening over a closing eye shows none.
+    if (!drawsEye(rng, part, window) || eye !== null) {
       return;
     }
 
     const next = () => rng.next();
-    const size = sizeOf(rng, undersea.part);
+    const size = sizeOf(rng, part);
     const band = EYES.band[size];
     const x = between(next, band.x);
     const y = between(next, band.y);
-    const hold = between(next, EYES.hold);
     const drift = Math.round((next() * 2 - 1) * EYES.drift);
-    const outAt = at + EYES.fadeIn + hold;
-    const end = outAt + EYES.fadeOut;
+    const fade = Math.min(EYES.fade, window * EYES.fadeShare);
+    const end = at + window;
 
-    eye = { size, x, y, drift, start: at, span: end - at, outAt, outFrom: 1, end };
-    quietFrom = at;
+    eye = { size, x, y, drift, start: at, span: window, fade, outAt: end - fade, outFrom: 1, end };
     eyesShown += 1;
   };
 
   const emit = (at: number) => {
-    if (at >= quietFrom && at < quietFrom + EYES.slot) {
+    // An eye shows in place of the bubbles.
+    if (eye !== null && at >= eye.start && at < eye.end) {
       return;
     }
 
@@ -223,26 +233,26 @@ export const createUndersea = (bubbles: readonly Dot[], eyesAlways = false): Und
   };
 
   return {
-    reset: (at, nextBubbles, nextEyes) => {
+    reset: (nextBubbles, nextEyes) => {
       bubbleRng = nextBubbles;
       eyeRng = nextEyes;
       undersea = TITLE_UNDERSEA;
       clearedAt = null;
       emitter.phase = 0;
-      nextSlot = at - PREWARM + EYES.slot;
-      quietFrom = -Infinity;
       eye = null;
       frame = null;
-      earlySlot = nextEyes.next() < EYES.early.chance ? nextEyes.nextInt(EYES.early.slots) : -1;
-      earlySlots = 0;
+      earlyWindow = nextEyes.next() < EYES.early.chance ? nextEyes.nextInt(EYES.early.windows) : -1;
+      earlyWindows = 0;
       dropped = 0;
       eyesShown = 0;
       slots.clear();
       bubbles.forEach(park);
     },
-    set: (at, next) => {
-      if (next === null || !next.eyes) {
+    set: (at, next, speed = 1) => {
+      if (next === null || next.eyesFor <= 0) {
         closeEye(at);
+      } else if (clearedAt === null) {
+        openWindow(at, next.part, (next.eyesFor / 1000) * speed);
       }
 
       if (next === null && clearedAt === null) {
@@ -252,11 +262,6 @@ export const createUndersea = (bubbles: readonly Dot[], eyesAlways = false): Und
       undersea = next;
     },
     step: (from, to, { rate }) => {
-      while (nextSlot <= to) {
-        openSlot(nextSlot);
-        nextSlot += EYES.slot;
-      }
-
       if (undersea !== null) {
         emitBetween(emitter, bubbleRate(undersea.part) * rate, from, to, emit);
       }

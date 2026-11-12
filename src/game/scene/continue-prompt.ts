@@ -1,13 +1,15 @@
 // "Tap to continue": the pause overlay (m5-plan, deliverable 5), merged with the audio prompt of m3-plan's deliverable
 // 5, so a pause and audio that needs a tap show one prompt, and one tap answers both. A dim over the whole screen, and
-// white text on a black box at the playfield's centre, over everything: the scene's texts, the corner buttons and any
-// flash. Static.
+// white text on a black box under the logo (positions.ts), over everything: the scene's texts, the corner buttons and
+// any flash. Static. While it shows, the scene's own tap prompt (Title's "Tap to begin", the ending's "Tap to play
+// again") is not drawn (m5-plan decision 13): only `renderable` changes, so its fade and pulse, frozen with the paused
+// clock, carry on from the same alpha once the prompt goes.
 // Written by Claude Code.
 import { Container, Graphics } from "pixi.js";
 import type { Layers } from "../../core/layers.ts";
 import { snapToDevicePixels, type Layout } from "../../core/layout.ts";
 import { BLACK } from "./palette.ts";
-import { CONTINUE_PROMPT } from "./positions.ts";
+import { CONTINUE_PROMPT, TAP_PROMPT } from "./positions.ts";
 import { createUiText, placeUiText } from "./ui-text.ts";
 
 export const TAP_TO_CONTINUE = "Tap to continue";
@@ -80,6 +82,13 @@ export const createContinuePrompt = (layers: Layers, initial: Layout): ContinueP
     if (visible !== container.visible) {
       container.visible = visible;
       draw();
+    }
+
+    // Looked up each time: the scene is built after this prompt, at the gate.
+    const covered = layers.ui.getChildByLabel(TAP_PROMPT.label);
+
+    if (covered !== null) {
+      covered.renderable = !visible;
     }
   };
 

@@ -13,7 +13,8 @@
 //   the rest: the challenge reset already lets go of everything it held.
 // - Audio that needs a tap while the game runs (an iOS interruption by a call or Siri) pauses it too: the audio
 //   lifecycle's prompt rising is polled on each frame, so one prompt stands for both. Only its rise: a prompt still up
-//   after the resume tap (its unlock settling) doesn't pause again.
+//   after the resume tap (its unlock settling, or never taking) doesn't pause again; the game runs under it, as in M3,
+//   and the lifecycle drops its taps' advances until audio runs.
 // - Nothing here outlives a game in a way a replay could see: the replay tap can't land while paused (the resume
 //   drops it), and the state is a flag and a pending resume, both cleared by the resume.
 
@@ -90,6 +91,8 @@ export const createPause = (deps: PauseDeps): Pause => {
 
       paused = false;
       resuming = true;
+      // The audio prompt the resume tap's unlock keeps up (audio-lifecycle.ts) is no rise: it doesn't pause again.
+      promptWasUp = deps.audioPrompt();
       view.setPaused(false);
       syncInput();
     },

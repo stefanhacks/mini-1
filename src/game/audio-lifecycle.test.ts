@@ -254,4 +254,39 @@ describe("audio lifecycle", () => {
     audio.setStatus("running");
     assert.equal(view.visible, false);
   });
+
+  it("keeps the prompt after a tap whose unlock doesn't take (a pause's resume), dropping its taps' advances", () => {
+    const t = setup();
+
+    // Paused on a hidden tab: suspended while hidden, and `visible` skipped (page-lifecycle.ts), so no prompt.
+    t.hide();
+    t.page.visible = true;
+    assert.equal(t.view.visible, false);
+
+    // The resume tap: its unlock never settles (an iOS gesture that doesn't count), twice on touch.
+    t.lifecycle.activate();
+    t.lifecycle.activate();
+    assert.equal(t.view.visible, true);
+    assert.equal(t.lifecycle.prompting, true);
+    assert.deepEqual(t.lifecycle.filter([ADVANCE, CANCEL]), [CANCEL]);
+
+    // The next tap is the prompt's: still no advance, until audio runs.
+    t.lifecycle.activate();
+    assert.deepEqual(t.lifecycle.filter([ADVANCE]), []);
+    t.audio.setStatus("running");
+    assert.equal(t.view.visible, false);
+    assert.deepEqual(t.lifecycle.filter([ADVANCE]), [ADVANCE]);
+  });
+
+  it("drops the advance of a resume tap whose unlock takes between two drains", () => {
+    const t = setup();
+
+    t.hide();
+    t.page.visible = true;
+    t.lifecycle.activate();
+    t.audio.setStatus("running");
+    assert.equal(t.view.visible, false);
+    assert.deepEqual(t.lifecycle.filter([ADVANCE]), []);
+    assert.deepEqual(t.lifecycle.filter([ADVANCE]), [ADVANCE]);
+  });
 });

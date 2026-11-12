@@ -79,11 +79,14 @@ export const createStory = (deps: GameDeps, session: GameSession): GameState => 
     showPage();
   };
 
-  /** Part 0's preamble: the text box waits STORY_PREAMBLE_MS, with its strike. */
+  /** Part 0's preamble: the text box waits STORY_PREAMBLE_MS, with its strike. An eye may show until it comes. */
   const startPreamble = (scope: TimerScope) => {
     session.phase = "preamble";
     createCuePlayer(deps, session, "story").schedule(scope, STORY_PREAMBLE_CUES);
-    scope.after(STORY_PREAMBLE_MS, startText);
+    scope.after(STORY_PREAMBLE_MS, () => {
+      scene().setUndersea({ part: session.part, eyesFor: 0 });
+      startText();
+    });
   };
 
   /**
@@ -132,7 +135,8 @@ export const createStory = (deps: GameDeps, session: GameSession): GameState => 
       session.typewriter = null;
       audio.setStoryPart(session.part);
       // The bubbles rise with each won round as its part begins, after `afterGamePlayDelay` (GameManager.cs:155–162).
-      scene().setUndersea({ part: session.part, eyes: true });
+      // No eye behind a page (m5-plan, owner decision 11): only in part 0's preamble, before the text box shows.
+      scene().setUndersea({ part: session.part, eyesFor: session.part === 0 ? STORY_PREAMBLE_MS : 0 });
 
       if (session.part === 0) {
         startPreamble(scope);

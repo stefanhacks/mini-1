@@ -36,5 +36,6 @@ export const wirePause = ({
   onInput: (input) => {
     router.setPauseInput(input);
     pauseButton.setEnabled(input !== "off");
+    pauseButton.setPaused(input === "paused");
   },
 });

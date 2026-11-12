@@ -192,13 +192,17 @@ export const createRain = (drops: readonly Dot[], splashes: readonly Dot[]): Rai
     moveDrop(slot, at, to, box);
   };
 
+  const killSplash = (slot: number) => {
+    splashSlots.free(slot);
+    park(splashes[slot]);
+  };
+
   const placeSplash = (slot: number, to: number) => {
     const age = to - splashBirth[slot];
     const dot = splashes[slot];
 
     if (age >= SPLASH.life) {
-      splashSlots.free(slot);
-      park(dot);
+      killSplash(slot);
       return;
     }
 
@@ -222,6 +226,13 @@ export const createRain = (drops: readonly Dot[], splashes: readonly Dot[]): Rai
     },
     step: (from, to, { rate, boat }) => {
       const boatAt = boat === null ? null : placeBoatBox(box, boat);
+
+      // The splashes gone by `to` free their slots first, so a long step's new ones don't find the pool full of them.
+      for (let slot = 0; slot < splashes.length; slot++) {
+        if (splashSlots.live[slot] === 1 && splashBirth[slot] + SPLASH.life <= to) {
+          killSplash(slot);
+        }
+      }
 
       for (let slot = 0; slot < drops.length; slot++) {
         if (dropSlots.live[slot] === 1) {

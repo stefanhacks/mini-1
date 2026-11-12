@@ -134,6 +134,38 @@ describe("rain", () => {
     assert.equal(rain.stats.dropped, 0);
   });
 
+  it("lands a splash's three dots within 1 px of each other", () => {
+    const { rain, splashes } = rainFrom(9);
+    let checked = 0;
+
+    // About one drop a second: one splash at a time.
+    run((from, to) => {
+      rain.step(from, to, { rate: 1 / RAIN.rate, boat: null });
+
+      const shown = live(splashes);
+
+      if (shown.length === SPLASH.count) {
+        const xs = shown.map((dot) => dot.x);
+        const ys = shown.map((dot) => dot.y);
+
+        const spread = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+
+        assert.ok(spread <= 1, `${xs.join()} ${ys.join()}`);
+        checked += 1;
+      }
+    }, 0, 30);
+
+    assert.ok(checked > 100, `${checked}`);
+  });
+
+  it("drops nothing under long steps (?timescale=32): spent splashes free their slots first", () => {
+    const { rain } = rainFrom(10);
+
+    run((from, to) => rain.step(from, to, NO_BOAT), 0, 60, 32 / 60);
+    run((from, to) => rain.step(from, to, NO_BOAT), 60, 120, 3.2);
+    assert.equal(rain.stats.dropped, 0);
+  });
+
   it("kills drops on the intact boat's capsule, and splashes there", () => {
     const boat = { x: 250, y: 310 };
     const { rain, drops, splashes } = rainFrom(4);
@@ -193,7 +225,7 @@ const underseaFrom = (seed: number, always = false) => {
   const undersea = createUndersea(bubbles, always);
   const eyes: EyeFrame[] = [];
 
-  undersea.reset(PREWARM, createRng(seed), createRng(seed + 1));
+  undersea.reset(createRng(seed), createRng(seed + 1));
 
   const step = (from: number, to: number) => {
     undersea.step(from, to, { rate: 1 });
@@ -214,7 +246,7 @@ describe("bubbles", () => {
 
     const { undersea, step } = underseaFrom(1);
     const alive = (part: number, from: number) => {
-      undersea.set(from, { part, eyes: false });
+      undersea.set(from, { part, eyesFor: 0 });
       run(step, from, from + 10);
 
       return undersea.stats.bubbles;
@@ -244,7 +276,7 @@ describe("bubbles", () => {
   it("stops and fades out over 1 s once the kraken shows, and starts again on reset", () => {
     const { bubbles, undersea, step } = underseaFrom(3);
 
-    undersea.set(2, { part: 3, eyes: false });
+    undersea.set(2, { part: 3, eyesFor: 0 });
     run(step, 2, 10);
     assert.ok(undersea.stats.bubbles >= 25);
     undersea.set(10, null);
@@ -255,104 +287,155 @@ describe("bubbles", () => {
     run(step, 11.1, 20);
     assert.equal(undersea.stats.bubbles, 0, "none after the kraken");
 
-    undersea.reset(20, createRng(3), createRng(4));
+    undersea.reset(createRng(3), createRng(4));
     step(20 - PREWARM, 20);
     assert.equal(undersea.stats.bubbles, 2, "a replay prewarms Title's 1 a second again");
   });
 });
 
 describe("eyes", () => {
-  /** Plays `seconds` of part `part` with eyes allowed, from a fresh game; the eyes it showed. */
-  const play = (seed: number, part: number, seconds: number, always = false) => {
+  /**
+   * The windows of a game with no text box or challenge up, in game ms (states/: part 0's preamble, each transition
+   * and the wait after each won round, the ending before the kraken), as [part, window].
+   */
+  const WINDOWS: readonly (readonly [number, number])[] = [
+    [0, 2500], [0, 500], [0, 1250], [1, 500], [1, 1250], [2, 500], [2, 1250], [3, 1500],
+  ];
+
+  /** Plays a whole game's windows from a fresh game, `gap` s of pages or challenges between them; the eyes shown. */
+  const playGame = (seed: number, always = false, gap = 20) => {
     const { undersea, step, eyes } = underseaFrom(seed, always);
+    const shown: { part: number; frames: EyeFrame[] }[] = [];
+    let at = PREWARM;
 
-    undersea.set(PREWARM, { part, eyes: true });
-    run(step, PREWARM, PREWARM + seconds);
+    for (const [part, window] of WINDOWS) {
+      const before = eyes.length;
 
-    return { shown: undersea.stats.eyes, eyes };
+      undersea.set(at, { part, eyesFor: window });
+      run(step, at, at + window / 1000);
+      at += window / 1000;
+      undersea.set(at, { part, eyesFor: 0 });
+      assert.equal(undersea.eye, null, "an eye is gone as its window closes");
+
+      if (eyes.length > before) {
+        shown.push({ part, frames: eyes.slice(before) });
+      }
+
+      run(step, at, at + gap);
+      assert.equal(undersea.eye, null, "no eye behind a page or during a challenge");
+      at += gap;
+    }
+
+    return { shown, count: undersea.stats.eyes };
   };
 
-  it("never shows on Title or while eyes are off, even forced", () => {
+  it("never shows on Title or while no window is open, even forced", () => {
     const { undersea, step } = underseaFrom(1, true);
 
     run(step, PREWARM, 60);
-    assert.equal(undersea.stats.eyes, 0);
-    undersea.set(60, { part: 3, eyes: false });
+    undersea.set(60, { part: 3, eyesFor: 0 });
     run(step, 60, 120);
     assert.equal(undersea.stats.eyes, 0);
   });
 
-  it("shows at most one small eye in parts 0–1, in about 5% of games", () => {
+  it("shows at most one small eye in parts 0–1, in about 5% of games, however long the pages take", () => {
     let games = 0;
 
     for (let seed = 0; seed < 2000; seed++) {
-      const { shown, eyes } = play(seed * 7919, seed % 2, 60);
+      const { shown } = playGame(seed * 7919, false, 1 + (seed % 7) * 10);
+      const early = shown.filter(({ part }) => part < 2);
 
-      assert.ok(shown <= 1);
-      assert.ok(eyes.every((eye) => eye.size === "small"));
-      games += shown;
+      assert.ok(early.length <= 1);
+      assert.ok(early.every(({ frames }) => frames.every((eye) => eye.size === "small")));
+      // Only in a window of at least 1 s: never in a transition.
+      assert.ok(early.every(({ frames }) => frames.length > 50), "a whole eye, not a glimpse");
+      games += early.length;
     }
 
     assert.ok(games > 60 && games < 140, `${games} of 2000`);
   });
 
-  it("shows about 1 slot in 6 from part 2, small in part 2 and either size from part 3, never two at once", () => {
+  it("shows about 1 window in 6 from part 2, small in part 2 and either size from part 3", () => {
     let shown = 0;
-    let slots = 0;
+    let windows = 0;
     const sizes = new Set<string>();
 
-    for (let seed = 0; seed < 200; seed++) {
-      const part2 = play(seed, 2, 120);
-      const part3 = play(seed + 10_000, 3, 120);
+    for (let seed = 0; seed < 3000; seed++) {
+      const late = playGame(seed, false, 1).shown.filter(({ part }) => part >= 2);
 
-      assert.ok(part2.eyes.every((eye) => eye.size === "small"));
-      part3.eyes.forEach((eye) => sizes.add(eye.size));
-      shown += part2.shown;
-      // A slot is drawn only while no eye shows: an eye covers 2–3 slots.
-      slots += 120 / EYES.slot - part2.shown * 1.6;
+      for (const { part, frames } of late) {
+        assert.ok(part >= 3 || frames.every((eye) => eye.size === "small"));
+        frames.forEach((eye) => sizes.add(eye.size));
+      }
+
+      shown += late.length;
+      windows += WINDOWS.filter(([part]) => part >= 2).length;
     }
 
     assert.deepEqual([...sizes].sort(), ["large", "small"]);
-    assert.ok(Math.abs(shown / slots - EYES.chance) < 0.03, `${shown / slots}`);
+    assert.ok(Math.abs(shown / windows - EYES.chance) < 0.02, `${shown / windows}`);
   });
 
-  it("fades in over 0.5 s, holds 1.5–3 s, fades out, in its band, on whole px, drifting at most 3 px", () => {
-    const { eyes } = play(5, 3, 30, true);
+  it("fills its window, with shorter fades in a transition, in its band, on whole px", () => {
+    const { shown, count } = playGame(5, true);
 
-    assert.ok(eyes.length > 0);
-    assert.ok(eyes.every((eye) => Number.isInteger(eye.x) && Number.isInteger(eye.y)));
-    assert.ok(eyes.every((eye) => eye.alpha >= 0 && eye.alpha <= EYES.alpha));
-    assert.ok(eyes.some((eye) => Math.abs(eye.alpha - EYES.alpha) < 1e-9));
+    assert.equal(count, WINDOWS.length, "forced: an eye in every window");
 
-    for (const eye of eyes) {
-      const band = EYES.band[eye.size];
+    for (const { frames } of shown) {
+      assert.ok(frames.every((eye) => Number.isInteger(eye.x) && Number.isInteger(eye.y)));
+      assert.ok(frames.every((eye) => eye.alpha >= 0 && eye.alpha <= EYES.alpha + 1e-9));
 
-      assert.ok(eye.x >= band.x.min - EYES.drift - 1 && eye.x <= band.x.max + EYES.drift + 1);
-      assert.ok(eye.y >= band.y.min - 1 && eye.y <= band.y.max + 1);
+      for (const eye of frames) {
+        const band = EYES.band[eye.size];
+
+        assert.ok(eye.x >= band.x.min - EYES.drift - 1 && eye.x <= band.x.max + EYES.drift + 1);
+        assert.ok(eye.y >= band.y.min - 1 && eye.y <= band.y.max + 1);
+      }
     }
+
+    // Frames of 1/60 s: the preamble's eye reaches full alpha after 30 frames and holds 1.5 s; a transition's peaks.
+    const preamble = shown[0].frames;
+    const transition = shown[1].frames;
+    const full = (frames: readonly EyeFrame[]) => frames.filter((eye) => Math.abs(eye.alpha - EYES.alpha) < 1e-6);
+
+    assert.ok(Math.abs(preamble[14].alpha - EYES.alpha / 2) < 0.03, `${preamble[14].alpha}`);
+    assert.ok(full(preamble).length >= 89, `${full(preamble).length}`);
+    assert.ok(full(transition).length >= 5 && transition.length < 30, `${full(transition).length}`);
   });
 
-  it("closes a shown eye from the alpha it reached when eyes turn off, and skips the bubbles of its slot", () => {
-    const { undersea, step, bubbles } = underseaFrom(9, true);
+  it("closes a shown eye from the alpha it reached when its window closes early, and shows no bubble meanwhile", () => {
+    const { undersea, step } = underseaFrom(9, true);
 
-    undersea.set(PREWARM, { part: 2, eyes: true });
-    // The first slot after 2 s opens at 4 s, with an eye: no bubble from it for 2 s.
-    run(step, PREWARM, 4.25);
+    undersea.set(PREWARM, { part: 2, eyesFor: 1250 });
 
-    const opening = undersea.eye?.alpha ?? 0;
     const before = undersea.stats.bubbles;
 
+    run(step, PREWARM, PREWARM + 0.25);
+
+    const opening = undersea.eye?.alpha ?? 0;
+
     assert.ok(opening > 0 && opening < EYES.alpha);
-    undersea.set(4.25, { part: 2, eyes: false });
-    run(step, 4.25, 4.5);
+    assert.ok(undersea.stats.bubbles <= before, "no bubble while the eye shows");
+    undersea.set(PREWARM + 0.25, { part: 2, eyesFor: 0 });
+    run(step, PREWARM + 0.25, PREWARM + 0.5);
     assert.equal(undersea.eye, null, "a 0.25 s fade-in closes in 0.125 s");
-    run(step, 4.5, 5.9);
-    assert.ok(undersea.stats.bubbles <= before, "the eye's slot emits no bubble");
-    assert.ok(live(bubbles).length === undersea.stats.bubbles);
+  });
+
+  it("clears with the bubbles at the kraken, and opens no window after it", () => {
+    const { undersea, step } = underseaFrom(11, true);
+
+    undersea.set(PREWARM, { part: 3, eyesFor: 1500 });
+    run(step, PREWARM, PREWARM + 1);
+    undersea.set(PREWARM + 1, null);
+    run(step, PREWARM + 1, PREWARM + 1.6);
+    assert.equal(undersea.eye, null);
+    undersea.set(PREWARM + 1.6, { part: 3, eyesFor: 1500 });
+    run(step, PREWARM + 1.6, PREWARM + 3);
+    assert.deepEqual([undersea.eye, undersea.stats.eyes], [null, 1]);
   });
 
   it("is the same for the same seed", () => {
-    assert.deepEqual(play(42, 3, 120).eyes, play(42, 3, 120).eyes);
-    assert.notDeepEqual(play(42, 3, 120).eyes, play(43, 3, 120).eyes);
+    assert.deepEqual(playGame(42, true).shown, playGame(42, true).shown);
+    assert.notDeepEqual(playGame(42, true).shown, playGame(43, true).shown);
   });
 });

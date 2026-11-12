@@ -77,7 +77,10 @@ class FakeScene implements SceneView {
   boat: Boat = "whole";
   kraken = false;
   black = false;
-  /** Every `startWeather` seed, and every undersea set, `reset`'s included, as "part eyes" or "none". */
+  /**
+   * Every `startWeather` seed, and every undersea set, `reset`'s included, as "part" and its eye window in ms, or
+   * "none".
+   */
   weathers: number[] = [];
   undersea: string[] = [];
   paging: Paging = { linesPerPage: 2, measure: fixedWidthMeasure(30) };
@@ -109,7 +112,7 @@ class FakeScene implements SceneView {
     this.boat = "whole";
     this.kraken = false;
     this.black = false;
-    this.setUndersea({ part: 0, eyes: false });
+    this.setUndersea({ part: 0, eyesFor: 0 });
   }
 
   /** Logo and credits both. */
@@ -185,7 +188,7 @@ class FakeScene implements SceneView {
   }
 
   setUndersea(undersea: Undersea | null) {
-    this.undersea.push(undersea === null ? "none" : `${undersea.part} ${undersea.eyes ? "eyes" : "no eyes"}`);
+    this.undersea.push(undersea === null ? "none" : `${undersea.part} ${undersea.eyesFor}`);
   }
 }
 
@@ -899,13 +902,14 @@ describe("a full game", () => {
     assert.deepEqual([t.game.session.games, t.game.session.seed], [4, 45], "each game has a new seed");
   });
 
-  it("sets the bubbles per part as each part begins, eyes only while reading, none from the kraken on", async () => {
+  it("sets the bubbles per part as each part begins, eyes only between pages, none from the kraken on", async () => {
     const t = setup();
 
     await toTitle(t);
     assert.deepEqual(t.scene.weathers, [t.game.session.seed], "Title restarts the weather from the game's seed");
-    assert.deepEqual(t.scene.undersea, ["0 no eyes"], "never an eye on Title");
+    assert.deepEqual(t.scene.undersea, ["0 0"], "never an eye on Title");
     leaveTitle(t);
+    assert.deepEqual(t.scene.undersea, ["0 0", `0 ${STORY_PREAMBLE_MS}`], "an eye may show in part 0's preamble");
     t.wait(STORY_PREAMBLE_MS);
 
     for (let part = 0; part < STORY_PARTS.length - 1; part++) {
@@ -914,24 +918,26 @@ describe("a full game", () => {
     }
 
     readPart(t);
+    const between = (part: number) => [`${part} ${TRANSITION_MS}`, `${part} 0`, `${part} ${AFTER_ROUND_MS}`];
+
     assert.deepEqual(t.scene.undersea, [
-      "0 no eyes",
-      "0 eyes", "0 no eyes",
-      "1 eyes", "1 no eyes",
-      "2 eyes", "2 no eyes",
-      "3 eyes",
-      "3 eyes",
-    ], "a won round's bubbles start with the next part; no eye from the Transition to the end of the round");
+      "0 0",
+      `0 ${STORY_PREAMBLE_MS}`, "0 0", ...between(0),
+      "1 0", ...between(1),
+      "2 0", ...between(2),
+      "3 0",
+      `3 ${ENDING_MS.kraken}`,
+    ], "eyes only while no text box or challenge is up; a won round's bubbles start with the next part");
 
     t.wait(ENDING_MS.kraken - FRAME_MS);
-    assert.equal(t.scene.undersea.at(-1), "3 eyes");
+    assert.equal(t.scene.undersea.at(-1), `3 ${ENDING_MS.kraken}`);
     t.wait(FRAME_MS);
     assert.equal(t.scene.undersea.at(-1), "none");
     t.wait(ENDING_MS.replay - ENDING_MS.kraken);
     t.input.advance();
     t.frame();
     assert.equal(t.machine.current, "title");
-    assert.deepEqual(t.scene.undersea.slice(-2), ["none", "0 no eyes"], "a replay starts from Title's again");
+    assert.deepEqual(t.scene.undersea.slice(-2), ["none", "0 0"], "a replay starts from Title's again");
     assert.deepEqual(t.scene.weathers, [t.game.session.seed - 1, t.game.session.seed]);
   });
 });
