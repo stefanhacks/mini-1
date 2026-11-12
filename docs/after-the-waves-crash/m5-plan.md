@@ -136,3 +136,11 @@ One rule per effect, decided once in a table in `src/game/motion.ts` (or the exi
 8. **The screen tone uses the renderer's clear colour,** not a drawn layer (wave 0 measured the layer's cost).
 9. **"Reduce flashes" turns the screen tone off** and caps the square's flash at 0.4. OS reduced motion keeps the tone, capped.
 10. **Bubbles follow the script's intent:** 1/s, then 2, 4, 6 after each round; none once the kraken shows.
+
+## Owner decisions after the wave-1 reviews
+
+11. **Eyes show between pages, not behind them.** During story pages the opaque text box and the vignette hid them (Halfling Eye measured about 73% of eye centres over 50% vignette black). They may appear only when no text box is up: the pause before part 0's first page, the 1.25 s after each won round, the transitions, and the ending before the kraken. Their area shrinks to the clear middle under the boat (about y 345–405, x 170–330). Still never on Title, none from the kraken on.
+12. **Splashes overlap:** the 3 dots land within 1 px, so a splash reads as one speck, as the original's overlapping particles did.
+13. **Pause on Title and the ending card:** the title's own prompt and "Tap to play again" hide while paused, the pause box sits clear of the logo, and the pause button shows a play icon while paused.
+14. **Weather cost is checked in M7:** about +0.8–0.9 ms average and +1.0–1.6 ms p95 per frame on the throttled CPU renderer. Real devices decide; the rain rate can be halved there if needed.
+15. **Pause choices kept as built (wave 1):** returning to the tab doesn't resume audio by itself (one tap resumes both); mute only mutes while paused; Escape or P toggles pause (ordinary keys at the gate); the pause button resumes like any tap while paused. The bubbles fade over 1 s at the kraken rather than cut (looks right; owner may revisit).
