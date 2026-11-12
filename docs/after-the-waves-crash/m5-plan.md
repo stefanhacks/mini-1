@@ -145,3 +145,8 @@ One rule per effect, decided once in a table in `src/game/motion.ts` (or the exi
 14. **Weather cost is checked in M7:** about +0.8–0.9 ms average and +1.0–1.6 ms p95 per frame on the throttled CPU renderer. Real devices decide; the rain rate can be halved there if needed.
 15. **Pause choices kept as built (wave 1):** returning to the tab doesn't resume audio by itself (one tap resumes both); mute only mutes while paused; Escape or P toggles pause (ordinary keys at the gate); the pause button resumes like any tap while paused. The bubbles fade over 1 s at the kraken rather than cut (looks right; owner may revisit).
 16. **Performance is not a focus.** This is a light stack. Reviews stop measuring frame cost and flag performance only when something is clearly wrong (a leak, a visible stutter). Wave 2 has no cost budgets or throttled runs, and M7's device pass is a sanity check, not a measurement pass.
+17. **The large eye stays a near-invisible secret.** Eyes fill the between-pages windows (part 0's preamble, the 1.25 s after a won round, the transitions, the ending before the kraken); large ones only from part 3, whose only window is the ending's start, under the lifting black. Kept as is.
+
+Notes from the wave-1 fixes:
+- Title's prompt and "Tap to play again" hide whenever "Tap to continue" shows (paused or audio-only), so two prompts never show at once. The pause box sits at y 405, where the hidden prompt was, clear of the logo.
+- If the resume tap's audio unlock fails, "Tap to continue" stays up over the running game and its taps don't advance until audio is `running`, as in M3.
