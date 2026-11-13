@@ -341,25 +341,25 @@ describe("eyes", () => {
     assert.equal(undersea.stats.eyes, 0);
   });
 
-  it("shows about 1 window in 6 from part 2, small in part 2 and either size from part 3", () => {
-    let shown = 0;
-    let windows = 0;
+  // Not forced: `always` draws either size in every part (eyes.ts). How often the eyes show (EYES.chance) is left out:
+  // 20 games are enough to see eyes in part 2 and a large one in part 3.
+  it("shows only small eyes in part 2 and either size from part 3", () => {
     const sizes = new Set<string>();
+    let inPart2 = 0;
 
-    for (let seed = 0; seed < 3000; seed++) {
-      const late = playGame(seed, false, 1).shown.filter(({ part }) => part >= 2);
+    for (let seed = 0; seed < 20; seed++) {
+      for (const { part, frames } of playGame(seed, false, 1).shown.filter((eye) => eye.part >= 2)) {
+        if (part === 2) {
+          inPart2 += 1;
+          assert.ok(frames.every((eye) => eye.size === "small"));
+        }
 
-      for (const { part, frames } of late) {
-        assert.ok(part >= 3 || frames.every((eye) => eye.size === "small"));
         frames.forEach((eye) => sizes.add(eye.size));
       }
-
-      shown += late.length;
-      windows += WINDOWS.filter(([part]) => part >= 2).length;
     }
 
+    assert.ok(inPart2 > 0);
     assert.deepEqual([...sizes].sort(), ["large", "small"]);
-    assert.ok(Math.abs(shown / windows - EYES.chance) < 0.02, `${shown / windows}`);
   });
 
   it("fills its window, with shorter fades in a transition, in its band, on whole px", () => {

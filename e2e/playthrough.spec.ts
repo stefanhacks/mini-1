@@ -1,7 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 import { rectToScreen, type Insets, type Rect } from "../src/core/layout.ts";
 import type { Direction } from "../src/game/direction.ts";
-import { STORY_PARTS } from "../src/game/story/script.ts";
+import { createStoryCursor, type StoryPage } from "../src/game/story/cursor.ts";
+import type { Measure } from "../src/game/story/paging.ts";
+import { STORY_PARTS, type StoryLine } from "../src/game/story/script.ts";
 import { storyLinesPerPage, TEXT_BOX_RECT } from "../src/game/text-box.ts";
 import {
   answerChallenge,
@@ -13,7 +15,6 @@ import {
   openGame,
   playGame,
   playRound,
-  readAudio,
   readCounts,
   readCues,
   readGame,
@@ -55,6 +56,56 @@ const expectInside = (inner: Rect, outer: Rect) => {
   expect(inner.x + inner.width).toBeLessThanOrEqual(outer.x + outer.width);
   expect(inner.y).toBeGreaterThanOrEqual(outer.y);
   expect(inner.y + inner.height).toBeLessThanOrEqual(outer.y + outer.height);
+};
+
+/**
+ * The longest page of `part`, as the game's cursor pages it with the page's measure (`debug.scene.paging`). The
+ * measure is asked for in rounds, the texts the paging needed and didn't have yet, until a run needs none.
+ */
+const longestPage = async (page: Page, part: readonly StoryLine[], linesPerPage: number) => {
+  const measured = new Map<string, readonly string[]>();
+
+  for (;;) {
+    const missing = new Set<string>();
+    const measure: Measure = (text) => {
+      const lines = measured.get(text);
+
+      if (lines === undefined) {
+        missing.add(text);
+      }
+
+      return lines ?? [];
+    };
+    const cursor = createStoryCursor(part, linesPerPage, measure);
+    let longest: StoryPage | null = null;
+
+    for (; cursor.page !== null; cursor.advance()) {
+      if (longest === null || cursor.page.text.length > longest.text.length) {
+        longest = cursor.page;
+      }
+    }
+
+    if (missing.size === 0) {
+      if (longest === null) {
+        throw new Error("a story part with no page");
+      }
+
+      return longest;
+    }
+
+    const texts = [...missing];
+    const lines = await page.evaluate((each) => {
+      const paging = window.debug.scene?.paging;
+
+      if (paging === undefined) {
+        throw new Error("no scene");
+      }
+
+      return each.map((text) => paging.measure(text));
+    }, texts);
+
+    texts.forEach((text, index) => measured.set(text, lines[index] ?? []));
+  }
 };
 
 const watchErrors = (page: Page) => {
@@ -276,7 +327,12 @@ test.describe("at the smallest square", () => {
 
   test.use({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 3 });
 
-  // The iPhone's size and DPR, on desktop: the paging depends on the layout and the DPR, not on touch.
+  /**
+   * The longest page of each story part, as the game pages it, shown with the scene's own `setStoryPage`: the cursor
+   * (story/cursor.ts) runs here on the page's own measure, so the pages are the game's without reading through them.
+   * paging.test.ts and cursor.test.ts cover the paging of the rest. The iPhone's size and DPR, on desktop: the paging
+   * depends on the layout and the DPR, not on touch.
+   */
   test("story pages never spill out of the text box", async ({ page }) => {
     await openGame(page);
     await page.evaluate((insets) => {
@@ -303,14 +359,16 @@ test.describe("at the smallest square", () => {
     const layout = await readLayout(page);
     const box = rectToScreen(layout, TEXT_BOX_RECT);
     const linesPerPage = storyLinesPerPage(layout);
-    let pages = 0;
 
     expect(linesPerPage).toBeGreaterThanOrEqual(1);
+    expect(await page.evaluate(() => window.debug.scene?.paging.linesPerPage)).toBe(linesPerPage);
 
-    const checkPage = async () => {
+    for (const part of STORY_PARTS) {
+      const longest = await longestPage(page, part, linesPerPage);
+
+      await page.evaluate((shown) => window.debug.scene?.setStoryPage(shown), longest);
+
       const text = await readStoryText(page);
-
-      pages += 1;
 
       if (text === null) {
         throw new Error("a story page is shown without its text");
@@ -319,11 +377,7 @@ test.describe("at the smallest square", () => {
       expect(text.rows).toBeGreaterThanOrEqual(1);
       expect(text.rows).toBeLessThanOrEqual(linesPerPage);
       expectInside(text.bounds, box);
-    };
-
-    await playGame(page, await keyboardDriver(page), checkPage);
-    // Every line has at least one page.
-    expect(pages).toBeGreaterThanOrEqual(STORY_PARTS.flat().length);
+    }
   });
 });
 
@@ -351,21 +405,18 @@ const expectTitleClips = async (page: Page) => {
 
 const POLL = { intervals: [20, 50, 100], timeout: 15_000 };
 
-/** Long enough for a pending overlay change to reach its bar (9.6 s), with room for a busy machine. */
-const BAR_POLL = { intervals: [100, 200, 300], timeout: 25_000 };
-
 test.describe("on a small viewport", () => {
-  // The checks read the game and the audio, not pixels: every frame renders cheaper.
+  // The checks read the game, not pixels: every frame renders cheaper.
   test.use({ viewport: { width: 640, height: 400 } });
 
   /**
-   * Two games by keyboard. The first plays its cues at the plan's times and waits for the music's bar in part 0 and at
-   * bgm02 (m5-plan, owner decision 18: unit tests keep the part → track mapping); the replay doesn't grow timers,
-   * listeners, display objects or clips. The music, the clock and leaks don't depend on the device: desktop only
+   * Two games by keyboard, at FAST time. The first plays its cues at the plan's times; the replay doesn't grow timers,
+   * listeners, display objects or clips. The music on its bar (9.6 s) is the audio unit tests': bar-clock.test.ts (the
+   * bar grid), overlay-plan.test.ts (part → track, per-bar restarts) and audio-engine.test.ts (changes on the bar,
+   * bgm02 finishing first), m5-plan owner decision 16. The clock and leaks don't depend on the device: desktop only
    * (untagged, playwright.config.ts).
    */
-  test("plays its cues on time and the music on a bar, then replays without growing anything", async ({ page }) => {
-
+  test("plays its cues on time, then replays without growing anything", async ({ page }) => {
     const problems = watchErrors(page);
     const driver = await keyboardDriver(page);
 
@@ -386,24 +437,8 @@ test.describe("on a small viewport", () => {
       expect(cue.time - cue.at).toBeCloseTo((title[0]?.time ?? 0) - (title[0]?.at ?? 0), 6);
     }
 
-    // Before part 0's and part 3's first page, wait for its overlay to have started, so that music plays. A bar is
-    // 9.6 s: the parts between move on without waiting, and their overlays may never start.
-    let waitedFor = -1;
-    const waitForPartMusic = async (game: GameSnapshot) => {
-      if (game.part === waitedFor || (game.part !== 0 && game.part !== 3)) {
-        return;
-      }
-
-      waitedFor = game.part;
-      await expect.poll(async () => {
-        const overlay = (await readAudio(page)).overlay;
-
-        return overlay !== null && overlay.part === game.part && !overlay.pending;
-      }, BAR_POLL).toBe(true);
-    };
-
     await expectTitleClips(page);
-    await playGame(page, driver, waitForPartMusic);
+    await playGame(page, driver);
 
     const played = (await readCues(page)).filter((cue) => cue.state !== "title").map(({ name, state, at }) => ({
       name,
@@ -419,26 +454,6 @@ test.describe("on a small viewport", () => {
       { name: "kraken", state: "ending", at: 1500 },
     ]);
     expect((await readGame(page)).games).toBe(2);
-
-    const audio = await readAudio(page);
-    const anchor = audio.barAnchor ?? Number.NaN;
-
-    expect(audio.overlayStarts.length).toBeGreaterThanOrEqual(2);
-
-    for (const start of audio.overlayStarts) {
-      expect(Math.abs(start.bars - Math.round(start.bars))).toBeLessThan(1e-6);
-      expect(start.time).toBeCloseTo(anchor + Math.round(start.bars) * audio.bar, 6);
-    }
-
-    // Part 0's key first and bgm02 last; in between, only the parts' keys, in order (overlayPhase04 restarts on every
-    // bar, so it can repeat).
-    const order = ["overlayPhase02", "overlayPhase03", "overlayPhase04", "bgm02"];
-    const keys: readonly string[] = audio.overlayStarts.map((start) => start.key)
-      .filter((key, index, all) => key !== all[index - 1]);
-
-    expect([keys[0], keys.at(-1)]).toEqual(["overlayPhase02", "bgm02"]);
-    expect(keys).toEqual(order.filter((key) => keys.includes(key)));
-    expect(audio.storyPart).toBe(3);
 
     // The replay.
     const first = await readCounts(page);
