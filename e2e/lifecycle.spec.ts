@@ -1,6 +1,7 @@
 // The pause button and keys, and the text cache housekeeping (m5-plan, deliverables 5 and 6). The hidden tab and the
 // merged "Tap to continue" are in sound.spec.ts. Written by Claude Code.
 import { expect, test, type Page } from "@playwright/test";
+import type { Graphics } from "pixi.js";
 import type { Rect } from "../src/core/layout.ts";
 import { computePads } from "../src/game/input/pad-geometry.ts";
 import {
@@ -72,6 +73,8 @@ const readPause = (page: Page) => page.evaluate(() => {
     paused: pause.paused,
     input: pause.input,
     button: layers.ui.getChildByLabel("pause-button")?.visible ?? false,
+    // The button's icon (pause-button.ts): two bars drawn as two fills, the play triangle as one.
+    playIcon: (layers.ui.getChildByLabel("pause-button") as Graphics | null)?.context.instructions.length === 1,
     prompt: continuePromptShown,
     // The overlay sits above everything in ui.
     onTop: layers.ui.children.at(-1)?.label === "continue",
@@ -106,18 +109,21 @@ test("Escape, P and the pause button pause and resume, never advancing; off at t
   await page.keyboard.press("p");
   await expect.poll(async () => (await readGame(page)).state, POLL).toBe("title");
   await expect.poll(async () => (await readGame(page)).phase, POLL).toBe("prompt");
-  await expect.poll(() => readPause(page), POLL).toMatchObject({ input: "ready", button: true, tapPrompt: true });
+  await expect.poll(() => readPause(page), POLL)
+    .toMatchObject({ input: "ready", button: true, playIcon: false, tapPrompt: true });
 
   for (const key of ["p", "Escape"]) {
     await page.keyboard.press(key);
     // Title's own prompt isn't drawn while paused (m5-plan decision 13).
-    await expect.poll(() => readPause(page), POLL).toMatchObject({ paused: true, prompt: true, tapPrompt: false });
+    await expect.poll(() => readPause(page), POLL)
+      .toMatchObject({ paused: true, prompt: true, playIcon: true, tapPrompt: false });
     await expect.poll(async () => (await readAudio(page)).contextState, POLL).toBe("suspended");
 
     const before = (await readResumeEvents(page)).length;
 
     await page.keyboard.press(key === "p" ? "Escape" : "P");
-    await expect.poll(() => readPause(page), POLL).toMatchObject({ paused: false, prompt: false, tapPrompt: true });
+    await expect.poll(() => readPause(page), POLL)
+      .toMatchObject({ paused: false, prompt: false, playIcon: false, tapPrompt: true });
     await expect.poll(async () => (await readAudio(page)).status, POLL).toBe("running");
     expect((await readResumeEvents(page)).slice(before)[0]).toBe("keydown");
     await waitFrames(page);
@@ -134,7 +140,7 @@ test("Escape, P and the pause button pause and resume, never advancing; off at t
 
   await tapPause(page);
   await expect.poll(() => readPause(page), POLL)
-    .toMatchObject({ paused: true, input: "paused", button: true, prompt: true, onTop: true });
+    .toMatchObject({ paused: true, input: "paused", button: true, playIcon: true, prompt: true, onTop: true });
   await expect.poll(async () => (await readAudio(page)).contextState, POLL).toBe("suspended");
 
   const pausedAt = await readNow(page);
@@ -148,7 +154,7 @@ test("Escape, P and the pause button pause and resume, never advancing; off at t
   await tapPause(page);
   await expect.poll(async () => (await readAudio(page)).status, POLL).toBe("running");
   await expect.poll(() => readPause(page), POLL)
-    .toMatchObject({ paused: false, input: "ready", button: true, prompt: false });
+    .toMatchObject({ paused: false, input: "ready", button: true, playIcon: false, prompt: false });
   expect((await readResumeEvents(page)).slice(before)[0]).toBe("pointerup");
   await expect.poll(() => readNow(page), POLL).toBeGreaterThan(pausedAt);
   // Give a stray advance time to land: it would turn the page.

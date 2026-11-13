@@ -1,36 +1,12 @@
 // The screen tone and the "reduce flashes" toggle in the real page (m5-plan deliverable 3, owner decisions 7–9): the
 // letterbox flashes with the square, grey `a` at the flash's alpha `a`, and the square's own pixels don't change with
-// it; with the toggle on, the letterbox stays black and the flash peaks at FLASH_REDUCED_PEAK, after a reload too.
-// Frame-stepped like particles.spec: an init script holds every requestAnimationFrame and the test runs Pixi's ticker
-// itself, reading the canvas right after each frame renders. The toggle's tap path is `@tap` (desktop and iPhone).
-// Written by Claude Code.
+// it; with the toggle on, the letterbox stays black and the flash peaks at FLASH_REDUCED_PEAK. Frame-stepped (game.ts
+// `lockFrames`): an init script holds every requestAnimationFrame and the test runs Pixi's ticker itself, reading the
+// canvas right after each frame renders. The toggle's tap path and its reload are in gate.spec.ts. Written by Claude
+// Code.
 import { expect, test, type Page } from "@playwright/test";
 import { FLASH_REDUCED_PEAK } from "../src/game/lightning.ts";
-import { openGame, SEED, waitFrames } from "./game.ts";
-
-declare global {
-  interface Window {
-    frameLock?: { held: Map<number, FrameRequestCallback>; time: number; started: boolean };
-  }
-}
-
-/** Holds every requestAnimationFrame callback: Pixi's ticker runs only when the test steps it. */
-const lockFrames = (page: Page) => page.addInitScript(() => {
-  const held = new Map<number, FrameRequestCallback>();
-  let nextId = 1;
-
-  window.frameLock = { held, time: 0, started: false };
-  window.requestAnimationFrame = (callback) => {
-    const id = nextId++;
-
-    held.set(id, callback);
-
-    return id;
-  };
-  window.cancelAnimationFrame = (id) => {
-    held.delete(id);
-  };
-});
+import { openToTitle } from "./game.ts";
 
 interface FlashFrame {
   readonly now: number;
@@ -45,23 +21,21 @@ interface FlashFrame {
 }
 
 /**
- * Runs `frames` ticker frames of 16 game ms, each followed by the other held callbacks, and reads the canvas right
- * after each one renders (WebGL's drawing buffer is still there within the task). At the first frame whose flash is
- * above `compareAbove`, the stage is drawn a second time with a black clear colour, to compare the square's pixels.
+ * Runs locked frames until the clock reaches `until` (game ms), `frameMs` each, and reads the canvas right after each
+ * one renders (WebGL's drawing buffer is still there within the task). At the first frame whose flash is above
+ * `compareAbove`, the stage is drawn a second time with a black clear colour, to compare the square's pixels.
  */
-const run = (page: Page, frames: number, compareAbove = Infinity) => page.evaluate(({ frames, compareAbove }) => {
+const run = (page: Page, until: number, frameMs = 16, compareAbove = Infinity) => page.evaluate(({
+  until,
+  frameMs,
+  compareAbove,
+}) => {
   const lock = window.frameLock;
   const debug = window.debug;
   const { app } = debug;
-  const { ticker } = app;
 
   if (lock === undefined) {
     throw new Error("frames aren't locked");
-  }
-
-  if (!lock.started) {
-    lock.started = true;
-    ticker.lastTime = 0;
   }
 
   const { square, dpr } = debug.layout;
@@ -103,22 +77,8 @@ const run = (page: Page, frames: number, compareAbove = Infinity) => page.evalua
   const samples: FlashFrame[] = [];
   let compared = false;
 
-  for (let index = 0; index < frames; index++) {
-    lock.time += 16;
-    ticker.update(lock.time);
-
-    const pending = [...lock.held.entries()];
-
-    lock.held.clear();
-
-    for (const [id, callback] of pending) {
-      // Pixi's own frame request stays held, for the next step.
-      if (callback === (ticker as unknown as { _tick: FrameRequestCallback })._tick) {
-        lock.held.set(id, callback);
-      } else {
-        callback(lock.time);
-      }
-    }
+  for (let index = 0; index < 1000 && debug.clock.now < until; index++) {
+    lock.step(frameMs);
 
     const flash = debug.scene?.parts.flash;
     const alpha = flash?.visible === true ? flash.alpha : 0;
@@ -155,25 +115,7 @@ const run = (page: Page, frames: number, compareAbove = Infinity) => page.evalua
   }
 
   return samples;
-}, { frames, compareAbove });
-
-const openToTitle = async (page: Page) => {
-  await lockFrames(page);
-  await page.goto(`/?debug&seed=${SEED}&timescale=1`);
-  await page.waitForFunction(() => window.debug?.scene !== undefined && window.debug.gate.progress === 1, undefined, {
-    polling: 50,
-    timeout: 45_000,
-  });
-
-  for (let attempt = 0; attempt < 200 && (await page.evaluate(() => window.debug.gate.phase)) !== "ready"; attempt++) {
-    await run(page, 1);
-    await page.waitForTimeout(10);
-  }
-
-  await page.keyboard.press("Space");
-  await run(page, 1);
-  expect(await page.evaluate(() => window.debug.machine.current)).toBe("title");
-};
+}, { until, frameMs, compareAbove });
 
 /** The frames that show a flash. */
 const strikeFrames = (samples: readonly FlashFrame[]) => samples.filter((sample) => sample.flash > 0);
@@ -192,89 +134,48 @@ test.describe("frame-locked", () => {
   // Portrait at DPR 1: the letterbox above the square is large, and every stepped frame renders cheaply.
   test.use({ deviceScaleFactor: 1, viewport: { width: 360, height: 640 } });
 
-  test("the letterbox follows the flash and the square doesn't change; reduce flashes keeps it black, after reload",
-    async ({ page }) => {
-      await openToTitle(page);
+  test("the letterbox follows the flash and the square doesn't change; reduce flashes keeps it black", async ({
+    page,
+  }) => {
+    const enteredAt = await openToTitle(page);
 
-      // Title's first strike, at 2 s: every frame's letterbox is the flash's alpha in grey, within a level.
-      const full = await run(page, 170, 0.8);
-      const lit = strikeFrames(full);
+    // Title's first strike, at 2 s: 100 ms frames up to it, then 16 ms ones. Every frame's letterbox is the flash's
+    // alpha in grey, within a level.
+    await run(page, enteredAt + 1900, 100);
 
-      expect(full.every((sample) => sample.flash > 0 || (sample.letterbox === 0 && sample.tone === 0))).toBe(true);
-      expect(lit.length).toBeGreaterThan(20);
-      expect(Math.max(...lit.map((sample) => sample.flash))).toBeGreaterThan(0.95);
+    const full = await run(page, enteredAt + 2700, 16, 0.8);
+    const lit = strikeFrames(full);
 
-      for (const sample of lit) {
-        expect(sample.tone, `tone at ${sample.now}`).toBe(sample.flash);
-        expect(Math.abs(sample.letterbox - sample.flash * 255), `letterbox at ${sample.now}`).toBeLessThanOrEqual(1);
-      }
+    expect(full.every((sample) => sample.flash > 0 || (sample.letterbox === 0 && sample.tone === 0))).toBe(true);
+    expect(lit.length).toBeGreaterThan(20);
+    expect(Math.max(...lit.map((sample) => sample.flash))).toBeGreaterThan(0.95);
 
-      const compared = lit.find((sample) => sample.squareUnchanged !== undefined);
+    for (const sample of lit) {
+      expect(sample.tone, `tone at ${sample.now}`).toBe(sample.flash);
+      expect(Math.abs(sample.letterbox - sample.flash * 255), `letterbox at ${sample.now}`).toBeLessThanOrEqual(1);
+    }
 
-      expect(compared?.letterbox).toBeGreaterThan(200);
-      expect(compared?.blackLetterbox).toBe(0);
-      expect(compared?.squareUnchanged).toBe(true);
+    const compared = lit.find((sample) => sample.squareUnchanged !== undefined);
 
-      // Reduce flashes, by a click on the toggle (the router's mouse path), before the strike at 3.25 s.
-      const centre = await flashesCentre(page);
+    expect(compared?.letterbox).toBeGreaterThan(200);
+    expect(compared?.blackLetterbox).toBe(0);
+    expect(compared?.squareUnchanged).toBe(true);
 
-      await page.mouse.click(centre.x, centre.y);
-      expect(await page.evaluate(() => window.debug.flashes.reduced)).toBe(true);
+    // Reduce flashes, by a click on the toggle (the router's mouse path), before the strike at 3.25 s. Its tap path,
+    // and the setting kept over a reload, are in gate.spec.ts.
+    const centre = await flashesCentre(page);
 
-      const reduced = strikeFrames(await run(page, 80));
-      const peak = Math.max(...reduced.map((sample) => sample.flash));
+    await page.mouse.click(centre.x, centre.y);
+    expect(await page.evaluate(() => window.debug.flashes.reduced)).toBe(true);
+    await run(page, enteredAt + 3150, 100);
 
-      expect(reduced.length).toBeGreaterThan(20);
-      expect(peak).toBeGreaterThan(0.9 * FLASH_REDUCED_PEAK);
-      expect(peak).toBeLessThanOrEqual(FLASH_REDUCED_PEAK + 1e-6);
-      expect(reduced.every((sample) => sample.letterbox === 0 && sample.tone === 0)).toBe(true);
-      expect(await page.evaluate(() => window.debug.machine.current)).toBe("title");
+    const reduced = strikeFrames(await run(page, enteredAt + 4000));
+    const peak = Math.max(...reduced.map((sample) => sample.flash));
 
-      // Stored: after a reload, Title's first strike is capped and the letterbox stays black.
-      await page.reload();
-      await openToTitle(page);
-      expect(await page.evaluate(() => window.debug.flashes.reduced)).toBe(true);
-
-      const reloaded = strikeFrames(await run(page, 170));
-
-      expect(reloaded.length).toBeGreaterThan(20);
-      expect(Math.max(...reloaded.map((sample) => sample.flash))).toBeLessThanOrEqual(FLASH_REDUCED_PEAK + 1e-6);
-      expect(reloaded.every((sample) => sample.letterbox === 0)).toBe(true);
-    });
-});
-
-const hasTouch = () => test.info().project.use.hasTouch === true;
-
-const tapAt = async (page: Page, x: number, y: number) => {
-  if (hasTouch()) {
-    await page.touchscreen.tap(x, y);
-  } else {
-    await page.mouse.click(x, y);
-  }
-};
-
-const readToggle = (page: Page) => page.evaluate(() => ({
-  reduced: window.debug.flashes.reduced,
-  state: window.debug.machine.current,
-  paused: window.debug.pause.paused,
-}));
-
-// On the iPhone, a real touch sequence (playwright.config.ts).
-test("a tap on the reduce-flashes toggle only toggles it, paused or not", { tag: "@tap" }, async ({ page }) => {
-  await openGame(page);
-
-  const centre = await flashesCentre(page);
-
-  await tapAt(page, centre.x, centre.y);
-  await expect.poll(() => readToggle(page)).toEqual({ reduced: true, state: "title", paused: false });
-  // A stray advance would leave Title.
-  await waitFrames(page);
-  expect(await readToggle(page)).toEqual({ reduced: true, state: "title", paused: false });
-
-  // While paused it still only toggles: the game stays paused.
-  await page.evaluate(() => window.debug.pause.pause());
-  await tapAt(page, centre.x, centre.y);
-  await expect.poll(() => readToggle(page)).toEqual({ reduced: false, state: "title", paused: true });
-  await waitFrames(page);
-  expect(await readToggle(page)).toEqual({ reduced: false, state: "title", paused: true });
+    expect(reduced.length).toBeGreaterThan(20);
+    expect(peak).toBeGreaterThan(0.9 * FLASH_REDUCED_PEAK);
+    expect(peak).toBeLessThanOrEqual(FLASH_REDUCED_PEAK + 1e-6);
+    expect(reduced.every((sample) => sample.letterbox === 0 && sample.tone === 0)).toBe(true);
+    expect(await page.evaluate(() => window.debug.machine.current)).toBe("title");
+  });
 });

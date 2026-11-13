@@ -1,14 +1,15 @@
 // Scene motion in the real page (m4-plan, deliverable 4): Title's intro and exit, the ambient loops on whole art
 // pixels, the vignette over the sea's right-edge gap, the arrow pulses, the backdrop's fade and the ending's phases;
-// and reduced motion switched on and off mid-game (m5-plan, deliverable 4; src/game/motion.ts).
-// Frame-stepped, not real time: an init script holds every requestAnimationFrame, and the tests run Pixi's ticker
-// themselves, FRAME_MS of game time per frame, recording the scene after each one. Desktop only (untagged,
-// playwright.config.ts): nothing here depends on the device. Written by Claude Code.
-import { expect, test, type Page, type TestInfo } from "@playwright/test";
+// reduced motion switched on and off mid-game (m5-plan, deliverable 4; src/game/motion.ts); the ending's prompt hidden
+// while paused (decision 13).
+// Frame-stepped, not real time (game.ts `lockFrames`): an init script holds every requestAnimationFrame, and the tests
+// run Pixi's ticker themselves, FRAME_MS of game time per frame, recording the scene after each one. Desktop only
+// (untagged, playwright.config.ts): nothing here depends on the device. Written by Claude Code.
+import { expect, test, type Page } from "@playwright/test";
 import type { GameSnapshot } from "../src/debug-api.ts";
 import { REDUCED_MOTION } from "../src/game/motion.ts";
 import { AFTER_ROUND_MS, ENDING_MS, TITLE_EXIT_MS, TITLE_PROMPT_MS } from "../src/game/states/timings.ts";
-import { SEED } from "./game.ts";
+import { openToTitle, screenshot, setFrameRendering } from "./game.ts";
 
 // A small viewport at DPR 1: every stepped frame renders, and the checks read the scene, not pixels.
 test.use({ deviceScaleFactor: 1, viewport: { width: 640, height: 400 } });
@@ -48,30 +49,6 @@ interface Frame {
   readonly nodes: Readonly<Record<string, NodeSample | null>>;
 }
 
-declare global {
-  interface Window {
-    frameLock?: { held: Map<number, FrameRequestCallback>; time: number; started: boolean };
-  }
-}
-
-/** Holds every requestAnimationFrame callback: Pixi's ticker runs only when a test steps it. */
-const lockFrames = (page: Page) => page.addInitScript(() => {
-  const held = new Map<number, FrameRequestCallback>();
-  let nextId = 1;
-
-  window.frameLock = { held, time: 0, started: false };
-  window.requestAnimationFrame = (callback) => {
-    const id = nextId++;
-
-    held.set(id, callback);
-
-    return id;
-  };
-  window.cancelAnimationFrame = (id) => {
-    held.delete(id);
-  };
-});
-
 /** When a run of frames stops: before the first frame at which any of these holds, or after `frames` frames. */
 interface Until {
   readonly frames?: number;
@@ -92,15 +69,9 @@ interface Until {
 const run = (page: Page, until: Until) => page.evaluate(({ until, frameMs }) => {
   const lock = window.frameLock;
   const debug = window.debug;
-  const { ticker } = debug.app;
 
   if (lock === undefined) {
     throw new Error("frames aren't locked");
-  }
-
-  if (!lock.started) {
-    lock.started = true;
-    ticker.lastTime = 0;
   }
 
   type Node = {
@@ -134,21 +105,7 @@ const run = (page: Page, until: Until) => page.evaluate(({ until, frameMs }) => 
   };
 
   for (let index = 0; index < (until.frames ?? 20_000) && !reached(); index++) {
-    lock.time += frameMs;
-    ticker.update(lock.time);
-
-    const pending = [...lock.held.entries()];
-
-    lock.held.clear();
-
-    for (const [id, callback] of pending) {
-      // Pixi's own frame request stays held, for the next step.
-      if (callback === (ticker as unknown as { _tick: FrameRequestCallback })._tick) {
-        lock.held.set(id, callback);
-      } else {
-        callback(lock.time);
-      }
-    }
+    lock.step(frameMs);
 
     const parts = debug.scene?.parts;
     const world = (label: string) => debug.layers.world.getChildByLabel(label) as Node | null;
@@ -227,34 +184,6 @@ const press = async (page: Page, key: string) => {
   await page.keyboard.up(key);
 };
 
-const screenshot = async (page: Page, testInfo: TestInfo, name: string) => {
-  const path = testInfo.outputPath(`${name}.png`);
-
-  await page.screenshot({ path });
-  await testInfo.attach(name, { path, contentType: "image/png" });
-};
-
-/** Opens the game at time scale 1 with frames locked, and taps through the gate; returns Title's enter time. */
-const openToTitle = async (page: Page) => {
-  await lockFrames(page);
-  await page.goto(`/?debug&seed=${SEED}&timescale=1`);
-  // Loading runs in wall time, with no frame: `polling` in ms, as the default waits on animation frames.
-  await page.waitForFunction(() => window.debug?.scene !== undefined && window.debug.gate.progress === 1, undefined, {
-    polling: 50,
-    timeout: 45_000,
-  });
-
-  for (let attempt = 0; attempt < 200 && (await page.evaluate(() => window.debug.gate.phase)) !== "ready"; attempt++) {
-    await step(page, 1);
-    await page.waitForTimeout(10);
-  }
-
-  await press(page, "Space");
-  await run(page, { state: "title" });
-
-  return (await readGame(page)).now;
-};
-
 /**
  * Plays the shown round to its win, a key per frame; `onPulse` steps a few frames into each Hold and Many. Returns
  * every frame stepped, `onPulse`'s included, the win's last.
@@ -296,74 +225,30 @@ const playRound = async (page: Page, onPulse?: (kind: string) => Promise<readonl
   throw new Error("the round never ended");
 };
 
-test("Title: the prompt fades in at 7.25 s, earlier taps are dropped, the tap fades Title out, then the story", async ({
+// One page for Title's whole run: the intro and its dropped taps, the ambient loops and the vignette, reduced motion
+// switched on and off, the prompt, and the tap that fades Title out.
+test("Title: whole-pixel loops, the vignette, taps dropped until the 7.25 s prompt, reduced motion, the exit", async ({
   page,
 }, testInfo) => {
   const enteredAt = await openToTitle(page);
+
+  await setFrameRendering(page, false);
+  // Every frame before the prompt, all of them under taps that must be dropped.
   const intro: Frame[] = [];
+  const record = async (frames: Promise<Frame[]>) => {
+    const recorded = await frames;
 
-  // Taps all through the intro, the last a frame before its end: coarse frames to 7 s, then fine ones.
-  for (const at of [1000, 4000, 7000]) {
-    intro.push(...await run(page, { now: enteredAt + at, frameMs: SKIP_MS }));
-    await press(page, "Space");
-  }
+    intro.push(...recorded);
 
-  intro.push(...await run(page, { now: enteredAt + TITLE_PROMPT_MS - FRAME_MS }));
+    return recorded;
+  };
+
+  // Title's first strike is at 2 s: these 1.9 s run under no bolt or flash. A tap at 1 s.
+  const frames = [...await record(run(page, { now: enteredAt + 1000 }))];
+
   await press(page, "Space");
+  frames.push(...await record(run(page, { now: enteredAt + 1900 })));
 
-  intro.push(...await step(page, 1));
-  await screenshot(page, testInfo, "title-intro");
-
-  const before = intro.filter((frame) => frame.now < enteredAt + TITLE_PROMPT_MS);
-
-  expect(before.length).toBeGreaterThan(80);
-  expect(before.every((frame) => frame.state === "title" && frame.phase === "title")).toBe(true);
-  expect(before.every((frame) => !node(frame, "prompt").visible && !node(frame, "credits").visible)).toBe(true);
-
-  // The fade-in (TMPFadeIn, 1 s), then the pulse (TMPIdle, 1 → 0.647 → 1 over 1.6 s).
-  const fading = [...intro.slice(before.length), ...await stepFor(page, 2600)];
-  const fadeIn = between(fading, enteredAt + TITLE_PROMPT_MS, enteredAt + TITLE_PROMPT_MS + 1000);
-
-  expect(fading.every((frame) => frame.phase === "prompt" && node(frame, "prompt").visible)).toBe(true);
-  expect(alphas(fadeIn, "prompt")[0]).toBeLessThan(0.05);
-  expect(nonDecreasing(alphas(fadeIn, "prompt"))).toBe(true);
-  expect(alphas(fadeIn, "credits")).toEqual(alphas(fadeIn, "prompt"));
-
-  const pulse = alphas(between(fading, enteredAt + TITLE_PROMPT_MS + 1000, Infinity), "prompt");
-
-  expect(Math.min(...pulse)).toBeCloseTo(0.647, 2);
-  expect(Math.max(...pulse)).toBeCloseTo(1, 2);
-  expect(node(fading.at(-1) as Frame, "credits").alpha).toBe(1);
-  await screenshot(page, testInfo, "title-prompt");
-
-  // The tap: Inicio's fade-outs, and the story at its end (FimInicio), 1 s on.
-  await press(page, "Space");
-
-  const exit = await run(page, { state: "story" });
-  const tappedAt = exit[0].now;
-  const leaving = exit.filter((frame) => frame.state === "title");
-
-  // The frame whose tick reaches FimInicio starts the story.
-  expect(exit.at(-1)?.now).toBeGreaterThanOrEqual(tappedAt + TITLE_EXIT_MS);
-  expect(exit.at(-1)?.now).toBeLessThan(tappedAt + TITLE_EXIT_MS + FRAME_MS);
-  expect(leaving.every((frame) => frame.phase === "leaving")).toBe(true);
-
-  for (const name of ["logo", "credits", "prompt"]) {
-    expect(nonIncreasing(alphas(leaving, name)), name).toBe(true);
-    expect(alphas(leaving, name)[0], name).toBeGreaterThan(0.9);
-    expect(node(exit.at(-1) as Frame, name), name).toMatchObject({ visible: false, alpha: 0 });
-  }
-
-  // More taps during the fade changed nothing: one story start, from part 0's preamble.
-  expect((await readGame(page)).phase).toBe("preamble");
-});
-
-test("the sea, clouds and boat move on whole art pixels, and the vignette covers the sea's right-edge gap", async ({
-  page,
-}) => {
-  const enteredAt = await openToTitle(page);
-  // Title's first strike is at 2 s: these 1.9 s run under no bolt or flash.
-  const frames = await stepFor(page, 1900);
   const moving = ["seaF", "seaM", "seaB", "clouds", "clouds-2", "boat"];
 
   expect(frames.every((frame) => frame.clips === 6), "the six ambient loops").toBe(true);
@@ -451,12 +336,16 @@ test("the sea, clouds and boat move on whole art pixels, and the vignette covers
   expect(gap.uncovered).toBeGreaterThan(100);
 
   // Reduced motion, switched on mid-game on this page: the loops go on from where they are, slower but moving; the
-  // rain falls at a lower rate. The clouds scroll 8.4 px a second, the boat's tilt is unsnapped.
-  const full = [...frames, ...await stepFor(page, 1000)];
+  // rain falls at a lower rate. The clouds scroll 8.4 px a second, the boat's tilt is unsnapped. A tap at 4 s.
+  const full = [...frames, ...await record(stepFor(page, 1000))];
 
   await reduceMotion(page, true);
 
-  const reduced = await stepFor(page, 2000);
+  const reduced = [...await record(run(page, { now: enteredAt + 4000 }))];
+
+  await press(page, "Space");
+  reduced.push(...await record(run(page, { now: enteredAt + 4900 })));
+
   const tiltStep = Math.max(...steps(full, "boat", "rotation"));
   const switched = [full.at(-1) as Frame, ...reduced.slice(0, 5)];
 
@@ -481,17 +370,38 @@ test("the sea, clouds and boat move on whole art pixels, and the vignette covers
   expect(reducedDrops / fullDrops).toBeGreaterThan(REDUCED_MOTION.rainRate - 0.15);
   expect(reducedDrops / fullDrops).toBeLessThan(REDUCED_MOTION.rainRate + 0.15);
 
-  // The prompt fades in as before, then holds at full alpha instead of pulsing (TMPIdle).
-  const promptAt = enteredAt + TITLE_PROMPT_MS + 1000;
+  // Taps all through the intro, the last a frame before its end: coarse frames to 7 s, then fine ones.
+  await record(run(page, { now: enteredAt + 7000, frameMs: SKIP_MS }));
+  await press(page, "Space");
+  await record(run(page, { now: enteredAt + TITLE_PROMPT_MS - FRAME_MS }));
+  await press(page, "Space");
+  await record(step(page, 1));
+  await screenshot(page, testInfo, "title-intro");
 
-  await run(page, { now: promptAt + FRAME_MS, frameMs: SKIP_MS });
+  const before = intro.filter((frame) => frame.now < enteredAt + TITLE_PROMPT_MS);
+
+  expect(before.length).toBeGreaterThan(80);
+  expect(before.every((frame) => frame.state === "title" && frame.phase === "title")).toBe(true);
+  expect(before.every((frame) => !node(frame, "prompt").visible && !node(frame, "credits").visible)).toBe(true);
+
+  // The prompt fades in (TMPFadeIn, 1 s) as without reduced motion, then holds at full alpha instead of pulsing
+  // (TMPIdle).
+  const promptAt = enteredAt + TITLE_PROMPT_MS;
+  const fading = [...intro.slice(before.length), ...await run(page, { now: promptAt + 1000 + FRAME_MS })];
+  const fadeIn = between(fading, promptAt, promptAt + 1000);
+
+  expect(fading.every((frame) => frame.phase === "prompt" && node(frame, "prompt").visible)).toBe(true);
+  expect(alphas(fadeIn, "prompt")[0]).toBeLessThan(0.05);
+  expect(nonDecreasing(alphas(fadeIn, "prompt"))).toBe(true);
+  expect(alphas(fadeIn, "credits")).toEqual(alphas(fadeIn, "prompt"));
 
   const held = await stepFor(page, 1700);
 
   expect(held.every((frame) => node(frame, "prompt").visible && node(frame, "prompt").alpha === 1
     && node(frame, "prompt").scale === 1)).toBe(true);
 
-  // Switched off mid-game: the pulse starts from full alpha, and the loops speed up from where they are.
+  // Switched off mid-game: the pulse (1 → 0.647 → 1 over 1.6 s) starts from full alpha, and the loops speed up from
+  // where they are.
   await reduceMotion(page, false);
 
   const back = await stepFor(page, 1700);
@@ -499,20 +409,45 @@ test("the sea, clouds and boat move on whole art pixels, and the vignette covers
 
   expect(alphas(back.slice(0, 2), "prompt").every((alpha) => alpha > 0.99)).toBe(true);
   expect(Math.min(...alphas(back, "prompt"))).toBeCloseTo(0.647, 2);
+  expect(Math.max(...alphas(back.slice(-20), "prompt"))).toBeCloseTo(1, 2);
+  expect(node(back.at(-1) as Frame, "credits").alpha).toBe(1);
   expect(Math.max(...steps(resumed, "clouds", "x")), "no jump").toBeLessThanOrEqual(1);
   expect(Math.max(...steps(resumed, "boat", "rotation")), "no jump").toBeLessThanOrEqual(tiltStep * 1.01);
   expect(speed(back) / speed(held)).toBeGreaterThan(1 / REDUCED_MOTION.ambientSpeed - 0.6);
+  await screenshot(page, testInfo, "title-prompt");
 
   // And on again mid-pulse: held at once.
   await reduceMotion(page, true);
   expect(alphas(await step(page, 2), "prompt")).toEqual([1, 1]);
   await reduceMotion(page, false);
+
+  // The tap: Inicio's fade-outs, and the story at its end (FimInicio), 1 s on.
+  await press(page, "Space");
+
+  const exit = await run(page, { state: "story" });
+  const tappedAt = exit[0].now;
+  const leaving = exit.filter((frame) => frame.state === "title");
+
+  // The frame whose tick reaches FimInicio starts the story.
+  expect(exit.at(-1)?.now).toBeGreaterThanOrEqual(tappedAt + TITLE_EXIT_MS);
+  expect(exit.at(-1)?.now).toBeLessThan(tappedAt + TITLE_EXIT_MS + FRAME_MS);
+  expect(leaving.every((frame) => frame.phase === "leaving")).toBe(true);
+
+  for (const name of ["logo", "credits", "prompt"]) {
+    expect(nonIncreasing(alphas(leaving, name)), name).toBe(true);
+    expect(alphas(leaving, name)[0], name).toBeGreaterThan(0.9);
+    expect(node(exit.at(-1) as Frame, name), name).toMatchObject({ visible: false, alpha: 0 });
+  }
+
+  // The taps before the prompt changed nothing: one story start, from part 0's preamble.
+  expect((await readGame(page)).phase).toBe("preamble");
 });
 
 test("Hold and Many arrows pulse, and the backdrop fades in over the wait after a won round", async ({
   page,
 }, testInfo) => {
   await openToTitle(page);
+  await setFrameRendering(page, false);
   // Straight to round 0 from Title: this test is about the round's look, playthrough.spec plays the way there.
   await page.evaluate(() => window.debug.machine.request("round"));
 
@@ -581,6 +516,7 @@ test("the ending throws the boat, raises the kraken, goes black at 8.5 s, then s
   page,
 }, testInfo) => {
   await openToTitle(page);
+  await setFrameRendering(page, false);
   // Straight to the ending from Title, with part 3's black and a won round's pillars up as a game would leave them:
   // this test is about Fim's timeline, playthrough.spec plays the way there.
   await page.evaluate(() => {
@@ -673,6 +609,25 @@ test("the ending throws the boat, raises the kraken, goes black at 8.5 s, then s
   expect(alphas(span(ENDING_MS.replay + 400, ENDING_MS.replay + 600), "prompt")
     .some((alpha) => alpha > 0.3 && alpha < 0.7)).toBe(true);
   expect(node(frames.at(-1) as Frame, "logo").alpha).toBe(1);
+
+  // Paused on the card, "Tap to play again" isn't drawn under "Tap to continue" (m5-plan decision 13); resumed, it is.
+  const readReplayPrompt = () => page.evaluate(() => {
+    const prompt = window.debug.scene?.parts.tapPrompt;
+
+    return { text: prompt?.text, renderable: prompt?.renderable, paused: window.debug.pause.paused };
+  });
+
+  await page.evaluate(() => window.debug.pause.pause());
+  await step(page, 1);
+  expect(await readReplayPrompt()).toEqual({ text: "Tap to play again", renderable: false, paused: true });
+  // The key that continues doesn't replay: the prompt is drawn again, still on the ending.
+  await press(page, "Space");
+  await expect.poll(async () => {
+    await step(page, 1);
+
+    return readReplayPrompt();
+  }).toEqual({ text: "Tap to play again", renderable: true, paused: false });
+  expect((await readGame(page)).state).toBe("ending");
 
   // The replay tap: Title's opening frame, with only the ambient loops playing.
   await press(page, "Space");

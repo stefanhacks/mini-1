@@ -18,11 +18,12 @@ const setUp = (shown = true) => {
     },
   };
   const flash = { visible: false, alpha: 0 };
-  const state = { built: true, shown };
+  const state = { built: true, shown, paused: false };
   const tone = createScreenTone({
     background,
     flash: () => (state.built ? flash : undefined),
     shown: () => state.shown,
+    paused: () => state.paused,
   });
 
   return { colors, flash, state, tone };
@@ -64,5 +65,27 @@ describe("createScreenTone", () => {
     tone.sync();
     assert.equal(tone.grey, 0);
     assert.deepEqual(colors, [[0.4, 0.4, 0.4], [0, 0, 0]]);
+  });
+
+  it("while paused mid-flash, goes black when hidden but doesn't re-light until the resume", () => {
+    const { colors, flash, state, tone } = setUp();
+
+    flash.visible = true;
+    flash.alpha = 0.5;
+    tone.sync();
+    state.paused = true;
+
+    for (let tap = 0; tap < 3; tap++) {
+      state.shown = false;
+      tone.sync();
+      state.shown = true;
+      tone.sync();
+    }
+
+    assert.equal(tone.grey, 0, "the frozen flash stays dark however often it's toggled");
+    state.paused = false;
+    tone.sync();
+    assert.equal(tone.grey, 0.5, "the resume reads the toggle again");
+    assert.deepEqual(colors, [[0.5, 0.5, 0.5], [0, 0, 0], [0.5, 0.5, 0.5]]);
   });
 });

@@ -5,7 +5,7 @@
 // again") is not drawn (m5-plan decision 13): only `renderable` changes, so its fade and pulse, frozen with the paused
 // clock, carry on from the same alpha once the prompt goes.
 // Written by Claude Code.
-import { Container, Graphics } from "pixi.js";
+import { Container, Graphics, type Text } from "pixi.js";
 import type { Layers } from "../../core/layers.ts";
 import { snapToDevicePixels, type Layout } from "../../core/layout.ts";
 import { BLACK } from "./palette.ts";
@@ -35,6 +35,37 @@ export interface ContinuePromptScene {
   readonly container: Container;
 }
 
+interface ContinueParts {
+  readonly container: Container;
+  readonly dim: Graphics;
+  readonly box: Graphics;
+  readonly text: Text;
+}
+
+/** Places the text in `layout` and, while the prompt shows, draws the dim and the box around the text. */
+const drawContinuePrompt = ({ container, dim, box, text }: ContinueParts, layout: Layout) => {
+  const snap = (value: number) => snapToDevicePixels(value, layout.dpr);
+  const { safe } = layout;
+
+  placeUiText(text, CONTINUE_PROMPT, layout);
+  dim.clear();
+  box.clear();
+
+  if (!container.visible) {
+    return;
+  }
+
+  const reach = 2 * DIM_OVERSCAN;
+
+  dim.rect(safe.x - DIM_OVERSCAN, safe.y - DIM_OVERSCAN, safe.width + reach, safe.height + reach)
+    .fill({ color: BLACK, alpha: DIM_ALPHA });
+
+  const width = snap(text.width + 2 * CONTINUE_PADDING.x);
+  const height = snap(text.height + 2 * CONTINUE_PADDING.y);
+
+  box.rect(snap(text.x - width / 2), snap(text.y - height / 2), width, height).fill(BLACK);
+};
+
 /** Builds "Tap to continue" into the ui layer, hidden. Shown only once the game runs (the font is in). */
 export const createContinuePrompt = (layers: Layers, initial: Layout): ContinuePromptScene => {
   const container = new Container({ label: "continue", visible: false });
@@ -48,28 +79,7 @@ export const createContinuePrompt = (layers: Layers, initial: Layout): ContinueP
 
   layers.ui.addChild(container);
 
-  const draw = () => {
-    const snap = (value: number) => snapToDevicePixels(value, layout.dpr);
-    const { safe } = layout;
-
-    placeUiText(text, CONTINUE_PROMPT, layout);
-    dim.clear();
-    box.clear();
-
-    if (!container.visible) {
-      return;
-    }
-
-    const reach = 2 * DIM_OVERSCAN;
-
-    dim.rect(safe.x - DIM_OVERSCAN, safe.y - DIM_OVERSCAN, safe.width + reach, safe.height + reach)
-      .fill({ color: BLACK, alpha: DIM_ALPHA });
-
-    const width = snap(text.width + 2 * CONTINUE_PADDING.x);
-    const height = snap(text.height + 2 * CONTINUE_PADDING.y);
-
-    box.rect(snap(text.x - width / 2), snap(text.y - height / 2), width, height).fill(BLACK);
-  };
+  const draw = () => drawContinuePrompt({ container, dim, box, text }, layout);
 
   const update = () => {
     const visible = audioPrompt || paused;

@@ -1,70 +1,13 @@
 // The weather in the real page (m5-plan, deliverables 1–2): rain, splashes and bubbles fall on Title, drawn in the
 // world layer at their sortingOrder rows, on pools that never grow over replays, and the same seed gives the same
-// weather. Frame-stepped like motion.spec: an init script holds every requestAnimationFrame and the test runs Pixi's
-// ticker itself. Desktop only (untagged, playwright.config.ts): nothing here depends on the device.
-// Written by Claude Code.
+// weather; with `?debug&eyes=always`, an eye in part 0's preamble, before the text box. Frame-stepped (game.ts
+// `lockFrames`): an init script holds every requestAnimationFrame and the test runs Pixi's ticker itself. Desktop only
+// (untagged, playwright.config.ts): nothing here depends on the device. Written by Claude Code.
 import { expect, test, type Page } from "@playwright/test";
 import { ENDING_MS } from "../src/game/states/timings.ts";
-import { SEED } from "./game.ts";
+import { openToTitle, setFrameRendering, stepFrames } from "./game.ts";
 
 test.use({ deviceScaleFactor: 1, viewport: { width: 640, height: 400 } });
-
-declare global {
-  interface Window {
-    frameLock?: { held: Map<number, FrameRequestCallback>; time: number; started: boolean };
-  }
-}
-
-/** Holds every requestAnimationFrame callback: Pixi's ticker runs only when the test steps it. */
-const lockFrames = (page: Page) => page.addInitScript(() => {
-  const held = new Map<number, FrameRequestCallback>();
-  let nextId = 1;
-
-  window.frameLock = { held, time: 0, started: false };
-  window.requestAnimationFrame = (callback) => {
-    const id = nextId++;
-
-    held.set(id, callback);
-
-    return id;
-  };
-  window.cancelAnimationFrame = (id) => {
-    held.delete(id);
-  };
-});
-
-/** Runs `frames` ticker frames of `frameMs` game ms each (Pixi caps a frame at 100), with the other held callbacks. */
-const step = (page: Page, frames: number, frameMs = 16) => page.evaluate(({ frames, frameMs }) => {
-  const lock = window.frameLock;
-  const { ticker } = window.debug.app;
-
-  if (lock === undefined) {
-    throw new Error("frames aren't locked");
-  }
-
-  if (!lock.started) {
-    lock.started = true;
-    ticker.lastTime = 0;
-  }
-
-  for (let index = 0; index < frames; index++) {
-    lock.time += frameMs;
-    ticker.update(lock.time);
-
-    const pending = [...lock.held.entries()];
-
-    lock.held.clear();
-
-    for (const [id, callback] of pending) {
-      // Pixi's own frame request stays held, for the next step.
-      if (callback === (ticker as unknown as { _tick: FrameRequestCallback })._tick) {
-        lock.held.set(id, callback);
-      } else {
-        callback(lock.time);
-      }
-    }
-  }
-}, { frames, frameMs });
 
 /** The weather's containers and what they show: pool sizes, live particles, and the live ones' positions. */
 const readWeather = (page: Page) => page.evaluate(() => {
@@ -94,30 +37,42 @@ const readWeather = (page: Page) => page.evaluate(() => {
     splash: pool("splash"),
     bubbles: pool("bubbles"),
     stats: { ...scene?.weather.stats },
+    tickerListeners: window.debug.counts.tickerListeners,
+    layoutListeners: window.debug.counts.layoutListeners,
   };
 });
 
-const openToTitle = async (page: Page) => {
-  await lockFrames(page);
-  await page.goto(`/?debug&seed=${SEED}&timescale=1`);
-  await page.waitForFunction(() => window.debug?.scene !== undefined && window.debug.gate.progress === 1, undefined, {
-    polling: 50,
-    timeout: 45_000,
-  });
+/**
+ * Steps part 0's preamble in 100 ms frames, up to its first page: whether an eye showed in it, and whether one still
+ * showed once the page was up.
+ */
+const stepPreamble = (page: Page) => page.evaluate(() => {
+  const { debug, frameLock } = window;
+  const eyeShown = () => ["eye-small", "eye-large"].some((label) => {
+    const eye = debug.layers.world.getChildByLabel(label);
 
-  for (let attempt = 0; attempt < 200 && (await page.evaluate(() => window.debug.gate.phase)) !== "ready"; attempt++) {
-    await step(page, 1);
-    await page.waitForTimeout(10);
+    return eye !== null && eye.visible && eye.alpha > 0;
+  });
+  let before = false;
+
+  if (frameLock === undefined) {
+    throw new Error("frames aren't locked");
   }
 
-  await page.keyboard.press("Space");
-  await step(page, 1);
-  expect(await page.evaluate(() => window.debug.machine.current)).toBe("title");
-};
+  for (let index = 0; index < 40 && debug.game.page === null; index++) {
+    frameLock.step(100);
+    before ||= debug.game.page === null && eyeShown();
+  }
 
-test("the weather falls from Title on, on pools that don't grow, the same for the same seed", async ({ page }) => {
-  await openToTitle(page);
-  await step(page, 30);
+  return { before, onPage: debug.game.page !== null && eyeShown(), eyes: debug.scene?.weather.stats.eyes ?? 0 };
+});
+
+test("the weather falls from Title on, on pools that don't grow, the same for the same seed; eyes=always", async ({
+  page,
+}) => {
+  await openToTitle(page, "&eyes=always");
+  await setFrameRendering(page, false);
+  await stepFrames(page, 30);
 
   const title = await readWeather(page);
 
@@ -130,10 +85,19 @@ test("the weather falls from Title on, on pools that don't grow, the same for th
   expect([title.rain.onGrid, title.splash.onGrid, title.bubbles.onGrid]).toEqual([true, true, true]);
   expect([title.rain.size, title.splash.size, title.bubbles.size]).toEqual([224, 256, 32]);
 
+  // `?debug&eyes=always`, end to end: an eye in part 0's preamble, a window between pages, gone once the page shows.
+  await page.evaluate(() => window.debug.machine.request("story"));
+
+  const preamble = await stepPreamble(page);
+
+  expect(preamble).toEqual({ before: true, onPage: false, eyes: 1 });
+  await page.evaluate(() => window.debug.machine.request("title"));
+  await stepFrames(page, 10);
+
   for (let replay = 0; replay < 3; replay++) {
     // The ending's kraken stops the bubbles, which fade out with it; the rain falls on.
     await page.evaluate(() => window.debug.machine.request("ending"));
-    await step(page, Math.ceil((ENDING_MS.kraken + 1100) / 100), 100);
+    await stepFrames(page, Math.ceil((ENDING_MS.kraken + 1100) / 100), 100);
 
     const ending = await readWeather(page);
 
@@ -142,7 +106,7 @@ test("the weather falls from Title on, on pools that don't grow, the same for th
 
     // A new game restarts the weather.
     await page.evaluate(() => window.debug.machine.request("title"));
-    await step(page, 10);
+    await stepFrames(page, 10);
 
     const back = await readWeather(page);
 
@@ -150,6 +114,8 @@ test("the weather falls from Title on, on pools that don't grow, the same for th
     expect(back.rain.live).toBeGreaterThan(120);
     expect([back.worldChildren, back.rain.size, back.splash.size, back.bubbles.size])
       .toEqual([title.worldChildren, 224, 256, 32]);
+    // Nothing a replay adds is left behind on the ticker or the layout.
+    expect([back.tickerListeners, back.layoutListeners]).toEqual([title.tickerListeners, title.layoutListeners]);
     expect(back.stats.dropped).toBe(0);
   }
 
@@ -165,7 +131,7 @@ test("the weather falls from Title on, on pools that don't grow, the same for th
 
   const weatherFrom = async (seed: number) => {
     await page.evaluate((value) => window.debug.scene?.startWeather(value), seed);
-    await step(page, 45);
+    await stepFrames(page, 45);
 
     const { rain, splash, bubbles } = await readWeather(page);
 

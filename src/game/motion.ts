@@ -15,8 +15,6 @@ export interface MotionPolicy {
   readonly holdPulses: boolean;
   /** The rain's emission, times the original's 220 drops a second (scene/particles/weather.ts `WeatherMotion`). */
   readonly rainRate: number;
-  /** Weather seconds per game second: how fast every drop, splash, bubble and eye moves. */
-  readonly weatherSpeed: number;
 }
 
 /** The original's motion. */
@@ -24,7 +22,6 @@ export const FULL_MOTION: MotionPolicy = {
   ambientSpeed: 1,
   holdPulses: false,
   rainRate: 1,
-  weatherSpeed: 1,
 };
 
 /**
@@ -35,7 +32,6 @@ export const REDUCED_MOTION: MotionPolicy = {
   ambientSpeed: 0.5,
   holdPulses: true,
   rainRate: 0.5,
-  weatherSpeed: 1,
 };
 
 export const motionPolicy = (reduced: boolean): MotionPolicy => (reduced ? REDUCED_MOTION : FULL_MOTION);

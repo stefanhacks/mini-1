@@ -1,4 +1,4 @@
-import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import type { Container, Sprite } from "pixi.js";
 import {
   computeLayout,
@@ -10,7 +10,7 @@ import {
 import { renderTextureScale } from "../src/core/render-scale.ts";
 import { floorToDevicePixels } from "../src/core/viewport.ts";
 import type { DebugApi } from "../src/debug-api.ts";
-import { FAST } from "./game.ts";
+import { FAST, screenshot } from "./game.ts";
 
 // The resize test parks the first render texture on `window.debug` to compare it later.
 type ResizeDebug = DebugApi & { firstTexture?: unknown };
@@ -284,13 +284,6 @@ const watchErrors = (page: Page) => {
   return problems;
 };
 
-const screenshot = async (page: Page, testInfo: TestInfo, name: string) => {
-  const path = testInfo.outputPath(`${name}.png`);
-
-  await page.screenshot({ path });
-  await testInfo.attach(name, { path, contentType: "image/png" });
-};
-
 // Every device: the layout, k and the art's pixel blocks depend on its viewport and DPR (playwright.config.ts).
 test("renders the playfield through the render texture in both orientations, with and without insets", {
   tag: "@device",
@@ -333,16 +326,19 @@ test("renders the playfield through the render texture in both orientations, wit
 
 // The rest sets its own sizes and DPR: desktop only.
 test.describe("at DPR 3", () => {
-  // k goes from 2 at 600×400 to 6 at 1500×1100: at DPR 1 it would stay low, and k = 1 blocks are trivially sharp.
+  const SMALL = { width: 800, height: 600 };
+  const LARGE = { width: 1100, height: 750 };
+
+  // k goes from 2 at 800×600 to 4 at 1100×750: at DPR 1 it would stay low, and k = 1 blocks are trivially sharp.
   test.use({ deviceScaleFactor: 3 });
-  // Three 3000² read-backs, under load.
-  test.describe.configure({ timeout: 90_000 });
+  // Three 2000² read-backs, under load.
+  test.describe.configure({ timeout: 60_000 });
 
   test("resizes the same render texture when k changes, already drawn when the resize returns", async ({ page }) => {
     const problems = watchErrors(page);
 
     await page.goto(`/?debug&timescale=${FAST}`);
-    await page.setViewportSize({ width: 600, height: 400 });
+    await page.setViewportSize(SMALL);
 
     const small = await settle(page, ZERO_INSETS);
 
@@ -352,15 +348,15 @@ test.describe("at DPR 3", () => {
       debug.firstTexture = debug.display.renderTexture;
     });
 
-    // A 1100 px square is 1100 device px or more at any DPR ≥ 1: k ≥ 2, larger than the 600×400 window's. Read before
-    // any frame runs, the texture already holds the art at the new size: the stage drawn right after shows no gap.
-    const resized = await readArt(page, ART_RECTS, { width: 1500, height: 1100 });
+    // A 700 px square is 2100 device px at DPR 3: k = 4, larger than the 400 px square's 2. Read before any frame
+    // runs, the texture already holds the art at the new size: the stage drawn right after shows no gap.
+    const resized = await readArt(page, ART_RECTS, LARGE);
 
-    expect(resized.k).toBeGreaterThan(small.k);
+    expect([small.k, resized.k]).toEqual([2, 4]);
     expectSharpArt(resized, resized.k);
 
     // Then the real viewport, and every size check.
-    await page.setViewportSize({ width: 1500, height: 1100 });
+    await page.setViewportSize(LARGE);
 
     const large = await settle(page, ZERO_INSETS);
 
@@ -369,7 +365,7 @@ test.describe("at DPR 3", () => {
     expectSharpArt(await readArt(page, ART_RECTS), large.k);
 
     // And back down: the same texture throughout, with no stale size left in the sprite.
-    await page.setViewportSize({ width: 600, height: 400 });
+    await page.setViewportSize(SMALL);
 
     const again = await settle(page, ZERO_INSETS);
 

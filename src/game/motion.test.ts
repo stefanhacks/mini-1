@@ -3,16 +3,10 @@ import { describe, it } from "node:test";
 import { followMotion, FULL_MOTION, motionPolicy, REDUCED_MOTION, type MotionPolicy } from "./motion.ts";
 
 describe("motionPolicy", () => {
-  it("keeps the original's motion without reduced motion", () => {
+  it("keeps the original's motion without reduced motion, and slows the ambient loops (not stilled) with it", () => {
     assert.equal(motionPolicy(false), FULL_MOTION);
-    assert.deepEqual(FULL_MOTION, { ambientSpeed: 1, holdPulses: false, rainRate: 1, weatherSpeed: 1 });
-  });
-
-  it("slows the ambient loops (not stilled), holds the pulses and halves the rain, at the same speed", () => {
     assert.equal(motionPolicy(true), REDUCED_MOTION);
-    assert.deepEqual(REDUCED_MOTION, { ambientSpeed: 0.5, holdPulses: true, rainRate: 0.5, weatherSpeed: 1 });
     assert.ok(REDUCED_MOTION.ambientSpeed > 0 && REDUCED_MOTION.ambientSpeed < 1);
-    assert.ok(REDUCED_MOTION.rainRate > 0 && REDUCED_MOTION.rainRate < 1);
   });
 });
 

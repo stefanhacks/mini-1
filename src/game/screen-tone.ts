@@ -16,6 +16,11 @@ export interface ScreenToneDeps {
   readonly flash: () => { readonly visible: boolean; readonly alpha: number } | undefined;
   /** Whether the tone shows at all (lightning.ts `flashRule`), read every frame. */
   readonly shown: () => boolean;
+  /**
+   * Whether the clock is paused, the flash frozen. Then only a switch to hidden applies: switching back would re-light
+   * the frozen flash on every tap of "reduce flashes", past 3 flashes a second. `shown` is read again on resume.
+   */
+  readonly paused: () => boolean;
 }
 
 export interface ScreenTone {
@@ -25,13 +30,18 @@ export interface ScreenTone {
   readonly grey: number;
 }
 
-export const createScreenTone = ({ background, flash, shown }: ScreenToneDeps): ScreenTone => {
+export const createScreenTone = ({ background, flash, shown, paused }: ScreenToneDeps): ScreenTone => {
   let grey = 0;
+  /** `shown`, held while paused once it went false. */
+  let showing = true;
 
   return {
     sync: () => {
       const node = flash();
-      const next = node !== undefined && node.visible && shown() ? toneGrey(node.alpha) : 0;
+
+      showing = paused() ? showing && shown() : shown();
+
+      const next = node !== undefined && node.visible && showing ? toneGrey(node.alpha) : 0;
 
       // Only on a change: most frames have no flash.
       if (next !== grey) {

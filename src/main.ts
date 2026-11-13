@@ -21,7 +21,6 @@ import { createClipPlayer } from "./core/anim/player.ts";
 import { GameClock } from "./core/clock.ts";
 import { StateMachine } from "./core/state-machine.ts";
 import { TUNING } from "./game/challenges/tuning.ts";
-import { flashRule } from "./game/lightning.ts";
 import { createReduceFlashes } from "./game/reduce-flashes.ts";
 import { createScreenTone } from "./game/screen-tone.ts";
 import { createFrameStepper } from "./game/frame-step.ts";
@@ -59,7 +58,7 @@ const gateView = createGateView(layers, layouts.current);
 layouts.onLayout(gateView.relayout);
 
 const loading = createGameLoader({
-  layers, layouts, gateView, audio, clips, weather: { eyesAlways: launch.eyesAlways },
+  layers, layouts, gateView, audio, clips, weather: { eyesAlways: launch.eyesAlways, now: () => clock.now },
   reduceFlashes: () => reduceFlashes.on,
 });
 const game = createGame({
@@ -90,11 +89,13 @@ wireGestures({
 });
 wirePageLifecycle(stepper, lifecycle, pause);
 
-// The screen tone: the renderer's clear colour follows the scene's flash, off with "reduce flashes".
+// The screen tone: the renderer's clear colour follows the scene's flash, off with "reduce flashes" (lightning.ts
+// `flashRule`).
 const screenTone = createScreenTone({
   background: app.renderer.background,
   flash: () => loading.scene?.parts.flash,
-  shown: () => flashRule(false, reduceFlashes.on).screenTone,
+  shown: () => !reduceFlashes.on,
+  paused: () => clock.paused,
 });
 
 window.debug = createDebugApi({

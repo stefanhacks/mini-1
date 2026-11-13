@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createRng } from "../../challenges/rng.ts";
+import { AFTER_ROUND_MS, ENDING_MS, STORY_PREAMBLE_MS, TRANSITION_MS } from "../../states/timings.ts";
 import { createSlots, emitBetween, PARKED_X, type Dot } from "./pool.ts";
 import { createRain, type RainStep } from "./rain.ts";
 import { BUBBLES, bubbleRate, bubbleSway, EYES, PREWARM, RAIN, SPLASH } from "./spec.ts";
-import { createUndersea, type EyeFrame } from "./undersea.ts";
+import type { EyeFrame } from "./eyes.ts";
+import { createUndersea } from "./undersea.ts";
 
 const dots = (count: number): Dot[] => Array.from({ length: count }, () => ({ x: PARKED_X, y: 0, alpha: 0 }));
 
@@ -299,7 +301,8 @@ describe("eyes", () => {
    * and the wait after each won round, the ending before the kraken), as [part, window].
    */
   const WINDOWS: readonly (readonly [number, number])[] = [
-    [0, 2500], [0, 500], [0, 1250], [1, 500], [1, 1250], [2, 500], [2, 1250], [3, 1500],
+    [0, STORY_PREAMBLE_MS], [0, TRANSITION_MS], [0, AFTER_ROUND_MS], [1, TRANSITION_MS], [1, AFTER_ROUND_MS],
+    [2, TRANSITION_MS], [2, AFTER_ROUND_MS], [3, ENDING_MS.kraken],
   ];
 
   /** Plays a whole game's windows from a fresh game, `gap` s of pages or challenges between them; the eyes shown. */

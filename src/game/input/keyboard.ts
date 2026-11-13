@@ -70,7 +70,9 @@ export const isMuteKey = (event: KeyInput) =>
 
 /**
  * Whether a keydown is a pause shortcut: Escape or P (either case), with the same filters as `isMuteKey`. When the
- * router takes it (pause input not "off"), it pauses or resumes and neither presses nor advances.
+ * router takes it (pause input not "off"), it pauses or resumes and neither presses nor advances. Stricter engines
+ * don't count an Escape keydown as user activation, so a resume by Escape may leave audio waiting for a tap, which
+ * "Tap to continue" asks for.
  */
 export const isPauseKey = (event: KeyInput) =>
   !event.repeat && !event.isComposing && !isShortcut(event)

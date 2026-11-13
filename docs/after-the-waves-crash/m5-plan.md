@@ -85,7 +85,7 @@ One rule per effect, decided once in a table in `src/game/motion.ts` (or the exi
 |---|---|
 | Lightning flash, screen tone | Peak capped (0.4 today), also by the "reduce flashes" toggle |
 | Sea strips, clouds, boat bob | Slower (owner decision 5): their clips at **0.5×** speed, switched from the current pose (no jump) |
-| Prompt and arrow pulses | Held at full alpha (1), no scale pulse (scale 1); the pulse restarts from alpha 1 when switched off |
+| Prompt and arrow pulses | Held at full alpha (1), no scale pulse (scale 1). Switched on mid-pulse, it snaps to that held pose. Switched off, each pulse restarts from its clip's start: the prompt's `TMPIdle` and the Many arrow's `ArrowMany` from alpha 1, the Hold arrow's `ArrowHold` from alpha 0 at scale 1.5 (its overlay invisible at first, the arrow under it showing) |
 | Thrown boat, kraken rise | Kept (they're story beats) |
 | Rain | Rate **0.5×** (110 drops/s), speed **1×**, no slant change |
 | Bubbles, eyes | Kept, they're slow |

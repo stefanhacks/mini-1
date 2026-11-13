@@ -51,7 +51,10 @@ export interface WorldEffect {
   readonly label: string;
   /** The WORLD_SPRITES row it is drawn just behind. */
   readonly before: WorldSpriteLabel;
-  /** The original's sortingOrder, for reference. */
+  /**
+   * The original's sortingOrder, for reference only: nothing reads it to draw (`before` places it), and
+   * positions.test.ts checks it agrees with `before`.
+   */
   readonly sortingOrder: number;
 }
 

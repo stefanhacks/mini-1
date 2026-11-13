@@ -11,6 +11,7 @@ import {
   readStory,
   setTimescale,
   waitFor,
+  waitFrames,
   type GameSnapshot,
 } from "./game.ts";
 
@@ -267,7 +268,7 @@ test("a Hold close to its end, let go while the tab is hidden, doesn't complete:
   expect(back.game.phase).toBe("play");
   expect(back.game.challenge?.progress).toEqual(held.challenge?.progress);
   expect(await page.evaluate(() => window.debug.continuePromptShown)).toBe(true);
-  await page.waitForTimeout(300);
+  await waitFrames(page);
   expect(await readNow(page)).toBe(hiddenAt);
 
   // The tap that continues resets the Hold (02): let go, back to 0, the same challenge.
@@ -280,8 +281,8 @@ test("a Hold close to its end, let go while the tab is hidden, doesn't complete:
   expect(resumed.challenge?.index).toBe(game.challenge?.index);
   expect(resumed.challenge?.progress).toEqual({ kind: "hold", held: false, fraction: 0 });
 
-  // Frames run again, and the same Hold never completes on its own.
-  await page.waitForTimeout(300);
+  // Frames run again, and the same Hold never completes on its own: at FAST time, 10 frames are seconds of game time.
+  await waitFrames(page);
 
   const after = await readGame(page);
 

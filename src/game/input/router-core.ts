@@ -9,7 +9,7 @@
 //   registered (paused or not: like mute, a tap on it only toggles). A pointer that goes down on one belongs to it
 //   until it lifts: it never reaches the PointerMap, so it gives no press, no release, no advance and no activation.
 //   Its pointerup calls that button's listeners if it lifts still on the button; sliding off and lifting elsewhere,
-//   or a cancel, does nothing.
+//   or a cancel, does nothing (corner-presses.ts).
 // - The pause input (`setPauseInput`, driven by pause.ts): "off" (Gate, whose own tap begins the game) makes the pause
 //   button's square and the pause keys ordinary input; "ready" turns both on; "paused" leaves only the keys on, so a
 //   tap on the button's square is an ordinary tap, which resumes through the activation hook (with its touchend
@@ -28,9 +28,10 @@
 // - A listener that throws is reported (reportError) and the others still
 //   run; the event stays queued.
 
-import type { Layout, Rect } from "../../core/layout.ts";
+import type { Layout } from "../../core/layout.ts";
 import type { Direction } from "../direction.ts";
-import { CORNER_BUTTONS, cornerButtonRect, hitsCornerButton, type CornerButton } from "./corner-geometry.ts";
+import type { CornerButton } from "./corner-geometry.ts";
+import { createCornerPresses } from "./corner-presses.ts";
 import { computePads, hitTest, type Pad } from "./pad-geometry.ts";
 import { PointerMap } from "./pointer-map.ts";
 
@@ -79,39 +80,30 @@ export const createRouterCore = () => {
     activated = true;
     callAll(activateListeners);
   });
-  // Pointers that went down on a corner button, and which.
-  const buttonPointers = new Map<number, CornerButton>();
   let pads: readonly Pad[] = [];
-  const rects: Record<CornerButton, Rect | null> = { mute: null, pause: null, flashes: null };
   let pauseInput: PauseInput = "off";
-
-  const active = (button: CornerButton) => listeners[button].size > 0 && rects[button] !== null
-    && (button !== "pause" || pauseInput === "ready");
-
-  // The stack's squares never overlap, so at most one is hit.
-  const buttonAt = (x: number, y: number) =>
-    CORNER_BUTTONS.find((button) => active(button) && hitsCornerButton(rects[button], x, y));
+  const corners = createCornerPresses(
+    (button) => listeners[button].size > 0 && (button !== "pause" || pauseInput === "ready"),
+    (button) => callAll(listeners[button]),
+  );
 
   return {
     map,
     setLayout: (layout: Layout) => {
       pads = computePads(layout);
-
-      for (const button of CORNER_BUTTONS) {
-        rects[button] = cornerButtonRect(layout, button);
-      }
+      corners.setLayout(layout);
     },
     /** The mute button's hit square in the current layout, or null. */
     get muteRect() {
-      return rects.mute;
+      return corners.rects.mute;
     },
     /** The pause button's hit square in the current layout, or null. */
     get pauseRect() {
-      return rects.pause;
+      return corners.rects.pause;
     },
     /** The "reduce flashes" toggle's hit square in the current layout, or null. */
     get flashesRect() {
-      return rects.flashes;
+      return corners.rects.flashes;
     },
     /** What the pause button and keys do from now on (pause.ts drives it). */
     setPauseInput: (input: PauseInput) => {
@@ -119,14 +111,9 @@ export const createRouterCore = () => {
     },
     pointerDown: (id: number, x: number, y: number) => {
       touchActivation = false;
-      // A down for an id already tracked means its up was lost.
-      buttonPointers.delete(id);
 
-      const button = buttonAt(x, y);
-
-      if (button !== undefined) {
+      if (corners.down(id, x, y)) {
         map.pointerCancel(id);
-        buttonPointers.set(id, button);
         return;
       }
 
@@ -134,15 +121,7 @@ export const createRouterCore = () => {
     },
     /** `touch`: a touch contact (`pointerType === "touch"`), so its `touchend` repeats the activation. */
     pointerUp: (id: number, x: number, y: number, touch = false) => {
-      const button = buttonPointers.get(id);
-
-      if (button !== undefined) {
-        buttonPointers.delete(id);
-
-        if (buttonAt(x, y) === button) {
-          callAll(listeners[button]);
-        }
-
+      if (corners.up(id, x, y)) {
         return;
       }
 
@@ -158,7 +137,7 @@ export const createRouterCore = () => {
       }
     },
     pointerCancel: (id: number) => {
-      if (!buttonPointers.delete(id)) {
+      if (!corners.cancel(id)) {
         map.pointerCancel(id);
       }
     },
@@ -183,7 +162,7 @@ export const createRouterCore = () => {
       return true;
     },
     cancelAll: () => {
-      buttonPointers.clear();
+      corners.clear();
       map.cancelAll();
     },
     isHeld: (dir: Direction) => map.isHeld(dir),

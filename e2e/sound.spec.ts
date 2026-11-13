@@ -87,9 +87,20 @@ const expectClockFrozen = async (page: Page) => {
 };
 
 // Desktop only (untagged): no device-specific path.
-test("a hidden tab pauses the game and suspends audio; back, both wait under Tap to continue", async ({ page }) => {
+test("a hidden tab or a lone pagehide pauses the game and suspends audio; back, both wait under the prompt", async ({
+  page,
+}) => {
   await openGame(page);
   expect((await readAudio(page)).contextState).toBe("running");
+
+  // A `pagehide` with no `visibilitychange` (some engines send it alone): paused, audio suspended. A key continues.
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true })));
+  await expect.poll(async () => (await readAudio(page)).contextState, POLL).toBe("suspended");
+  expect(await page.evaluate(() => window.debug.pause.paused)).toBe(true);
+  expect(await promptOnScreen(page)).toBe("Tap to continue");
+  await page.keyboard.press("Space");
+  await expect.poll(async () => (await readAudio(page)).status, POLL).toBe("running");
+  await expect.poll(() => page.evaluate(() => window.debug.pause.paused), POLL).toBe(false);
 
   await setHidden(page, true);
   await expect.poll(async () => (await readAudio(page)).contextState, POLL).toBe("suspended");
@@ -103,10 +114,10 @@ test("a hidden tab pauses the game and suspends audio; back, both wait under Tap
   expect((await readGame(page)).state).toBe("title");
 });
 
-// On the iPhone, the continuing tap is a real touch sequence (`@tap`, playwright.config.ts).
-test("Tap to continue: one tap resumes audio inside the gesture and the game without advancing; mute only mutes", {
-  tag: "@tap",
-}, async ({ page }) => {
+// Desktop only (untagged): the iPhone's continuing tap, a real touch sequence, is the `@tap` test below.
+test("Tap to continue: one tap resumes audio in the gesture and the game without advancing; mute only mutes", async ({
+  page,
+}) => {
   await recordResumes(page);
   await openGame(page);
   // Title's prompt is up: a stray advance would leave Title.
