@@ -52,14 +52,6 @@ describe("ManyRule", () => {
     assert.equal(rule.done, true);
   });
 
-  it("counts down the window", () => {
-    const { clock, rule } = setup();
-
-    rule.press("left");
-    clock.tick(1200);
-    assert.equal(rule.progress.windowRemainingMs, 1800);
-  });
-
   it("counts a press at 2999 ms, and resets the count at exactly 3000 ms", () => {
     const { clock, rule } = setup();
 

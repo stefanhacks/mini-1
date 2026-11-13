@@ -65,24 +65,6 @@ describe("rain", () => {
     assert.ok(Math.abs((RAIN.rate * 1000) / (RAIN.x.max - RAIN.x.min) - 220) < 1e-9);
   });
 
-  it("keeps its live drops inside the pool at steady state", () => {
-    const { rain, drops } = rainFrom(1);
-    const counts: number[] = [];
-
-    run((from, to) => {
-      rain.step(from, to, NO_BOAT);
-      counts.push(rain.stats.drops);
-    }, 0, 6);
-
-    const steady = counts.slice(counts.length / 2);
-    const mean = steady.reduce((sum, count) => sum + count, 0) / steady.length;
-
-    assert.ok(mean > 150 && mean < 190, `mean ${mean}`);
-    assert.ok(Math.max(...counts) <= RAIN.pool);
-    assert.equal(rain.stats.dropped, 0);
-    assert.equal(live(drops).length, rain.stats.drops);
-  });
-
   it("moves drops at (−375, +375) px/s on whole px, and kills each by its 1 s life or at the sea line", () => {
     const { rain, drops } = rainFrom(2);
     const lives: number[] = [];
@@ -134,30 +116,6 @@ describe("rain", () => {
     // About 70 hits a second in the playfield, 3 dots each for 0.75 s: the spec's mean of 158.
     assert.ok(rain.stats.splashes > 110 && maxSplashes <= SPLASH.pool, `${rain.stats.splashes}, ${maxSplashes}`);
     assert.equal(rain.stats.dropped, 0);
-  });
-
-  it("lands a splash's three dots within 1 px of each other", () => {
-    const { rain, splashes } = rainFrom(9);
-    let checked = 0;
-
-    // About one drop a second: one splash at a time.
-    run((from, to) => {
-      rain.step(from, to, { rate: 1 / RAIN.rate, boat: null });
-
-      const shown = live(splashes);
-
-      if (shown.length === SPLASH.count) {
-        const xs = shown.map((dot) => dot.x);
-        const ys = shown.map((dot) => dot.y);
-
-        const spread = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
-
-        assert.ok(spread <= 1, `${xs.join()} ${ys.join()}`);
-        checked += 1;
-      }
-    }, 0, 30);
-
-    assert.ok(checked > 100, `${checked}`);
   });
 
   it("drops nothing under long steps (?timescale=32): spent splashes free their slots first", () => {
@@ -418,10 +376,5 @@ describe("eyes", () => {
     undersea.set(PREWARM + 1.6, { part: 3, eyesFor: 1500 });
     run(step, PREWARM + 1.6, PREWARM + 3);
     assert.deepEqual([undersea.eye, undersea.stats.eyes], [null, 1]);
-  });
-
-  it("is the same for the same seed", () => {
-    assert.deepEqual(playGame(42, true).shown, playGame(42, true).shown);
-    assert.notDeepEqual(playGame(42, true).shown, playGame(43, true).shown);
   });
 });

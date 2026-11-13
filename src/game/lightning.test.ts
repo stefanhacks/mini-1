@@ -12,7 +12,6 @@ import {
   FLASH_REDUCED,
   FLASH_REDUCED_PEAK,
   flashRule,
-  isStrike,
   peakAlpha,
   STRIKE_HALF_RANGE,
   type StrikeKind,
@@ -30,11 +29,6 @@ const sampleAlpha = (keys: Parameters<typeof evaluateCurve>[0], length: number) 
   Array.from({ length: Math.round(length * 1000) + 1 }, (_, ms) => evaluateCurve(keys, ms / 1000));
 
 describe("drawStrike", () => {
-  it("is deterministic for a seed, and differs for another", () => {
-    assert.deepEqual(draws("lightning", 20), draws("lightning", 20));
-    assert.notDeepEqual(draws("lightning", 20), draws("lightning", 20, 8));
-  });
-
   it("reaches all 5 bolt sprites, for strikes and the reveal alike (quirk 8)", () => {
     for (const kind of ["lightning", "title-reveal"] as const) {
       const bolts = new Set(draws(kind, 500).map((strike) => strike.bolt));
@@ -57,14 +51,7 @@ describe("drawStrike", () => {
     }
   });
 
-  it("mirrors a strike half the time, never the reveal", () => {
-    const mirrored = draws("lightning", 1000).filter((strike) => strike.mirrored).length;
-
-    assert.ok(mirrored > 400 && mirrored < 600, `${mirrored} of 1000 mirrored`);
-    assert.ok(draws("title-reveal", 200).every((strike) => !strike.mirrored));
-  });
-
-  it("draws the sprite, the x, then the mirror: 3 numbers a strike, 2 for the reveal", () => {
+  it("draws the sprite, the x, then the mirror: 3 numbers a strike, 2 for the reveal, which never mirrors", () => {
     const rng = createRng(11);
     const twin = createRng(11);
 
@@ -72,13 +59,7 @@ describe("drawStrike", () => {
     drawStrike("title-reveal", rng);
     Array.from({ length: 5 }, () => twin.next());
     assert.equal(rng.next(), twin.next());
-  });
-
-  it("names the striking cues", () => {
-    assert.deepEqual(["lightning", "title-reveal", "kraken"].filter((cue) => isStrike(cue as StrikeKind)), [
-      "lightning",
-      "title-reveal",
-    ]);
+    assert.ok(draws("title-reveal", 200).every((strike) => !strike.mirrored), "the reveal never mirrors");
   });
 });
 

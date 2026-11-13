@@ -90,80 +90,99 @@ const minimumSpace = (layout: Layout) =>
   layout.orientation === "portrait" ? Math.max(MIN_ZONE_SHARE * layout.safe.height, MIN_ZONE_HEIGHT) : MIN_BAND_WIDTH;
 
 describe("computeLayout invariants across devices", () => {
-  for (const { name, screen } of DEVICES) {
-    describe(name, () => {
-      const layout = computeLayout(screen);
+  const LAYOUTS = DEVICES.map(({ name, screen }) => ({ name, screen, layout: computeLayout(screen) }));
+
+  it("keeps the square inside the safe rect, square and non-negative", () => {
+    for (const { name, layout } of LAYOUTS) {
+      const { square, safe } = layout;
+
+      assert.equal(square.width, square.height, name);
+      assert.ok(square.width >= 0, name);
+      assert.ok(contains(safe, square), `${name}: ${JSON.stringify({ safe, square })}`);
+      assert.equal(layout.scale, square.width / PLAYFIELD_SIZE, name);
+      assert.ok(Number.isInteger(layout.sideDevicePx), name);
+      assert.equal(layout.sideDevicePx / layout.dpr, square.width, name);
+    }
+  });
+
+  it("snaps the square's position and side to whole device pixels", () => {
+    for (const { name, screen, layout } of LAYOUTS) {
+      const { square } = layout;
+
+      for (const value of layout.sideDevicePx === 0 ? [square.width] : [square.x, square.y, square.width]) {
+        assert.ok(isWholeDevicePx(value, screen.dpr), `${name}: ${value} at dpr ${screen.dpr}`);
+      }
+    }
+  });
+
+  it("reserves at least the minimum control space whenever the safe rect allows it", () => {
+    for (const { name, layout } of LAYOUTS) {
+      const { safe } = layout;
+      const minimum = minimumSpace(layout);
+      const fits = layout.orientation === "portrait" ? safe.height >= minimum : safe.width >= 2 * minimum;
+
+      if (fits) {
+        for (const space of reservedSpace(layout)) {
+          assert.ok(space >= minimum - EPSILON, `${name}: ${space} < ${minimum}`);
+        }
+      }
+    }
+  });
+
+  it("gives the controls the whole leftover of the safe rect", () => {
+    for (const { name, screen, layout } of LAYOUTS) {
+      const { square, safe } = layout;
+
+      if (layout.orientation === "portrait") {
+        assert.ok(Math.abs(square.y - safe.y) < 1 / screen.dpr, `${name}: square anchored to the safe top`);
+      } else {
+        const [left, right] = reservedSpace(layout);
+
+        // Up to 1 device px from rounding each band's outer edge onto the grid, plus 1 from the floored odd pixel.
+        assert.ok(Math.abs((left ?? 0) - (right ?? 0)) <= 2 / screen.dpr + EPSILON, `${name}: square centred`);
+      }
+    }
+  });
+
+  it("keeps the zones off the square, inside the screen and clear of the edge exclusion", () => {
+    for (const { name, screen, layout } of LAYOUTS) {
       const { square, safe, zones } = layout;
       const screenRect: Rect = { x: 0, y: 0, width: screen.width, height: screen.height };
 
-      it("keeps the square inside the safe rect, square and non-negative", () => {
-        assert.equal(square.width, square.height);
-        assert.ok(square.width >= 0);
-        assert.ok(contains(safe, square), JSON.stringify({ safe, square }));
-        assert.equal(layout.scale, square.width / PLAYFIELD_SIZE);
-        assert.ok(Number.isInteger(layout.sideDevicePx));
-        assert.equal(layout.sideDevicePx / layout.dpr, square.width);
-      });
+      assert.equal(zones.length, layout.orientation === "portrait" ? 1 : 2, name);
 
-      it("snaps the square's position and side to whole device pixels", () => {
-        for (const value of layout.sideDevicePx === 0 ? [square.width] : [square.x, square.y, square.width]) {
-          assert.ok(isWholeDevicePx(value, screen.dpr), `${value} at dpr ${screen.dpr}`);
+      for (const zone of zones) {
+        assert.ok(zone.width >= 0 && zone.height >= 0, name);
+        assert.ok(contains(screenRect, zone), name);
+        assert.ok(!overlaps(zone, square), name);
+
+        if (zone.width > 0 && zone.height > 0) {
+          assert.ok(contains(safe, zone), name);
+          assert.ok(zone.x >= EDGE_EXCLUSION - EPSILON, name);
+          assert.ok(zone.y >= EDGE_EXCLUSION - EPSILON, name);
+          assert.ok(right(zone) <= screen.width - EDGE_EXCLUSION + EPSILON, name);
+          assert.ok(bottom(zone) <= screen.height - EDGE_EXCLUSION + EPSILON, name);
         }
-      });
+      }
+    }
+  });
 
-      it("reserves at least the minimum control space whenever the safe rect allows it", () => {
-        const minimum = minimumSpace(layout);
-        const fits = layout.orientation === "portrait" ? safe.height >= minimum : safe.width >= 2 * minimum;
+  it("round-trips playfield points through the screen", () => {
+    for (const { name, layout } of LAYOUTS) {
+      if (layout.scale === 0) {
+        continue;
+      }
 
-        if (fits) {
-          for (const space of reservedSpace(layout)) {
-            assert.ok(space >= minimum - EPSILON, `${space} < ${minimum}`);
-          }
-        }
-      });
+      for (const point of [{ x: 0, y: 0 }, { x: 250, y: 340 }, { x: PLAYFIELD_SIZE, y: PLAYFIELD_SIZE }]) {
+        const back = screenToPlayfield(layout, playfieldToScreen(layout, point));
 
-      it("gives the controls the whole leftover of the safe rect", () => {
-        if (layout.orientation === "portrait") {
-          assert.ok(Math.abs(square.y - safe.y) < 1 / screen.dpr, "square anchored to the safe top");
-        } else {
-          const [left, right] = reservedSpace(layout);
-
-          // Up to 1 device px from rounding each band's outer edge onto the grid, plus 1 from the floored odd pixel.
-          assert.ok(Math.abs((left ?? 0) - (right ?? 0)) <= 2 / screen.dpr + EPSILON, "square centred");
-        }
-      });
-
-      it("keeps the zones off the square, inside the screen and clear of the edge exclusion", () => {
-        assert.equal(zones.length, layout.orientation === "portrait" ? 1 : 2);
-
-        for (const zone of zones) {
-          assert.ok(zone.width >= 0 && zone.height >= 0);
-          assert.ok(contains(screenRect, zone));
-          assert.ok(!overlaps(zone, square));
-
-          if (zone.width > 0 && zone.height > 0) {
-            assert.ok(contains(safe, zone));
-            assert.ok(zone.x >= EDGE_EXCLUSION - EPSILON);
-            assert.ok(zone.y >= EDGE_EXCLUSION - EPSILON);
-            assert.ok(right(zone) <= screen.width - EDGE_EXCLUSION + EPSILON);
-            assert.ok(bottom(zone) <= screen.height - EDGE_EXCLUSION + EPSILON);
-          }
-        }
-      });
-
-      it("round-trips playfield points through the screen", () => {
-        if (layout.scale === 0) {
-          return;
-        }
-
-        for (const point of [{ x: 0, y: 0 }, { x: 250, y: 340 }, { x: PLAYFIELD_SIZE, y: PLAYFIELD_SIZE }]) {
-          const back = screenToPlayfield(layout, playfieldToScreen(layout, point));
-
-          assert.ok(Math.abs(back.x - point.x) < EPSILON && Math.abs(back.y - point.y) < EPSILON);
-        }
-      });
-    });
-  }
+        assert.ok(
+          Math.abs(back.x - point.x) < EPSILON && Math.abs(back.y - point.y) < EPSILON,
+          `${name}: ${JSON.stringify(point)}`,
+        );
+      }
+    }
+  });
 });
 
 describe("computeLayout specific layouts", () => {
@@ -246,10 +265,6 @@ describe("computeLayout device pixels", () => {
     assert.equal(layout.sideDevicePx, 2500);
   });
 
-  it("reports the sanitised dpr", () => {
-    assert.equal(computeLayout({ width: 200, height: 200, insets: ZERO_INSETS, dpr: 0 }).dpr, 1);
-  });
-
   it("starts the square on the first whole device pixel under a fractional cutout", () => {
     const layout = computeLayout(screenOf("Android cutout"));
 
@@ -278,21 +293,26 @@ describe("computeLayout degenerate screens", () => {
     { width: 120, height: 900, insets: insets(10.4, 0, 0, 0.6), dpr: 2.625 },
   ];
 
-  for (const screen of cases) {
-    it(`never goes negative at ${screen.width}×${screen.height}`, () => {
+  it("never goes negative and sanitises the dpr", () => {
+    for (const screen of cases) {
+      const name = `${screen.width}×${screen.height} at dpr ${screen.dpr}`;
       const layout = computeLayout(screen);
 
-      assert.ok(layout.square.width >= 0 && layout.safe.width >= 0 && layout.safe.height >= 0);
-      assert.ok(Number.isFinite(layout.square.x) && Number.isFinite(layout.square.y));
-      assert.ok(contains(layout.safe, layout.square), JSON.stringify(layout));
+      assert.ok(layout.square.width >= 0 && layout.safe.width >= 0 && layout.safe.height >= 0, name);
+      assert.ok(Number.isFinite(layout.square.x) && Number.isFinite(layout.square.y), name);
+      assert.ok(contains(layout.safe, layout.square), `${name}: ${JSON.stringify(layout)}`);
+
+      if (screen.dpr === 0) {
+        assert.equal(layout.dpr, 1, `${name}: sanitised dpr`);
+      }
 
       for (const zone of layout.zones) {
-        assert.ok(zone.width >= 0 && zone.height >= 0);
-        assert.ok(zone.x >= 0 && right(zone) <= screen.width);
-        assert.ok(zone.y >= 0 && bottom(zone) <= screen.height);
+        assert.ok(zone.width >= 0 && zone.height >= 0, name);
+        assert.ok(zone.x >= 0 && right(zone) <= screen.width, name);
+        assert.ok(zone.y >= 0 && bottom(zone) <= screen.height, name);
       }
-    });
-  }
+    }
+  });
 
   it("gives an empty square and maps every screen point to the playfield origin", () => {
     const layout = computeLayout({ width: 0, height: 0, insets: ZERO_INSETS, dpr: 1 });
@@ -326,17 +346,20 @@ describe("rectToScreen", () => {
 });
 
 describe("snapToDevicePixels", () => {
-  it("rounds to the nearest whole device pixel", () => {
-    assert.equal(snapToDevicePixels(10.3, 1), 10);
-    assert.equal(snapToDevicePixels(10.3, 2), 10.5);
-    assert.equal(snapToDevicePixels(10.2, 3), 31 / 3);
-    assert.equal(snapToDevicePixels(-0.4, 1), -0);
-  });
+  it("rounds to the nearest whole device pixel, treating a dpr that isn't finite and positive as 1", () => {
+    const CASES: readonly (readonly [value: number, dpr: number, expected: number])[] = [
+      [10.3, 1, 10],
+      [10.3, 2, 10.5],
+      [10.2, 3, 31 / 3],
+      [-0.4, 1, -0],
+      [10.6, 0, 11],
+      [10.6, -2, 11],
+      [10.6, Number.NaN, 11],
+      [10.6, Number.POSITIVE_INFINITY, 11],
+    ];
 
-  it("treats a dpr that isn't finite and positive as 1", () => {
-    assert.equal(snapToDevicePixels(10.6, 0), 11);
-    assert.equal(snapToDevicePixels(10.6, -2), 11);
-    assert.equal(snapToDevicePixels(10.6, Number.NaN), 11);
-    assert.equal(snapToDevicePixels(10.6, Number.POSITIVE_INFINITY), 11);
+    for (const [value, dpr, expected] of CASES) {
+      assert.equal(snapToDevicePixels(value, dpr), expected, `${value} at dpr ${dpr}`);
+    }
   });
 });

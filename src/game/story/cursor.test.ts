@@ -105,7 +105,7 @@ describe("story cursor relayout", () => {
   const text = normalize(lineText(line));
 
   // Reads one page, relayouts, then reads the rest of the line; returns the line's pages.
-  const readAcross = (before: [number, number], after: [number, number], pagesBefore: number) => {
+  const readAcross = (before: [number, number], after: [number, number], pagesBefore: number, label: string) => {
     const cursor = createStoryCursor([line], before[0], fixedWidthMeasure(before[1]));
     const pages: string[] = [];
 
@@ -118,13 +118,13 @@ describe("story cursor relayout", () => {
     const start = cursor.page?.text.split(" ")[0];
 
     cursor.relayout(after[0], fixedWidthMeasure(after[1]));
-    assert.equal(cursor.pageIndex, pageIndex, "the page index doesn't move");
-    assert.equal(cursor.page?.text.split(" ")[0], start, "the current page starts at the same word");
+    assert.equal(cursor.pageIndex, pageIndex, `${label}: the page index doesn't move`);
+    assert.equal(cursor.page?.text.split(" ")[0], start, `${label}: the current page starts at the same word`);
 
     while (!cursor.done) {
       const page = cursor.page?.text ?? "";
 
-      assert.ok(fixedWidthMeasure(after[1])(page).length <= after[0], page);
+      assert.ok(fixedWidthMeasure(after[1])(page).length <= after[0], `${label}: ${page}`);
       pages.push(page);
       cursor.advance();
     }
@@ -132,15 +132,19 @@ describe("story cursor relayout", () => {
     return pages;
   };
 
-  it("never skips or repeats text when more lines fit", () => {
-    for (let read = 0; read < 3; read += 1) {
-      assert.equal(readAcross([1, 14], [3, 30], read).join(" "), text, `after ${read} pages`);
-    }
-  });
+  it("never skips or repeats text when more or fewer lines fit", () => {
+    type Paging = [lines: number, width: number];
+    const CASES: readonly (readonly [name: string, before: Paging, after: Paging, reads: number])[] = [
+      ["more lines fit", [1, 14], [3, 30], 3],
+      ["fewer lines fit", [3, 30], [1, 14], 2],
+    ];
 
-  it("never skips or repeats text when fewer lines fit", () => {
-    for (let read = 0; read < 2; read += 1) {
-      assert.equal(readAcross([3, 30], [1, 14], read).join(" "), text, `after ${read} pages`);
+    for (const [name, before, after, reads] of CASES) {
+      for (let read = 0; read < reads; read += 1) {
+        const label = `${name}: after ${read} pages`;
+
+        assert.equal(readAcross(before, after, read, label).join(" "), text, label);
+      }
     }
   });
 

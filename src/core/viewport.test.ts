@@ -3,15 +3,16 @@ import { describe, it } from "node:test";
 import { MAX_RESOLUTION, capResolution, floorToDevicePixels, parseCssPx, parseSafeAreaInsets } from "./viewport.ts";
 
 describe("parseCssPx", () => {
-  it("reads px lengths, fractional ones included", () => {
-    assert.equal(parseCssPx("47px"), 47);
-    assert.equal(parseCssPx("20.5px"), 20.5);
-    assert.equal(parseCssPx(" 34px"), 34);
-  });
+  it("reads px lengths, fractional ones included, and anything that is not a positive length as 0", () => {
+    const CASES: readonly (readonly [value: string, px: number])[] = [
+      ["47px", 47],
+      ["20.5px", 20.5],
+      [" 34px", 34],
+      ...["0px", "", "auto", "px", "-12px", "NaN", "Infinitypx"].map((value) => [value, 0] as const),
+    ];
 
-  it("reads anything that is not a positive length as 0", () => {
-    for (const value of ["0px", "", "auto", "px", "-12px", "NaN", "Infinitypx"]) {
-      assert.equal(parseCssPx(value), 0, JSON.stringify(value));
+    for (const [value, px] of CASES) {
+      assert.equal(parseCssPx(value), px, JSON.stringify(value));
     }
   });
 });
@@ -25,39 +26,38 @@ describe("parseSafeAreaInsets", () => {
 });
 
 describe("capResolution", () => {
-  it("keeps device pixel ratios up to MAX_RESOLUTION", () => {
+  it("keeps device pixel ratios up to MAX_RESOLUTION, caps higher ones, and falls back to 1 for unusable ones", () => {
     assert.equal(MAX_RESOLUTION, 3);
 
-    for (const dpr of [0.5, 1, 2, 2.625, 3]) {
-      assert.equal(capResolution(dpr), dpr);
-    }
-  });
+    const CASES: readonly (readonly [dpr: number, resolution: number])[] = [
+      ...[0.5, 1, 2, 2.625, 3].map((dpr) => [dpr, dpr] as const),
+      [3.5, 3],
+      [4, 3],
+      ...[0, -1, Number.NaN, Number.POSITIVE_INFINITY].map((dpr) => [dpr, 1] as const),
+    ];
 
-  it("caps higher ratios", () => {
-    assert.equal(capResolution(3.5), 3);
-    assert.equal(capResolution(4), 3);
-  });
-
-  it("falls back to 1 when the ratio is unusable", () => {
-    for (const dpr of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
-      assert.equal(capResolution(dpr), 1);
+    for (const [dpr, resolution] of CASES) {
+      assert.equal(capResolution(dpr), resolution, `dpr ${dpr}`);
     }
   });
 });
 
 describe("floorToDevicePixels", () => {
-  it("floors a CSS length to whole device pixels", () => {
-    // 412 CSS px at 2.625 is 1081.5 device px: 1081 of them.
-    assert.equal(floorToDevicePixels(412, 2.625) * 2.625, 1081);
-    assert.equal(floorToDevicePixels(915, 2.625) * 2.625, 2401);
-    assert.equal(floorToDevicePixels(390, 3), 390);
-    assert.equal(floorToDevicePixels(1280, 1), 1280);
-    assert.equal(floorToDevicePixels(100.4, 1), 100);
-  });
+  it("floors a CSS length to whole device pixels, not thrown off by float noise", () => {
+    const CASES: readonly (readonly [css: number, dpr: number, devicePx: number])[] = [
+      // 412 CSS px at 2.625 is 1081.5 device px: 1081 of them.
+      [412, 2.625, 1081],
+      [915, 2.625, 2401],
+      [390, 3, 1170],
+      [1280, 1, 1280],
+      [100.4, 1, 100],
+      // Float noise: 0.1 × 3 is 0.30000000000000004, and 0.7 × 3 is 2.0999999999999996. Whole device pixels either way.
+      [1 / 3, 3, 1],
+      [0.7, 3, 2],
+    ];
 
-  it("is not thrown off by float noise", () => {
-    // 0.1 × 3 is 0.30000000000000004, and 0.7 × 3 is 2.0999999999999996: whole device pixels either way.
-    assert.equal(floorToDevicePixels(1 / 3, 3) * 3, 1);
-    assert.equal(floorToDevicePixels(0.7, 3) * 3, 2);
+    for (const [css, dpr, devicePx] of CASES) {
+      assert.equal(floorToDevicePixels(css, dpr) * dpr, devicePx, `${css} at dpr ${dpr}`);
+    }
   });
 });

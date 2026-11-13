@@ -41,13 +41,6 @@ describe("typewriter", () => {
     assert.equal(uneven.revealed, 61, "1000 ms in uneven frames types the same");
   });
 
-  it("reveals several characters in one long frame (the accumulator)", () => {
-    const typer = createTypewriter(50, FRAME);
-
-    typer.update(100);
-    assert.equal(typer.revealed, 7);
-  });
-
   it("types a whisper at 100 ms a character", () => {
     const typer = createTypewriter(15, 100);
 

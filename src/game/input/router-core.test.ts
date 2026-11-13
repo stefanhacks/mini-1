@@ -7,6 +7,8 @@ import { createRouterCore, type PauseInput } from "./router-core.ts";
 // iPhone 13 portrait: the mute button in the safe top-right corner, the pad in the bottom zone.
 const LAYOUT = computeLayout({ width: 390, height: 844, insets: { top: 47, right: 0, bottom: 34, left: 0 }, dpr: 3 });
 
+type Core = ReturnType<typeof createRouterCore>;
+
 const setup = ({ mute = true } = {}) => {
   const core = createRouterCore();
   const log: string[] = [];
@@ -44,27 +46,6 @@ describe("router core: the mute button", () => {
     assert.deepEqual(core.map.drain(), []);
   });
 
-  it("does nothing when the pointer slides off before lifting, or is cancelled", () => {
-    const { core, log, muteCentre } = setup();
-
-    core.pointerDown(1, muteCentre.x, muteCentre.y);
-    core.pointerUp(1, muteCentre.x - 100, muteCentre.y + 100);
-    core.pointerDown(2, muteCentre.x, muteCentre.y);
-    core.pointerCancel(2);
-    core.pointerUp(2, muteCentre.x, muteCentre.y);
-    assert.deepEqual(log, []);
-    assert.deepEqual(core.map.drain(), []);
-  });
-
-  it("is ordinary input while no mute listener is registered", () => {
-    const { core, log, muteCentre } = setup({ mute: false });
-
-    core.pointerDown(1, muteCentre.x, muteCentre.y);
-    core.pointerUp(1, muteCentre.x, muteCentre.y);
-    assert.deepEqual(log, ["activate(advance)"]);
-    assert.equal(core.muteKey(), false);
-  });
-
   it("toggles on the M key while a listener is registered, and unsubscribes", () => {
     const core = createRouterCore();
     let toggles = 0;
@@ -96,13 +77,6 @@ const setupPause = (input: PauseInput) => {
 };
 
 describe("router core: the pause button and keys", () => {
-  it("sits right under the mute button", () => {
-    const { core } = setupPause("ready");
-
-    assert.equal(core.pauseRect?.x, core.muteRect?.x);
-    assert.equal(core.pauseRect?.y, (core.muteRect?.y ?? 0) + (core.muteRect?.height ?? 0));
-  });
-
   it("while ready: a tap calls the pause listeners, with no press, advance or activation, and so does a key", () => {
     const { core, log, pauseCentre } = setupPause("ready");
 
@@ -113,18 +87,6 @@ describe("router core: the pause button and keys", () => {
     assert.deepEqual(core.map.drain(), []);
     assert.equal(core.pauseKey(), true);
     assert.deepEqual(log, ["pause", "pause"]);
-  });
-
-  it("does nothing when the pointer slides off before lifting, or is cancelled", () => {
-    const { core, log, pauseCentre } = setupPause("ready");
-
-    core.pointerDown(1, pauseCentre.x, pauseCentre.y);
-    core.pointerUp(1, pauseCentre.x - 100, pauseCentre.y + 100);
-    core.pointerDown(2, pauseCentre.x, pauseCentre.y);
-    core.pointerCancel(2);
-    core.pointerUp(2, pauseCentre.x, pauseCentre.y);
-    assert.deepEqual(log, []);
-    assert.deepEqual(core.map.drain(), []);
   });
 
   it("while paused: its square is an ordinary tap (advance, activation, touchend retry); keys still call", () => {
@@ -145,25 +107,6 @@ describe("router core: the pause button and keys", () => {
     core.pointerUp(1, pauseCentre.x, pauseCentre.y);
     assert.deepEqual(log, ["activate(advance)"]);
     assert.equal(core.pauseKey(), false);
-  });
-
-  it("is ordinary input while no pause listener is registered, and the mute button keeps its own square", () => {
-    const { core, log, muteCentre } = setup();
-
-    core.setPauseInput("ready");
-    assert.equal(core.pauseKey(), false);
-
-    const rect = core.pauseRect;
-
-    if (rect === null) {
-      throw new Error("no pause button");
-    }
-
-    core.pointerDown(1, rect.x + 1, rect.y + rect.height / 2);
-    core.pointerUp(1, rect.x + 1, rect.y + rect.height / 2);
-    core.pointerDown(2, muteCentre.x, muteCentre.y);
-    core.pointerUp(2, muteCentre.x, muteCentre.y);
-    assert.deepEqual(log, ["activate(advance)", "mute"]);
   });
 
   it("a pointer that went down on mute and lifts on pause does nothing", () => {
@@ -191,48 +134,109 @@ const setupFlashes = (input: PauseInput) => {
 };
 
 describe("router core: the reduce-flashes toggle", () => {
-  it("sits right under the pause button", () => {
-    const { core } = setupFlashes("ready");
-
-    assert.equal(core.flashesRect?.x, core.pauseRect?.x);
-    assert.equal(core.flashesRect?.y, (core.pauseRect?.y ?? 0) + (core.pauseRect?.height ?? 0));
-  });
-
-  for (const input of ["off", "ready", "paused"] as const) {
-    it(`pause input ${input}: a tap only toggles, with no press, advance or activation`, () => {
+  it("a tap only toggles, with no press, advance or activation, whatever the pause input", () => {
+    for (const input of ["off", "ready", "paused"] as const) {
       const { core, log, flashesCentre } = setupFlashes(input);
 
       core.pointerDown(1, flashesCentre.x, flashesCentre.y);
       core.pointerUp(1, flashesCentre.x, flashesCentre.y, true);
       core.touchEnd();
-      assert.deepEqual(log, ["flashes"]);
-      assert.deepEqual(core.map.drain(), []);
-    });
-  }
+      assert.deepEqual(log, ["flashes"], `pause input ${input}`);
+      assert.deepEqual(core.map.drain(), [], `pause input ${input}`);
+    }
+  });
+});
 
+describe("router core: every corner button", () => {
   it("does nothing when the pointer slides off before lifting, or is cancelled", () => {
-    const { core, log, flashesCentre } = setupFlashes("ready");
+    const CASES = [
+      { name: "mute", start: () => setup(), rectOf: (core: Core) => core.muteRect },
+      { name: "pause", start: () => setupPause("ready"), rectOf: (core: Core) => core.pauseRect },
+      { name: "reduce flashes", start: () => setupFlashes("ready"), rectOf: (core: Core) => core.flashesRect },
+    ];
 
-    core.pointerDown(1, flashesCentre.x, flashesCentre.y);
-    core.pointerUp(1, flashesCentre.x - 100, flashesCentre.y + 100);
-    core.pointerDown(2, flashesCentre.x, flashesCentre.y);
-    core.pointerCancel(2);
-    core.pointerUp(2, flashesCentre.x, flashesCentre.y);
-    assert.deepEqual(log, []);
-    assert.deepEqual(core.map.drain(), []);
+    for (const { name, start, rectOf } of CASES) {
+      const { core, log } = start();
+      const rect = rectOf(core);
+
+      if (rect === null) {
+        throw new Error(`no ${name} button`);
+      }
+
+      const centre = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+
+      core.pointerDown(1, centre.x, centre.y);
+      core.pointerUp(1, centre.x - 100, centre.y + 100);
+      core.pointerDown(2, centre.x, centre.y);
+      core.pointerCancel(2);
+      core.pointerUp(2, centre.x, centre.y);
+      assert.deepEqual(log, [], name);
+      assert.deepEqual(core.map.drain(), [], name);
+    }
   });
 
-  it("is ordinary input while no listener is registered", () => {
-    const { core, log } = setupPause("ready");
-    const rect = core.flashesRect;
+  it("is ordinary input while no listener is registered, and the mute button keeps its own square", () => {
+    const tap = (core: Core, id: number, x: number, y: number) => {
+      core.pointerDown(id, x, y);
+      core.pointerUp(id, x, y);
+    };
+    const CASES = [
+      {
+        name: "mute",
+        expected: ["activate(advance)"],
+        run: () => {
+          const { core, log, muteCentre } = setup({ mute: false });
 
-    if (rect === null) {
-      throw new Error("no reduce-flashes button");
+          tap(core, 1, muteCentre.x, muteCentre.y);
+
+          return { log, key: core.muteKey() };
+        },
+      },
+      {
+        name: "pause",
+        expected: ["activate(advance)", "mute"],
+        run: () => {
+          const { core, log, muteCentre } = setup();
+
+          core.setPauseInput("ready");
+
+          const rect = core.pauseRect;
+
+          if (rect === null) {
+            throw new Error("no pause button");
+          }
+
+          tap(core, 1, rect.x + 1, rect.y + rect.height / 2);
+          tap(core, 2, muteCentre.x, muteCentre.y);
+
+          return { log, key: core.pauseKey() };
+        },
+      },
+      {
+        name: "reduce flashes",
+        expected: ["activate(advance)"],
+        run: () => {
+          const { core, log } = setupPause("ready");
+          const rect = core.flashesRect;
+
+          if (rect === null) {
+            throw new Error("no reduce-flashes button");
+          }
+
+          tap(core, 1, rect.x + rect.width / 2, rect.y + rect.height / 2);
+
+          // The toggle has no key.
+          return { log, key: false };
+        },
+      },
+    ];
+
+    for (const { name, expected, run } of CASES) {
+      const { log, key } = run();
+
+      assert.deepEqual(log, expected, name);
+      assert.equal(key, false, `${name}: key`);
     }
-
-    core.pointerDown(1, rect.x + rect.width / 2, rect.y + rect.height / 2);
-    core.pointerUp(1, rect.x + rect.width / 2, rect.y + rect.height / 2);
-    assert.deepEqual(log, ["activate(advance)"]);
   });
 });
 

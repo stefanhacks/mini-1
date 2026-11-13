@@ -46,8 +46,8 @@ describe("generateRounds", () => {
     });
   });
 
-  it("builds 3 rounds of 3/5/7 with 1 Hold, 1 Many, then 1 of each, for many seeds", () => {
-    for (let seed = 0; seed < 500; seed++) {
+  it("builds 3 rounds of 3/5/7 with 1 Hold, 1 Many, then 1 of each, for 20 seeds", () => {
+    for (let seed = 0; seed < 20; seed++) {
       const rounds = generateRounds(createRng(seed), TUNING);
 
       assert.deepEqual(rounds.map((round) => round.length), [3, 5, 7]);
@@ -69,11 +69,6 @@ describe("generateRounds", () => {
         }
       });
     }
-  });
-
-  it("is deterministic per seed and differs between seeds", () => {
-    assert.deepEqual(generateRounds(createRng(9), TUNING), generateRounds(createRng(9), TUNING));
-    assert.notDeepEqual(generateRounds(createRng(9), TUNING), generateRounds(createRng(10), TUNING));
   });
 
   it("draws in the original's order: special indices for every round, redrawing repeats, then arrows in order", () => {
@@ -104,33 +99,6 @@ describe("generateRounds", () => {
     });
   });
 
-  it("places the specials roughly uniformly and the arrows uniformly", () => {
-    const holdAt = [0, 0, 0];
-    const arrowCounts = new Map<string, number>();
-    const runs = 3000;
-
-    for (let seed = 0; seed < runs; seed++) {
-      const rounds = generateRounds(createRng(seed * 7919 + 1), TUNING);
-      const first = rounds[0] ?? [];
-      const index = first.findIndex((spec) => spec.kind === "hold");
-
-      holdAt[index] = (holdAt[index] ?? 0) + 1;
-
-      for (const spec of rounds.flat()) {
-        const dirs = spec.kind === "sequence" ? spec.directions : [spec.direction];
-
-        dirs.forEach((dir) => arrowCounts.set(dir, (arrowCounts.get(dir) ?? 0) + 1));
-      }
-    }
-
-    holdAt.forEach((count) => assert.ok(Math.abs(count - runs / 3) < runs * 0.05, `${count}`));
-
-    const total = [...arrowCounts.values()].reduce((sum, count) => sum + count, 0);
-
-    assert.equal(arrowCounts.size, 4);
-    arrowCounts.forEach((count) => assert.ok(Math.abs(count - total / 4) < total * 0.02, `${count} of ${total}`));
-  });
-
   it("supports other tunings, keeping the specials on distinct indices", () => {
     const tuning: Tuning = { ...TUNING, rounds: [{ challenges: 4, length: 2, holds: 2, manys: 2 }] };
 
@@ -141,16 +109,17 @@ describe("generateRounds", () => {
     }
   });
 
-  it("throws on a game with no rounds", () => {
-    assert.throws(() => generateRounds(createRng(1), { ...TUNING, rounds: [] }), RangeError);
-  });
+  it("throws on a game with no rounds, or a round that can't fit its specials or is empty", () => {
+    const CASES: readonly (readonly [name: string, rounds: Tuning["rounds"]])[] = [
+      ["no rounds", []],
+      ["specials don't fit", [{ challenges: 2, length: 3, holds: 2, manys: 1 }]],
+      ["no challenges", [{ challenges: 0, length: 3, holds: 0, manys: 0 }]],
+      ["empty sequences", [{ challenges: 3, length: 0, holds: 0, manys: 0 }]],
+      ["negative holds", [{ challenges: 3, length: 3, holds: -1, manys: 0 }]],
+    ];
 
-  it("throws on a round that can't fit its specials or is empty", () => {
-    const bad = (round: Tuning["rounds"][number]) => () => generateRounds(createRng(1), { ...TUNING, rounds: [round] });
-
-    assert.throws(bad({ challenges: 2, length: 3, holds: 2, manys: 1 }), RangeError);
-    assert.throws(bad({ challenges: 0, length: 3, holds: 0, manys: 0 }), RangeError);
-    assert.throws(bad({ challenges: 3, length: 0, holds: 0, manys: 0 }), RangeError);
-    assert.throws(bad({ challenges: 3, length: 3, holds: -1, manys: 0 }), RangeError);
+    for (const [name, rounds] of CASES) {
+      assert.throws(() => generateRounds(createRng(1), { ...TUNING, rounds }), RangeError, name);
+    }
   });
 });

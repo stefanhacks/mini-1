@@ -13,17 +13,16 @@ describe("renderTextureScale", () => {
     assert.equal(renderTextureScale(2159), 4);
   });
 
-  it("is capped at MAX_RENDER_SCALE, a 3000² texture", () => {
+  it("is capped at MAX_RENDER_SCALE, a 3000² texture, and at least 1 on small, empty and unusable sides", () => {
     assert.equal(MAX_RENDER_SCALE, 6);
-    assert.equal(renderTextureScale(3000), 6);
-    assert.equal(renderTextureScale(3499), 6);
-    assert.equal(renderTextureScale(3500), 6);
-    assert.equal(renderTextureScale(7680), 6);
-  });
 
-  it("is at least 1, on small, empty and unusable sides", () => {
-    for (const side of [499, 267, 1, 0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
-      assert.equal(renderTextureScale(side), 1, `side ${side}`);
+    const CASES: readonly (readonly [side: number, scale: number])[] = [
+      ...[3000, 3499, 3500, 7680].map((side) => [side, 6] as const),
+      ...[499, 267, 1, 0, -5, Number.NaN, Number.POSITIVE_INFINITY].map((side) => [side, 1] as const),
+    ];
+
+    for (const [side, scale] of CASES) {
+      assert.equal(renderTextureScale(side), scale, `side ${side}`);
     }
   });
 

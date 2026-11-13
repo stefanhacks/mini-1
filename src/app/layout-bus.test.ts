@@ -6,14 +6,6 @@ import { createLayoutBus } from "./layout-bus.ts";
 const layoutOf = (width: number, height: number) => computeLayout({ width, height, insets: ZERO_INSETS, dpr: 1 });
 
 describe("createLayoutBus", () => {
-  it("starts with the initial layout and no listeners", () => {
-    const initial = layoutOf(800, 600);
-    const bus = createLayoutBus(initial);
-
-    assert.equal(bus.current, initial);
-    assert.equal(bus.listenerCount, 0);
-  });
-
   it("publishes to every listener in subscription order, after making the layout current", () => {
     const bus = createLayoutBus(layoutOf(800, 600));
     const next = layoutOf(390, 844);

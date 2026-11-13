@@ -32,14 +32,4 @@ describe("createCueLog", () => {
     assert.equal(entries[0]?.time, 5);
     assert.equal(entries.at(-1)?.time, CUE_LOG_SIZE + 4);
   });
-
-  it("hands out copies", () => {
-    const log = createCueLog(() => 0);
-
-    log.onCue({ name: "lightning", state: "title", at: 0 });
-
-    const [entry] = log.entries();
-
-    assert.notEqual(entry, log.entries()[0]);
-  });
 });

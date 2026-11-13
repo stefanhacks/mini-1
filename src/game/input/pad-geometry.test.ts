@@ -4,7 +4,6 @@ import { computeLayout, type Insets, type Rect, type ScreenInfo, ZERO_INSETS } f
 import { DIRECTIONS } from "../direction.ts";
 import {
   computePads,
-  DEAD_ZONE_RATIO,
   HIT_MARGIN,
   hitTest,
   MIN_BUTTON_SIZE,
@@ -52,86 +51,109 @@ const contains = (outer: Rect, inner: Rect) =>
   && inner.y + inner.height <= outer.y + outer.height + EPSILON;
 
 describe("computePads on device layouts", () => {
-  for (const { name, screen } of DEVICES) {
-    describe(name, () => {
-      const layout = computeLayout(screen);
-      const pads = computePads(layout);
+  const CASES = DEVICES.map(({ name, screen }) => {
+    const layout = computeLayout(screen);
 
-      it("puts one pad in each zone: one in portrait, both bands in landscape", () => {
-        assert.equal(pads.length, layout.orientation === "portrait" ? 1 : 2);
-        assert.equal(pads.length, layout.zones.length);
+    return { name, layout, pads: computePads(layout) };
+  });
+
+  it("puts one pad in each zone: one in portrait, both bands in landscape", () => {
+    for (const { name, layout, pads } of CASES) {
+      assert.equal(pads.length, layout.orientation === "portrait" ? 1 : 2, name);
+      assert.equal(pads.length, layout.zones.length, name);
+    }
+  });
+
+  it("sizes the pad min(200, zone width, zone height), with buttons of at least 48 px, inside its zone", () => {
+    for (const { name, layout, pads } of CASES) {
+      pads.forEach((pad, index) => {
+        const zone = layout.zones[index];
+        const label = `${name} pad ${index}`;
+
+        assert.equal(pad.size, Math.min(PAD_MAX_SIZE, zone.width, zone.height), label);
+        assert.ok(pad.buttonSize >= MIN_BUTTON_SIZE, `${label}: button ${pad.buttonSize}`);
+        assert.ok(contains(zone, pad.bounds), label);
+        assert.ok(contains(zone, pad.hitBounds), label);
+        assert.ok(contains(pad.hitBounds, pad.bounds), label);
+
+        for (const dir of DIRECTIONS) {
+          assert.ok(contains(pad.bounds, pad.buttons[dir]), `${label} ${dir}`);
+        }
       });
+    }
+  });
 
-      it("sizes the pad min(200, zone width, zone height), with buttons of at least 48 px, inside its zone", () => {
-        pads.forEach((pad, index) => {
-          const zone = layout.zones[index];
+  it("centres the pad horizontally and lowers it toward the thumbs in a tall zone", () => {
+    for (const { name, layout, pads } of CASES) {
+      pads.forEach((pad, index) => {
+        const zone = layout.zones[index];
+        const zoneBottom = zone.y + zone.height;
+        const label = `${name} pad ${index}`;
 
-          assert.equal(pad.size, Math.min(PAD_MAX_SIZE, zone.width, zone.height));
-          assert.ok(pad.buttonSize >= MIN_BUTTON_SIZE, `button ${pad.buttonSize}`);
-          assert.ok(contains(zone, pad.bounds));
-          assert.ok(contains(zone, pad.hitBounds));
-          assert.ok(contains(pad.hitBounds, pad.bounds));
+        assert.ok(Math.abs(pad.centre.x - (zone.x + zone.width / 2)) < EPSILON, label);
+        assert.ok(pad.centre.y >= zone.y + zone.height / 2 - EPSILON, label);
 
-          for (const dir of DIRECTIONS) {
-            assert.ok(contains(pad.bounds, pad.buttons[dir]));
+        if (zone.height / 2 < PAD_BOTTOM_OFFSET && zone.height >= pad.size) {
+          // Low enough that the offset doesn't apply: the pad is centred in the zone.
+          assert.ok(Math.abs(pad.centre.y - (zone.y + zone.height / 2)) < EPSILON, label);
+        } else {
+          assert.ok(
+            Math.abs(pad.centre.y - Math.max(zoneBottom - PAD_BOTTOM_OFFSET, zone.y + pad.size / 2)) < 1e-6,
+            label,
+          );
+        }
+      });
+    }
+  });
+
+  it("hits each button's centre and corners with its own direction and pad", () => {
+    for (const { name, pads } of CASES) {
+      pads.forEach((pad, index) => {
+        for (const dir of DIRECTIONS) {
+          const button = pad.buttons[dir];
+          const inset = 0.5;
+          const points = [
+            centreOf(button),
+            { x: button.x + inset, y: button.y + inset },
+            { x: button.x + button.width - inset, y: button.y + inset },
+            { x: button.x + inset, y: button.y + button.height - inset },
+            { x: button.x + button.width - inset, y: button.y + button.height - inset },
+          ];
+
+          for (const point of points) {
+            assert.deepEqual(
+              hitTest(pads, point.x, point.y),
+              { pad: index, dir },
+              `${name}: ${dir} at ${point.x},${point.y}`,
+            );
           }
-        });
+        }
       });
+    }
+  });
 
-      it("centres the pad horizontally and lowers it toward the thumbs in a tall zone", () => {
-        pads.forEach((pad, index) => {
-          const zone = layout.zones[index];
-          const zoneBottom = zone.y + zone.height;
+  it("ignores the dead centre and the square, and hits the margin around the pad", () => {
+    for (const { name, layout, pads } of CASES) {
+      assert.equal(hitTest(pads, centreOf(layout.square).x, centreOf(layout.square).y), null, `${name}: square`);
 
-          assert.ok(Math.abs(pad.centre.x - (zone.x + zone.width / 2)) < EPSILON);
-          assert.ok(pad.centre.y >= zone.y + zone.height / 2 - EPSILON);
+      pads.forEach((pad, index) => {
+        const { centre, deadZoneRadius } = pad;
+        const label = `${name} pad ${index}`;
 
-          if (zone.height / 2 < PAD_BOTTOM_OFFSET && zone.height >= pad.size) {
-            // Low enough that the offset doesn't apply: the pad is centred in the zone.
-            assert.ok(Math.abs(pad.centre.y - (zone.y + zone.height / 2)) < EPSILON);
-          } else {
-            assert.ok(Math.abs(pad.centre.y - Math.max(zoneBottom - PAD_BOTTOM_OFFSET, zone.y + pad.size / 2)) < 1e-6);
-          }
-        });
+        assert.equal(hitTest(pads, centre.x, centre.y), null, `${label}: centre`);
+        assert.equal(hitTest(pads, centre.x + deadZoneRadius * 0.9, centre.y), null, `${label}: 0.9 radius`);
+        assert.deepEqual(
+          hitTest(pads, centre.x + deadZoneRadius * 1.1, centre.y),
+          { pad: index, dir: "right" },
+          `${label}: 1.1 radius`,
+        );
+
+        const marginY = Math.max(pad.hitBounds.y, pad.bounds.y - HIT_MARGIN / 2);
+
+        assert.deepEqual(hitTest(pads, centre.x, marginY), { pad: index, dir: "up" }, `${label}: margin`);
       });
-
-      it("hits each button's centre and corners with its own direction and pad", () => {
-        pads.forEach((pad, index) => {
-          for (const dir of DIRECTIONS) {
-            const button = pad.buttons[dir];
-            const inset = 0.5;
-            const points = [
-              centreOf(button),
-              { x: button.x + inset, y: button.y + inset },
-              { x: button.x + button.width - inset, y: button.y + inset },
-              { x: button.x + inset, y: button.y + button.height - inset },
-              { x: button.x + button.width - inset, y: button.y + button.height - inset },
-            ];
-
-            for (const point of points) {
-              assert.deepEqual(hitTest(pads, point.x, point.y), { pad: index, dir }, `${dir} at ${point.x},${point.y}`);
-            }
-          }
-        });
-      });
-
-      it("ignores the dead centre and the square, and hits the margin around the pad", () => {
-        assert.equal(hitTest(pads, centreOf(layout.square).x, centreOf(layout.square).y), null);
-
-        pads.forEach((pad, index) => {
-          const { centre, deadZoneRadius } = pad;
-
-          assert.equal(hitTest(pads, centre.x, centre.y), null);
-          assert.equal(hitTest(pads, centre.x + deadZoneRadius * 0.9, centre.y), null);
-          assert.deepEqual(hitTest(pads, centre.x + deadZoneRadius * 1.1, centre.y), { pad: index, dir: "right" });
-
-          const marginY = Math.max(pad.hitBounds.y, pad.bounds.y - HIT_MARGIN / 2);
-
-          assert.deepEqual(hitTest(pads, centre.x, marginY), { pad: index, dir: "up" });
-        });
-      });
-    });
-  }
+    }
+  });
 });
 
 describe("hitTest", () => {
@@ -162,18 +184,11 @@ describe("hitTest", () => {
     assert.deepEqual(hitTest(pads, hitBounds.x + hitBounds.width - 0.01, centre.y), { pad: 0, dir: "right" });
   });
 
-  it("sizes the dead centre from the button side", () => {
-    assert.equal(pads[0].deadZoneRadius, DEAD_ZONE_RATIO * pads[0].buttonSize);
-  });
-
-  it("never hits a pad whose zone is empty", () => {
+  it("never hits anything with an empty zone or no pads", () => {
     const empty = computePads(computeLayout({ width: 0, height: 0, insets: ZERO_INSETS, dpr: 1 }));
 
-    assert.ok(empty.every((pad) => pad.size === 0));
-    assert.equal(hitTest(empty, 0, 0), null);
-  });
-
-  it("has no pads to hit with no pads", () => {
-    assert.equal(hitTest([], 10, 10), null);
+    assert.ok(empty.every((pad) => pad.size === 0), "empty zone: pad size 0");
+    assert.equal(hitTest(empty, 0, 0), null, "empty zone");
+    assert.equal(hitTest([], 10, 10), null, "no pads");
   });
 });

@@ -23,18 +23,19 @@ const inputWith = (events: InputEvent[]) => {
 };
 
 describe("drainAdvanced", () => {
-  it("empties the queue and says whether it held an advance", () => {
-    const withAdvance = inputWith([{ kind: "press", dir: "up" }, { kind: "advance" }]);
-    const without = inputWith([{ kind: "press", dir: "up" }, { kind: "cancel" }]);
+  it("empties the queue and says whether it held an advance, false for an empty one", () => {
+    const CASES: readonly (readonly [name: string, events: InputEvent[], advanced: boolean])[] = [
+      ["with an advance", [{ kind: "press", dir: "up" }, { kind: "advance" }], true],
+      ["without", [{ kind: "press", dir: "up" }, { kind: "cancel" }], false],
+      ["empty", [], false],
+    ];
 
-    assert.equal(drainAdvanced(withAdvance), true);
-    assert.equal(drainAdvanced(without), false);
-    assert.equal(withAdvance.queued, 0);
-    assert.equal(without.queued, 0);
-  });
+    for (const [name, events, advanced] of CASES) {
+      const input = inputWith(events);
 
-  it("is false for an empty queue", () => {
-    assert.equal(drainAdvanced(inputWith([])), false);
+      assert.equal(drainAdvanced(input), advanced, name);
+      assert.equal(input.queued, 0, `${name}: emptied`);
+    }
   });
 });
 

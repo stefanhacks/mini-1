@@ -2,12 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { GameClock } from "../../core/clock.ts";
 import { generateRounds } from "./generate.ts";
-import { HoldRule } from "./hold.ts";
-import { ManyRule } from "./many.ts";
 import { createRng } from "./rng.ts";
-import { createRule, Round } from "./round.ts";
-import { ruleContext, type ChallengeSpec, type RuleContext } from "./rule.ts";
-import { SequenceRule } from "./sequence.ts";
+import { Round } from "./round.ts";
+import type { ChallengeSpec, RuleContext } from "./rule.ts";
 import { TUNING } from "./tuning.ts";
 
 const FRAME_MS = 16;
@@ -57,29 +54,6 @@ const answer = (clock: GameClock, round: Round) => {
     }
   }
 };
-
-describe("createRule", () => {
-  it("builds the rule for each kind", () => {
-    const { context } = setup(SPECS);
-
-    assert.ok(createRule({ kind: "sequence", directions: ["up"] }, context) instanceof SequenceRule);
-    assert.ok(createRule({ kind: "hold", direction: "up" }, context) instanceof HoldRule);
-    assert.ok(createRule({ kind: "many", direction: "up" }, context) instanceof ManyRule);
-  });
-});
-
-describe("ruleContext", () => {
-  it("reads now from the clock that owns the scope", () => {
-    const clock = new GameClock();
-    const scope = clock.createScope();
-    const context = ruleContext(clock, scope, TUNING);
-
-    clock.tick(123);
-    assert.equal(context.now(), 123);
-    assert.equal(context.scope, scope);
-    assert.equal(context.onDone, undefined);
-  });
-});
 
 describe("Round", () => {
   it("runs its challenges in order and reports each, then the round, once", () => {

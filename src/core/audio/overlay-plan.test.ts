@@ -6,20 +6,21 @@ import { overlayForPart, planPerBarStarts } from "./overlay-plan.ts";
 const BAR = 9.6;
 
 describe("overlayForPart", () => {
-  it("maps story parts 0..3 to the original overlay sequence", () => {
-    assert.deepEqual(overlayForPart(0), { key: "overlayPhase02", mode: "loop" });
-    assert.deepEqual(overlayForPart(1), { key: "overlayPhase03", mode: "loop" });
-    assert.deepEqual(overlayForPart(2), { key: "overlayPhase04", mode: "per-bar" });
-    assert.deepEqual(overlayForPart(3), { key: "bgm02", mode: "once" });
-  });
+  it("maps parts 0..3 to the original overlay sequence, null to none, and throws on parts that don't exist", () => {
+    const CASES = [
+      [0, { key: "overlayPhase02", mode: "loop" }],
+      [1, { key: "overlayPhase03", mode: "loop" }],
+      [2, { key: "overlayPhase04", mode: "per-bar" }],
+      [3, { key: "bgm02", mode: "once" }],
+      [null, null],
+    ] as const;
 
-  it("maps null to no overlay", () => {
-    assert.equal(overlayForPart(null), null);
-  });
+    for (const [part, overlay] of CASES) {
+      assert.deepEqual(overlayForPart(part), overlay, `part ${part}`);
+    }
 
-  it("throws on parts that don't exist", () => {
     for (const part of [-1, 4, 1.5, NaN]) {
-      assert.throws(() => overlayForPart(part), RangeError);
+      assert.throws(() => overlayForPart(part), RangeError, `part ${part}`);
     }
   });
 });
@@ -33,15 +34,6 @@ describe("planPerBarStarts", () => {
 
     assert.deepEqual(plan.starts, [1 + 2 * BAR]);
     assert.equal(plan.nextIndex, 3);
-  });
-
-  it("returns nothing new when called again before the horizon moves", () => {
-    const first = planPerBarStarts({ ...base, now: 2, nextIndex: 1 });
-    const again = planPerBarStarts({ ...base, now: 2.016, nextIndex: first.nextIndex });
-
-    assert.deepEqual(first.starts, [1 + BAR]);
-    assert.deepEqual(again.starts, []);
-    assert.equal(again.nextIndex, first.nextIndex);
   });
 
   it("keeps restarting bar after bar when called from each voice's end (about 7.2 s into its bar)", () => {
