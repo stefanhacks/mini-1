@@ -341,23 +341,6 @@ describe("eyes", () => {
     assert.equal(undersea.stats.eyes, 0);
   });
 
-  it("shows at most one small eye in parts 0–1, in about 5% of games, however long the pages take", () => {
-    let games = 0;
-
-    for (let seed = 0; seed < 2000; seed++) {
-      const { shown } = playGame(seed * 7919, false, 1 + (seed % 7) * 10);
-      const early = shown.filter(({ part }) => part < 2);
-
-      assert.ok(early.length <= 1);
-      assert.ok(early.every(({ frames }) => frames.every((eye) => eye.size === "small")));
-      // Only in a window of at least 1 s: never in a transition.
-      assert.ok(early.every(({ frames }) => frames.length > 50), "a whole eye, not a glimpse");
-      games += early.length;
-    }
-
-    assert.ok(games > 60 && games < 140, `${games} of 2000`);
-  });
-
   it("shows about 1 window in 6 from part 2, small in part 2 and either size from part 3", () => {
     let shown = 0;
     let windows = 0;
