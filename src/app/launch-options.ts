@@ -1,4 +1,4 @@
-// What the page URL sets for a run: `?seed=` and, with `?debug`, `?timescale=`. Pure TypeScript.
+// What the page URL sets for a run: `?seed=` and, with `?debug`, `?timescale=` and `?eyes=always`. Pure TypeScript.
 // Written by Claude Code.
 import { randomSeed, seedFromString } from "../game/challenges/rng.ts";
 
@@ -7,6 +7,8 @@ export interface LaunchOptions {
   readonly timescale: number;
   /** The `?seed=` value, or null for random seeds. */
   readonly seed: string | null;
+  /** `?debug&eyes=always`: an eye wherever one may show (scene/particles), to review them without waiting. */
+  readonly eyesAlways: boolean;
 }
 
 /** Whether `value` can be a time scale: finite and positive. */
@@ -24,6 +26,7 @@ export const readLaunchOptions = (search: string, debug: boolean): LaunchOptions
   return {
     timescale: debug && isValidTimescale(timescale) ? timescale : 1,
     seed: params.get("seed"),
+    eyesAlways: debug && params.get("eyes") === "always",
   };
 };
 

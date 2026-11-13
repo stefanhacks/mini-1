@@ -11,6 +11,7 @@ import {
   FLASH_PEAK_EVENT,
   FLASH_REDUCED,
   FLASH_REDUCED_PEAK,
+  flashRule,
   isStrike,
   peakAlpha,
   STRIKE_HALF_RANGE,
@@ -78,6 +79,21 @@ describe("drawStrike", () => {
       "lightning",
       "title-reveal",
     ]);
+  });
+});
+
+describe("flashRule", () => {
+  it("caps the flash under OS reduced motion or the toggle; only the toggle turns the screen tone off", () => {
+    const matrix = [
+      { reducedMotion: false, reduceFlashes: false, capped: false, screenTone: true },
+      { reducedMotion: true, reduceFlashes: false, capped: true, screenTone: true },
+      { reducedMotion: false, reduceFlashes: true, capped: true, screenTone: false },
+      { reducedMotion: true, reduceFlashes: true, capped: true, screenTone: false },
+    ];
+
+    for (const { reducedMotion, reduceFlashes, ...rule } of matrix) {
+      assert.deepEqual(flashRule(reducedMotion, reduceFlashes), rule, `${reducedMotion}, ${reduceFlashes}`);
+    }
   });
 });
 

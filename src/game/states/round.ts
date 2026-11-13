@@ -46,6 +46,9 @@ export const createRound = (deps: GameDeps, session: GameSession): GameState => 
       view.setBackdrop(backdrop, true, FADE);
     }
 
+    // An eye may show until the next part's text box (m5-plan, owner decision 11).
+    view.setUndersea({ part: session.part, eyesFor: AFTER_ROUND_MS });
+
     scope.after(AFTER_ROUND_MS, () => {
       session.part += 1;
       machine.request("story");
@@ -82,6 +85,8 @@ export const createRound = (deps: GameDeps, session: GameSession): GameState => 
       pad.setVisible(true);
       pad.setDimmed(false);
       session.phase = "play";
+      // No eye while the challenges are up.
+      scene().setUndersea({ part: session.part, eyesFor: 0 });
 
       const context = ruleContext(clock, scope, tuning, () => winRound(scope, machine));
 

@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { computeLayout, type Insets, type Rect, type ScreenInfo, ZERO_INSETS } from "../../core/layout.ts";
-import { hitsMuteButton, MUTE_HIT_SIZE, MUTE_ICON_SIZE, muteButtonRect, muteIconBox } from "./mute-geometry.ts";
+import {
+  CORNER_BUTTONS,
+  CORNER_HIT_SIZE,
+  CORNER_ICON_SIZE,
+  cornerButtonRect,
+  cornerIconBox,
+  hitsCornerButton,
+} from "./corner-geometry.ts";
 import { computePads } from "./pad-geometry.ts";
 
 const insets = (top: number, right: number, bottom: number, left: number): Insets => ({ top, right, bottom, left });
@@ -48,66 +55,92 @@ const inside = (outer: Rect, inner: Rect) =>
   inner.x >= outer.x - 1e-9 && inner.y >= outer.y - 1e-9
   && inner.x + inner.width <= outer.x + outer.width + 1e-9 && inner.y + inner.height <= outer.y + outer.height + 1e-9;
 
-describe("muteButtonRect across the layout presets", () => {
+describe("cornerButtonRect across the layout presets", () => {
   for (const { name, screen } of DEVICES) {
-    it(`${name}: a ${MUTE_HIT_SIZE} px square on the safe top, clear of the control zones and pads`, () => {
-      const layout = computeLayout(screen);
-      const rect = muteButtonRect(layout);
+    for (const [slot, button] of CORNER_BUTTONS.entries()) {
+      it(`${name}: ${button}, a ${CORNER_HIT_SIZE} px square in row ${slot}, clear of the zones and pads`, () => {
+        const layout = computeLayout(screen);
+        const rect = cornerButtonRect(layout, button);
 
+        if (name === "empty") {
+          assert.equal(rect, null);
+          return;
+        }
+
+        assert.ok(rect !== null, "no room for the button");
+        assert.equal(rect.width, CORNER_HIT_SIZE);
+        assert.equal(rect.height, CORNER_HIT_SIZE);
+        assert.ok(inside(layout.safe, rect), "outside the safe rect");
+        assert.equal(rect.y, layout.safe.y + slot * CORNER_HIT_SIZE);
+
+        for (const zone of layout.zones) {
+          assert.ok(!overlaps(zone, rect), `overlaps zone ${JSON.stringify(zone)}`);
+        }
+
+        for (const pad of computePads(layout)) {
+          assert.ok(!overlaps(pad.hitBounds, rect), "overlaps a pad's hit area");
+        }
+
+        if (layout.orientation === "portrait") {
+          // The safe rect's own top-right corner.
+          assert.equal(rect.x + rect.width, layout.safe.x + layout.safe.width);
+        } else {
+          // Pushed out of the right band: right-aligned with the square, at the safe top (above the square when it is
+          // centred lower).
+          assert.ok(Math.abs(rect.x + rect.width - (layout.square.x + layout.square.width)) < 1e-9);
+        }
+      });
+    }
+
+    it(`${name}: the stack is one column, each button right under the one before`, () => {
       if (name === "empty") {
-        assert.equal(rect, null);
         return;
       }
 
-      assert.ok(rect !== null, "no room for the button");
-      assert.equal(rect.width, MUTE_HIT_SIZE);
-      assert.equal(rect.height, MUTE_HIT_SIZE);
-      assert.ok(inside(layout.safe, rect), "outside the safe rect");
-      assert.equal(rect.y, layout.safe.y);
+      const layout = computeLayout(screen);
+      const rects = CORNER_BUTTONS.map((button) => cornerButtonRect(layout, button));
 
-      for (const zone of layout.zones) {
-        assert.ok(!overlaps(zone, rect), `overlaps zone ${JSON.stringify(zone)}`);
-      }
+      rects.slice(1).forEach((rect, index) => {
+        const above = rects[index];
 
-      for (const pad of computePads(layout)) {
-        assert.ok(!overlaps(pad.hitBounds, rect), "overlaps a pad's hit area");
-      }
-
-      if (layout.orientation === "portrait") {
-        // The safe rect's own top-right corner.
-        assert.equal(rect.x + rect.width, layout.safe.x + layout.safe.width);
-      } else {
-        // Pushed out of the right band: right-aligned with the square, at the safe top (above the square when it is
-        // centred lower).
-        assert.ok(Math.abs(rect.x + rect.width - (layout.square.x + layout.square.width)) < 1e-9);
-      }
+        assert.ok(rect !== null && above !== null, "a button has no room");
+        assert.equal(rect.x, above.x);
+        assert.ok(Math.abs(rect.y - above.y - CORNER_HIT_SIZE) < 1e-9);
+      });
     });
   }
 
   it("is null when the safe rect is shorter than the button", () => {
     const layout = computeLayout({ width: 300, height: 40, insets: ZERO_INSETS, dpr: 1 });
 
-    assert.equal(muteButtonRect(layout), null);
+    assert.equal(cornerButtonRect(layout, "mute"), null);
+  });
+
+  it("drops only the rows that don't fit: room for mute, not for pause", () => {
+    const layout = computeLayout({ width: 600, height: 90, insets: ZERO_INSETS, dpr: 1 });
+
+    assert.ok(cornerButtonRect(layout, "mute") !== null);
+    assert.equal(cornerButtonRect(layout, "pause"), null);
   });
 });
 
-describe("hitsMuteButton", () => {
+describe("hitsCornerButton", () => {
   it("hits inside and on the edges, misses outside and with no button", () => {
     const rect: Rect = { x: 100, y: 0, width: 48, height: 48 };
 
-    assert.ok(hitsMuteButton(rect, 124, 24));
-    assert.ok(hitsMuteButton(rect, 100, 0));
-    assert.ok(hitsMuteButton(rect, 148, 48));
-    assert.ok(!hitsMuteButton(rect, 99, 24));
-    assert.ok(!hitsMuteButton(rect, 124, 49));
-    assert.ok(!hitsMuteButton(null, 124, 24));
+    assert.ok(hitsCornerButton(rect, 124, 24));
+    assert.ok(hitsCornerButton(rect, 100, 0));
+    assert.ok(hitsCornerButton(rect, 148, 48));
+    assert.ok(!hitsCornerButton(rect, 99, 24));
+    assert.ok(!hitsCornerButton(rect, 124, 49));
+    assert.ok(!hitsCornerButton(null, 124, 24));
   });
 });
 
-describe("muteIconBox", () => {
+describe("cornerIconBox", () => {
   it("centres the icon in the hit square", () => {
-    const box = muteIconBox({ x: 100, y: 10, width: 48, height: 48 });
+    const box = cornerIconBox({ x: 100, y: 10, width: 48, height: 48 });
 
-    assert.deepEqual(box, { x: 112, y: 22, width: MUTE_ICON_SIZE, height: MUTE_ICON_SIZE });
+    assert.deepEqual(box, { x: 112, y: 22, width: CORNER_ICON_SIZE, height: CORNER_ICON_SIZE });
   });
 });

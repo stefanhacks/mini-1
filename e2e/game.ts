@@ -1,5 +1,5 @@
 // Drives the game in e2e: reads `window.debug.game` and answers what it shows, by keyboard or by synthetic touch.
-import { expect, type CDPSession, type Page } from "@playwright/test";
+import { expect, type CDPSession, type Page, type TestInfo } from "@playwright/test";
 import type { Container } from "pixi.js";
 import type { GameSnapshot } from "../src/debug-api.ts";
 import type { Direction } from "../src/game/direction.ts";
@@ -88,6 +88,190 @@ export const openGame = async (page: Page, query = "") => {
   await waitForGateReady(page);
   await page.keyboard.press("Space");
   await expect.poll(() => page.evaluate(() => window.debug.game.state), OPEN_POLL).toBe("title");
+};
+
+/**
+ * Waits for `count` animation frames, each of which runs the game's ticker: long enough for a stray input to be drained
+ * and land (a tap that should not advance), or for frozen game time to show (frames run, the clock doesn't).
+ */
+export const waitFrames = (page: Page, count = 10) => page.evaluate((frames) => new Promise<void>((resolve) => {
+  let left = frames;
+  const tick = () => {
+    left -= 1;
+
+    if (left <= 0) {
+      resolve();
+    } else {
+      requestAnimationFrame(tick);
+    }
+  };
+
+  requestAnimationFrame(tick);
+}), count);
+
+/**
+ * The frame lock (`lockFrames`): every requestAnimationFrame callback held, so Pixi's ticker runs only when a test
+ * steps it, `frameMs` game ms at a time (Pixi caps a frame at 100). The time scale stays 1, so game ms are frame ms.
+ */
+export interface FrameLock {
+  readonly held: Map<number, FrameRequestCallback>;
+  /** The time the last stepped frame ran at. */
+  time: number;
+  /**
+   * Whether a stepped frame draws: the playfield's render pass and the stage's. Off for checks that read the scene,
+   * not pixels: every frame then costs only its game logic, clips and weather.
+   */
+  render: boolean;
+  /** Runs one frame: Pixi's ticker, then the other held callbacks, as a real frame would. */
+  readonly step: (frameMs: number) => void;
+}
+
+declare global {
+  interface Window {
+    frameLock?: FrameLock;
+  }
+}
+
+/** Holds every requestAnimationFrame callback from the page's first script on: see FrameLock. */
+export const lockFrames = (page: Page) => page.addInitScript(() => {
+  const held = new Map<number, FrameRequestCallback>();
+  let nextId = 1;
+  let started = false;
+  const lock: FrameLock = {
+    held,
+    time: 0,
+    render: true,
+    step: (frameMs) => {
+      const { app } = window.debug;
+      const { ticker } = app;
+      // Replaced as a property, as guards.spec does.
+      const display = window.debug.display as unknown as { render: () => void };
+      const renderPlayfield = display.render;
+      // Pixi's own frame request, a private field: it stays held, for the next step.
+      const tick = (ticker as unknown as { _tick: FrameRequestCallback })._tick;
+
+      if (!started) {
+        started = true;
+        ticker.lastTime = 0;
+      }
+
+      lock.time += frameMs;
+
+      if (lock.render) {
+        ticker.update(lock.time);
+      } else {
+        // The frame loop calls `display.render` through the object, and Pixi renders the stage from a ticker listener.
+        display.render = () => undefined;
+        app.stage.renderable = false;
+
+        try {
+          ticker.update(lock.time);
+        } finally {
+          display.render = renderPlayfield;
+          app.stage.renderable = true;
+        }
+      }
+
+      const pending = [...held.entries()];
+
+      held.clear();
+
+      for (const [id, callback] of pending) {
+        if (callback === tick) {
+          held.set(id, callback);
+        } else {
+          callback(lock.time);
+        }
+      }
+    },
+  };
+
+  window.frameLock = lock;
+  window.requestAnimationFrame = (callback) => {
+    const id = nextId++;
+
+    held.set(id, callback);
+
+    return id;
+  };
+  window.cancelAnimationFrame = (id) => {
+    held.delete(id);
+  };
+});
+
+/** Turns drawing on or off for the stepped frames: see FrameLock `render`. */
+export const setFrameRendering = (page: Page, render: boolean) => page.evaluate((value) => {
+  if (window.frameLock === undefined) {
+    throw new Error("frames aren't locked");
+  }
+
+  window.frameLock.render = value;
+}, render);
+
+/** Steps `frames` locked frames of `frameMs` game ms each, in one round trip. */
+export const stepFrames = (page: Page, frames: number, frameMs = 16) => page.evaluate(({ frames, frameMs }) => {
+  const lock = window.frameLock;
+
+  if (lock === undefined) {
+    throw new Error("frames aren't locked");
+  }
+
+  for (let index = 0; index < frames; index++) {
+    lock.step(frameMs);
+  }
+}, { frames, frameMs });
+
+/**
+ * Opens the game with frames locked, at time scale 1 with the fixed seed, and taps through the start gate (Space) to
+ * Title; returns Title's enter time on the game clock. `query` is added to the URL.
+ */
+export const openToTitle = async (page: Page, query = "") => {
+  await lockFrames(page);
+  await page.goto(`/?debug&seed=${SEED}&timescale=1${query}`);
+  // Loading runs in wall time, with no frame: `polling` in ms, as the default waits on animation frames.
+  await page.waitForFunction(() => window.debug?.scene !== undefined && window.debug.gate.progress === 1, undefined, {
+    polling: 50,
+    timeout: 45_000,
+  });
+
+  for (let attempt = 0; attempt < 200 && (await readGatePhase(page)) !== "ready"; attempt++) {
+    await stepFrames(page, 1);
+    await page.waitForTimeout(10);
+  }
+
+  await page.keyboard.press("Space");
+
+  const title = await page.evaluate(() => {
+    for (let index = 0; index < 10 && window.debug.machine.current !== "title"; index++) {
+      window.frameLock?.step(16);
+    }
+
+    return { state: window.debug.machine.current, now: window.debug.clock.now };
+  });
+
+  expect(title.state).toBe("title");
+
+  return title.now;
+};
+
+/**
+ * Attaches a screenshot to the report, for a look at the art, only when E2E_SCREENSHOTS is set: each costs a full
+ * read-back of the canvas.
+ */
+export const screenshot = async (page: Page, testInfo: TestInfo, name: string) => {
+  if (process.env.E2E_SCREENSHOTS === undefined) {
+    return;
+  }
+
+  const path = testInfo.outputPath(`${name}.png`);
+
+  // Drawn now: under a frame lock with rendering off, the canvas holds an older frame.
+  await page.evaluate(() => {
+    window.debug.display.render();
+    window.debug.app.render();
+  });
+  await page.screenshot({ path });
+  await testInfo.attach(name, { path, contentType: "image/png" });
 };
 
 export const waitFor = async (page: Page, check: (game: GameSnapshot) => boolean) => {
@@ -349,7 +533,7 @@ export const playGame = async (page: Page, driver: Driver, onPage?: (game: GameS
   await waitFor(page, (game) => game.state === "ending");
   expect(await isPadVisible(page)).toBe(false);
   // The ending takes the replay tap once its prompt is up, after the card.
-  await waitFor(page, (game) => game.state === "ending" && game.phase === "prompt");
+  await waitFor(page, (game) => game.state === "ending" && game.phase === "replay");
   await driver.advance();
   await waitFor(page, (game) => game.state === "title" && game.games === start.games + 1);
 };

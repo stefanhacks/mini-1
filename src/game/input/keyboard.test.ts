@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { isMuteKey, type KeyInput, keyToDirection, readKeyDown } from "./keyboard.ts";
+import { isMuteKey, isPauseKey, type KeyInput, keyToDirection, readKeyDown } from "./keyboard.ts";
 
 const key = (name: string, extra: Partial<KeyInput> = {}): KeyInput => ({
   key: name,
@@ -72,5 +72,18 @@ describe("isMuteKey", () => {
     assert.equal(isMuteKey(key("m", { isComposing: true })), false);
     assert.equal(isMuteKey(key("m", { ctrlKey: true })), false);
     assert.equal(isMuteKey(key("m", { metaKey: true })), false);
+  });
+});
+
+describe("isPauseKey", () => {
+  it("is Escape or P in either case, but not a repeat, a composition or a shortcut", () => {
+    assert.equal(isPauseKey(key("Escape")), true);
+    assert.equal(isPauseKey(key("p")), true);
+    assert.equal(isPauseKey(key("P")), true);
+    assert.equal(isPauseKey(key("m")), false);
+    assert.equal(isPauseKey(key("p", { repeat: true })), false);
+    assert.equal(isPauseKey(key("Escape", { isComposing: true })), false);
+    assert.equal(isPauseKey(key("p", { ctrlKey: true })), false);
+    assert.equal(isPauseKey(key("Escape", { metaKey: true })), false);
   });
 });

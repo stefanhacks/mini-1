@@ -31,13 +31,64 @@ export interface TitleCardView {
   readonly setCredits: (visible: boolean, fade?: Fade) => void;
   /** The tap prompt ("Tap to begin", "Tap to play again"), or none; shown, it pulses. */
   readonly setPrompt: (text: string | null, fade?: Fade) => void;
+  /** Reduced motion (game/motion.ts): the prompt's pulse held at full alpha instead, now and from then on. */
+  readonly setPulseHeld: (held: boolean) => void;
   /** Follows a new layout: the prompt and the credits. */
   readonly relayout: (layout: Layout) => void;
 }
 
+/** The tap prompt in `layers.ui`: it fades in, then pulses (`TMPIdle`), or is held under reduced motion. */
+const createTapPrompt = (layers: Layers, fades: Fades) => {
+  const text = createUiText(layers.ui, TAP_PROMPT, "");
+  let pulseHeld = false;
+  // The prompt is shown and its fade-in is over: it pulses, or is held.
+  let idle = false;
+
+  const startIdle = () => {
+    idle = true;
+
+    if (pulseHeld) {
+      fades.stop(text);
+      text.alpha = 1;
+    } else {
+      // TMPIdle starts at alpha 1: no jump from a held prompt.
+      fades.play(text, PROMPT_PULSE);
+    }
+  };
+
+  return {
+    text,
+    set: (next: string | null, fade?: Fade) => {
+      if (next === null) {
+        idle = false;
+        // The pulse stops for the fade-out (`Inicio` resets IdleOn), which starts from alpha 1 as the clip does, or
+        // from where a cut-short fade-in got to. The text stays for the fade; a cut clears it, and ends the fade.
+        fades.hide(text, faded(fade, CLIPS.tmpFadeOut));
+
+        if (fade === undefined) {
+          text.text = "";
+        }
+
+        return;
+      }
+
+      text.text = next;
+      fades.show(text, faded(fade, CLIPS.tmpFadeIn), startIdle);
+    },
+    setPulseHeld: (held: boolean) => {
+      pulseHeld = held;
+
+      if (idle) {
+        startIdle();
+      }
+    },
+  };
+};
+
 export const createTitleCard = (layers: Layers, textures: Textures, fades: Fades): TitleCardView => {
   const logo = addArtSprite(layers.top, textures, "title", LOGO_AT);
-  const tapPrompt = createUiText(layers.ui, TAP_PROMPT, "");
+  const prompt = createTapPrompt(layers, fades);
+  const tapPrompt = prompt.text;
   const credits = createUiText(layers.ui, CREDITS_TEXT, CREDITS);
 
   const setLogo = (visible: boolean, fade?: Fade) => {
@@ -66,22 +117,8 @@ export const createTitleCard = (layers: Layers, textures: Textures, fades: Fades
     },
     setLogo: (visible) => setLogo(visible),
     setCredits,
-    setPrompt: (text, fade) => {
-      if (text === null) {
-        // The pulse stops for the fade-out (`Inicio` resets IdleOn), which starts from alpha 1 as the clip does, or
-        // from where a cut-short fade-in got to. The text stays for the fade; a cut clears it, and ends the fade.
-        fades.hide(tapPrompt, faded(fade, CLIPS.tmpFadeOut));
-
-        if (fade === undefined) {
-          tapPrompt.text = "";
-        }
-
-        return;
-      }
-
-      tapPrompt.text = text;
-      fades.show(tapPrompt, faded(fade, CLIPS.tmpFadeIn), () => fades.play(tapPrompt, PROMPT_PULSE));
-    },
+    setPrompt: (text, fade) => prompt.set(text, fade),
+    setPulseHeld: (held) => prompt.setPulseHeld(held),
     relayout: (next) => {
       placeUiText(tapPrompt, TAP_PROMPT, next);
       placeUiText(credits, CREDITS_TEXT, next);

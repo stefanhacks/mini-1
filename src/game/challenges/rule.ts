@@ -86,6 +86,11 @@ export interface ChallengeRule {
   press(dir: Direction): void;
   release(dir: Direction): void;
   cancelAll(): void;
+  /**
+   * Drops the progress of the attempt under way, as if the challenge had just begun: nothing held, no window open, no
+   * step done, no timer pending (the pause's resume, 02). Ignored after `done`.
+   */
+  reset(): void;
   readonly done: boolean;
   readonly progress: ChallengeProgress;
 }

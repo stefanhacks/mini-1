@@ -11,6 +11,7 @@ import {
   readStory,
   setTimescale,
   waitFor,
+  waitFrames,
   type GameSnapshot,
 } from "./game.ts";
 
@@ -180,7 +181,7 @@ type FrozenWindow = Window & {
   realRequestAnimationFrame?: typeof requestAnimationFrame;
 };
 
-test("a Hold close to its end, let go while the tab is hidden, doesn't complete on the first frame back", async ({
+test("a Hold close to its end, let go while the tab is hidden, doesn't complete: it waits, then starts over", async ({
   page,
 }) => {
   const driver = await keyboardDriver(page);
@@ -260,15 +261,28 @@ test("a Hold close to its end, let go while the tab is hidden, doesn't complete 
     return { jump: window.debug.clock.now - before, game: window.debug.game };
   });
 
-  // The first frame back runs no game time, and the Hold let go while hidden is released, not completed.
+  // The first frame back runs no game time, and the game stays paused (M5): "Tap to continue", the Hold frozen as it
+  // was, not completed.
   expect(back.jump).toBe(0);
   expect(back.game.challenge?.index).toBe(game.challenge?.index);
   expect(back.game.phase).toBe("play");
-  expect(back.game.challenge?.progress).toMatchObject({ kind: "hold", held: false });
+  expect(back.game.challenge?.progress).toEqual(held.challenge?.progress);
+  expect(await page.evaluate(() => window.debug.continuePromptShown)).toBe(true);
+  await waitFrames(page);
+  expect(await readNow(page)).toBe(hiddenAt);
 
-  // Frames run again, and the same Hold never completes on its own.
+  // The tap that continues resets the Hold (02): let go, back to 0, the same challenge.
+  await page.keyboard.press("Space");
   await expect.poll(() => readNow(page), POLL).toBeGreaterThan(hiddenAt);
-  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => window.debug.continuePromptShown)).toBe(false);
+
+  const resumed = await readGame(page);
+
+  expect(resumed.challenge?.index).toBe(game.challenge?.index);
+  expect(resumed.challenge?.progress).toEqual({ kind: "hold", held: false, fraction: 0 });
+
+  // Frames run again, and the same Hold never completes on its own: at FAST time, 10 frames are seconds of game time.
+  await waitFrames(page);
 
   const after = await readGame(page);
 
@@ -278,12 +292,15 @@ test("a Hold close to its end, let go while the tab is hidden, doesn't complete 
 
 test("the ui layer's children at Title, in order", async ({ page }) => {
   await openGame(page);
-  // Back to front: what main.ts adds (debug overlay, pad, mute, Tap to continue), then the gate's view and the
-  // scene's texts. The M4 refactor must keep this order (m4-refactor.md, rule 1).
+  // Back to front: what main.ts adds (debug overlay, pad, mute, pause, reduce flashes, Tap to continue), then the
+  // gate's view and the scene's texts. The M4 refactor must keep this order (m4-refactor.md, rule 1); M5 adds the
+  // pause button and the reduce-flashes toggle under mute.
   expect(await page.evaluate(() => window.debug.layers.ui.children.map((child) => child.label))).toEqual([
     "debug-overlay",
     "pad-view",
     "mute-button",
+    "pause-button",
+    "flashes-button",
     "continue",
     "gate-warning",
     "gate-prompt",

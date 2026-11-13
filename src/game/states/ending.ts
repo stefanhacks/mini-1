@@ -15,7 +15,7 @@ export const TAP_TO_PLAY_AGAIN = "Tap to play again";
  * - 8.5 s: black fades in, full at 9.5 s;
  * - 10 s: the kraken, the boat and the backdrops go, under full black, which fades out to the empty sea at 10.25 s;
  * - 13.5 s: the logo and the credits fade in at half speed;
- * - 17.25 s: new in this port, "Tap to play again" fades in and pulses (owner decision 2, m4-plan owner decision 6).
+ * - 22.25 s: new in this port, "Tap to play again" fades in and pulses (m4-plan decision 6, m5-plan decision 1).
  * Each phase begins an input epoch, and only a tap from the last one, the prompt, counts: it goes to Title, which
  * starts a new game.
  */
@@ -49,23 +49,29 @@ export const createEnding = (deps: GameDeps, session: GameSession): GameState =>
       session.phase = "boat";
       view.setStoryPage(null);
       view.setBoat("broken");
+      // An eye may show until the kraken (m5-plan, owner decision 11).
+      view.setUndersea({ part: session.part, eyesFor: ENDING_MS.kraken });
 
       createCuePlayer(deps, session, "ending").schedule(scope, ENDING_CUES);
       scope.after(ENDING_MS.lift, () => view.setBlack(false, FADE));
       enterPhaseAt(scope, "thrown", ENDING_MS.thrown, () => view.setBoat("thrown"));
-      enterPhaseAt(scope, "kraken", ENDING_MS.kraken, () => view.setKraken(true, FADE));
+      enterPhaseAt(scope, "kraken", ENDING_MS.kraken, () => {
+        view.setKraken(true, FADE);
+        // Nothing under the sea once the kraken shows (m5-plan, owner decision 4).
+        view.setUndersea(null);
+      });
       enterPhaseAt(scope, "black", ENDING_MS.black, () => view.setBlack(true, FADE));
       enterPhaseAt(scope, "sea", ENDING_MS.sea, () => clearToSea(view));
       scope.after(ENDING_MS.seaLift, () => view.setBlack(false, FADE));
       enterPhaseAt(scope, "card", ENDING_MS.card, () => view.setTitle(true, CARD_FADE));
-      enterPhaseAt(scope, "prompt", ENDING_MS.prompt, () => view.setPrompt(TAP_TO_PLAY_AGAIN, FADE));
+      enterPhaseAt(scope, "replay", ENDING_MS.replay, () => view.setPrompt(TAP_TO_PLAY_AGAIN, FADE));
     },
     update: (_deltaMS, machine) => {
       const advanced = drainAdvanced(input);
 
       // Only once the prompt is up, as on Title: earlier taps were dropped by each phase's epoch, and this drops the
       // rest.
-      if (session.phase === "prompt" && advanced) {
+      if (session.phase === "replay" && advanced) {
         machine.request("title");
       }
     },

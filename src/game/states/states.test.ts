@@ -33,7 +33,7 @@ import { ambientDelay } from "./cues.ts";
 import { createRng, type Rng } from "../challenges/rng.ts";
 import { drawStrike, LIGHTNING_SALT, type Strike, type StrikeKind } from "../lightning.ts";
 import { LOAD_FAILED } from "./gate.ts";
-import type { Backdrop, Boat, CueEvent, Fade, GateScreen, Paging, SceneView } from "./types.ts";
+import type { Backdrop, Boat, CueEvent, Fade, GateScreen, Paging, SceneView, Undersea } from "./types.ts";
 
 const FRAME_MS = 16;
 
@@ -77,6 +77,12 @@ class FakeScene implements SceneView {
   boat: Boat = "whole";
   kraken = false;
   black = false;
+  /**
+   * Every `startWeather` seed, and every undersea set, `reset`'s included, as "part" and its eye window in ms, or
+   * "none".
+   */
+  weathers: number[] = [];
+  undersea: string[] = [];
   paging: Paging = { linesPerPage: 2, measure: fixedWidthMeasure(30) };
 
   constructor(clock: GameClock) {
@@ -106,6 +112,7 @@ class FakeScene implements SceneView {
     this.boat = "whole";
     this.kraken = false;
     this.black = false;
+    this.setUndersea({ part: 0, eyesFor: 0 });
   }
 
   /** Logo and credits both. */
@@ -174,6 +181,14 @@ class FakeScene implements SceneView {
   setBlack(visible: boolean, fade?: Fade) {
     this.note(`black ${visible}`, fade);
     this.black = visible;
+  }
+
+  startWeather(seed: number) {
+    this.weathers.push(seed);
+  }
+
+  setUndersea(undersea: Undersea | null) {
+    this.undersea.push(undersea === null ? "none" : `${undersea.part} ${undersea.eyesFor}`);
   }
 }
 
@@ -873,8 +888,8 @@ describe("a full game", () => {
       t.frame();
       assert.equal(t.machine.current, "ending");
 
-      t.wait(ENDING_MS.prompt - ENDING_MS.card);
-      assert.equal(t.game.session.phase, "prompt");
+      t.wait(ENDING_MS.replay - ENDING_MS.card);
+      assert.equal(t.game.session.phase, "replay");
       assert.equal(t.scene.prompt, TAP_TO_PLAY_AGAIN);
 
       t.input.advance();
@@ -885,6 +900,45 @@ describe("a full game", () => {
     }
 
     assert.deepEqual([t.game.session.games, t.game.session.seed], [4, 45], "each game has a new seed");
+  });
+
+  it("sets the bubbles per part as each part begins, eyes only between pages, none from the kraken on", async () => {
+    const t = setup();
+
+    await toTitle(t);
+    assert.deepEqual(t.scene.weathers, [t.game.session.seed], "Title restarts the weather from the game's seed");
+    assert.deepEqual(t.scene.undersea, ["0 0"], "never an eye on Title");
+    leaveTitle(t);
+    assert.deepEqual(t.scene.undersea, ["0 0", `0 ${STORY_PREAMBLE_MS}`], "an eye may show in part 0's preamble");
+    t.wait(STORY_PREAMBLE_MS);
+
+    for (let part = 0; part < STORY_PARTS.length - 1; part++) {
+      readPart(t);
+      playRound(t);
+    }
+
+    readPart(t);
+    const between = (part: number) => [`${part} ${TRANSITION_MS}`, `${part} 0`, `${part} ${AFTER_ROUND_MS}`];
+
+    assert.deepEqual(t.scene.undersea, [
+      "0 0",
+      `0 ${STORY_PREAMBLE_MS}`, "0 0", ...between(0),
+      "1 0", ...between(1),
+      "2 0", ...between(2),
+      "3 0",
+      `3 ${ENDING_MS.kraken}`,
+    ], "eyes only while no text box or challenge is up; a won round's bubbles start with the next part");
+
+    t.wait(ENDING_MS.kraken - FRAME_MS);
+    assert.equal(t.scene.undersea.at(-1), `3 ${ENDING_MS.kraken}`);
+    t.wait(FRAME_MS);
+    assert.equal(t.scene.undersea.at(-1), "none");
+    t.wait(ENDING_MS.replay - ENDING_MS.kraken);
+    t.input.advance();
+    t.frame();
+    assert.equal(t.machine.current, "title");
+    assert.deepEqual(t.scene.undersea.slice(-2), ["none", "0 0"], "a replay starts from Title's again");
+    assert.deepEqual(t.scene.weathers, [t.game.session.seed - 1, t.game.session.seed]);
   });
 });
 
@@ -915,7 +969,7 @@ describe("ending", () => {
     const enteredAt = t.clock.now;
     const phases: string[] = [];
 
-    while (t.clock.now - enteredAt <= ENDING_MS.prompt) {
+    while (t.clock.now - enteredAt <= ENDING_MS.replay) {
       if (phases.at(-1) !== t.game.session.phase) {
         phases.push(t.game.session.phase);
       }
@@ -925,7 +979,7 @@ describe("ending", () => {
 
     phases.push(t.game.session.phase);
 
-    assert.deepEqual(phases, ["boat", "thrown", "kraken", "black", "sea", "card", "prompt"]);
+    assert.deepEqual(phases, ["boat", "thrown", "kraken", "black", "sea", "card", "replay"]);
     assert.deepEqual(t.scene.callsSince(enteredAt), [
       "boat broken@0",
       `black false@${ENDING_MS.lift} ×1`,
@@ -938,7 +992,7 @@ describe("ending", () => {
       `tentacles false@${ENDING_MS.sea}`,
       `black false@${ENDING_MS.seaLift} ×1`,
       `title true@${ENDING_MS.card} ×${ENDING_CARD_SPEED}`,
-      `prompt ${TAP_TO_PLAY_AGAIN}@${ENDING_MS.prompt} ×1`,
+      `prompt ${TAP_TO_PLAY_AGAIN}@${ENDING_MS.replay} ×1`,
     ]);
   });
 });
@@ -1262,7 +1316,7 @@ describe("cues", () => {
         }
       }
 
-      t.wait(ENDING_MS.prompt);
+      t.wait(ENDING_MS.replay);
       assert.deepEqual(t.cues.map(({ name, state, at }) => ({ name, state, at })), [
         { name: "lightning", state: "story", at: 1250 },
         ...Array.from({ length: 3 }, () => ({ name: "lightning", state: "transition", at: 167 })),

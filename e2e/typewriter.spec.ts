@@ -1,10 +1,20 @@
 // The story's typewriter in the real page: a page types in, a tap completes it without advancing, the next tap
-// advances, and a resize mid-typing keeps what shows without spilling out of the text box. Desktop only (untagged,
-// playwright.config.ts): typing doesn't depend on the device. Written by Claude Code.
+// advances, and a resize mid-story keeps what shows without spilling out of the text box, and never draws a page paged
+// for the old layout. Desktop only (untagged, playwright.config.ts): typing doesn't depend on the device. Written by
+// Claude Code.
 import { expect, test, type Page } from "@playwright/test";
 import { rectToScreen, type Rect } from "../src/core/layout.ts";
 import { storyLinesPerPage, TEXT_BOX_RECT } from "../src/game/text-box.ts";
-import { keyboardDriver, leaveTitle, openGame, readGame, setTimescale, waitFor, type GameSnapshot } from "./game.ts";
+import {
+  keyboardDriver,
+  leaveTitle,
+  openGame,
+  readGame,
+  setTimescale,
+  waitFor,
+  type Driver,
+  type GameSnapshot,
+} from "./game.ts";
 
 test.use({ deviceScaleFactor: 1 });
 
@@ -101,46 +111,98 @@ test("a page types in, a tap completes it without advancing, the next tap advanc
   expect(next.page?.revealed).toBeLessThan(next.page?.text.length ?? 0);
 });
 
-test("a resize mid-typing keeps what shows and never spills out of the text box", async ({ page }) => {
-  const { driver } = await toTypingPage(page);
+const isInside = (inner: Rect, outer: Rect) => inner.x >= outer.x && inner.x + inner.width <= outer.x + outer.width
+  && inner.y >= outer.y && inner.y + inner.height <= outer.y + outer.height;
 
-  // Resizes the renderer as a resize event would: 600×400 leaves a 200 px square, so the line pages again.
-  const before = await page.evaluate(() => {
-    const { app } = window.debug;
-    const shown = window.debug.game.page?.revealed ?? 0;
+/**
+ * Resizes the renderer as a resize event would, synchronously, and reads the story text before any frame runs: what
+ * showed, whether the text is drawn, and its bounds.
+ */
+const resizeNow = (page: Page, width: number, height: number) => page.evaluate(([width, height]) => {
+  const { app, scene } = window.debug;
+  const shown = window.debug.game.page?.revealed ?? 0;
 
-    app.renderer.resize(600, 400, app.renderer.resolution);
+  app.renderer.resize(width, height, app.renderer.resolution);
 
-    return { shown, layout: window.debug.layout };
-  });
-  const box = rectToScreen(before.layout, TEXT_BOX_RECT);
+  const story = scene?.parts.storyText;
+  const bounds = story?.getBounds();
 
-  expect(before.layout.square.width).toBe(200);
+  return {
+    shown,
+    visible: story?.visible ?? false,
+    bounds: bounds ? { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } : null,
+    layout: window.debug.layout,
+  };
+}, [width, height] as const);
 
-  await expect.poll(async () => (await readStoryText(page)) !== null, POLL).toBe(true);
-
-  const after = await readGame(page);
-  const text = await readStoryText(page);
-
-  if (after.page === null || text === null) {
-    throw new Error("the page is gone after the resize");
-  }
-
-  // Same page start, and what showed still shows (cut to the new page if that is shorter).
-  expect([after.page.line, after.page.page]).toEqual([0, 0]);
-  expect(after.page.revealed).toBeGreaterThanOrEqual(Math.min(before.shown, after.page.text.length));
-  expectInside(text.bounds, box);
-  expect(text.rows).toBeLessThanOrEqual(storyLinesPerPage(before.layout));
-
-  // Fully shown, the page still fits.
-  if (!after.page.typed) {
+/** Waits for the page to be fully typed, a tap completing it (one that doesn't advance). */
+const completePage = async (page: Page, driver: Driver) => {
+  if ((await readGame(page)).page?.typed !== true) {
     await driver.advance();
     await expect.poll(async () => (await readGame(page)).page?.typed, POLL).toBe(true);
   }
+};
 
-  const full = await readStoryText(page);
+test("a resize mid-story keeps what shows, never spills out of the text box, nor shows a page paged for the old layout",
+  async ({ page }) => {
+    const { driver } = await toTypingPage(page);
+    const large = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
 
-  expect(full).not.toBeNull();
-  expectInside(full?.bounds ?? { x: 0, y: 0, width: 0, height: 0 }, box);
-  expect(full?.rows).toBeLessThanOrEqual(storyLinesPerPage(before.layout));
-});
+    // Mid-typing, from the default 1280×720 to 600×400, which leaves a 200 px square between the 200 px bands: the
+    // line pages again.
+    const typing = await resizeNow(page, 600, 400);
+    const box = rectToScreen(typing.layout, TEXT_BOX_RECT);
+
+    expect(typing.layout.square.width).toBe(200);
+
+    await expect.poll(async () => (await readStoryText(page)) !== null, POLL).toBe(true);
+
+    const after = await readGame(page);
+    const text = await readStoryText(page);
+
+    if (after.page === null || text === null) {
+      throw new Error("the page is gone after the resize");
+    }
+
+    // Same page start, and what showed still shows (cut to the new page if that is shorter).
+    expect([after.page.line, after.page.page]).toEqual([0, 0]);
+    expect(after.page.revealed).toBeGreaterThanOrEqual(Math.min(typing.shown, after.page.text.length));
+    expectInside(text.bounds, box);
+    expect(text.rows).toBeLessThanOrEqual(storyLinesPerPage(typing.layout));
+
+    // Fully shown, the page still fits.
+    await completePage(page, driver);
+
+    const full = await readStoryText(page);
+
+    expect(full).not.toBeNull();
+    expectInside(full?.bounds ?? { x: 0, y: 0, width: 0, height: 0 }, box);
+    expect(full?.rows).toBeLessThanOrEqual(storyLinesPerPage(typing.layout));
+
+    // Back to the large viewport and fully typed there, so the whole page is drawn; then down again: the old page must
+    // not be drawn at the new size, before any frame runs.
+    await resizeNow(page, large.width, large.height);
+    await expect.poll(async () => (await readStoryText(page))?.bounds.width ?? 0, POLL)
+      .toBeGreaterThan(full?.bounds.width ?? 0);
+    await completePage(page, driver);
+
+    const longest = (await readGame(page)).page?.text ?? "";
+
+    // The first line is the longest of part 0: at a 200 px square it takes several pages of one line.
+    expect(longest.length).toBeGreaterThan(60);
+
+    const before = await resizeNow(page, 600, 400);
+
+    // Hidden until it is paged again, or drawn inside the new box: never the old page at the new size.
+    expect(!before.visible || (before.bounds !== null && isInside(before.bounds, box)), JSON.stringify(before))
+      .toBe(true);
+
+    // On the next update the story state pages the line again and shows the current page, inside the box.
+    await expect.poll(async () => (await readStoryText(page)) !== null, POLL).toBe(true);
+
+    const again = await readStoryText(page);
+
+    expectInside(again?.bounds ?? { x: 0, y: 0, width: 0, height: 0 }, box);
+    expect(again?.rows).toBeLessThanOrEqual(storyLinesPerPage(before.layout));
+    expect(await readGame(page)).toMatchObject({ state: "story", part: 0 });
+  });

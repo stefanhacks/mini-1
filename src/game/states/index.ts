@@ -23,6 +23,8 @@ export interface Game {
   readonly session: GameSession;
   /** The start gate: app/audio-wiring.ts wires `activate` to the input router's `onActivate`. */
   readonly gate: GateControl;
+  /** Resets the current challenge's progress while a round runs, else does nothing (the pause's resume, pause.ts). */
+  readonly resetChallenge: () => void;
 }
 
 export const createGame = (deps: GameDeps): Game => {
@@ -40,5 +42,6 @@ export const createGame = (deps: GameDeps): Game => {
     },
     session,
     gate,
+    resetChallenge: () => session.round?.resetCurrent(),
   };
 };

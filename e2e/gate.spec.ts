@@ -1,6 +1,16 @@
-// The start gate and the mute button (m3-plan, deliverables 2 and 4). Written by Claude Code.
+// The start gate and the mute button (m3-plan, deliverables 2 and 4), and the reduce-flashes toggle's tap path and
+// storage (m5-plan, deliverable 3). Written by Claude Code.
 import { expect, test, type Page } from "@playwright/test";
-import { openGame, readGame, readGatePhase, readLayout, SEED, touchDriver, waitForGateReady } from "./game.ts";
+import {
+  openGame,
+  readGame,
+  readGatePhase,
+  readLayout,
+  SEED,
+  touchDriver,
+  waitForGateReady,
+  waitFrames,
+} from "./game.ts";
 
 // A tap's pointer path doesn't depend on the DPR: at DPR 1 the software-rendered frames are several times cheaper. The
 // presets keep their viewport, touch and user agent.
@@ -235,34 +245,66 @@ test("a failed load shows Tap to retry, and the tap reloads what failed", async 
   expect(failures).toBe(1);
 });
 
-test("the mute button and the M key toggle mute without advancing, and mute persists", { tag: "@tap" }, async ({
-  page,
-}) => {
-  await openGame(page);
-  expect(await page.evaluate(() => window.debug.audio.muted)).toBe(false);
+const flashesCentre = async (page: Page) => {
+  const rect = await page.evaluate(() => window.debug.router.flashesRect);
 
-  // Sliding off the button before lifting does nothing: no mute, no advance.
+  if (rect === null) {
+    throw new Error("no reduce-flashes button");
+  }
+
+  return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+};
+
+const readCorner = (page: Page) => page.evaluate(() => ({
+  muted: window.debug.audio.muted,
+  reduced: window.debug.flashes.reduced,
+  state: window.debug.machine.current,
+  paused: window.debug.pause.paused,
+}));
+
+// The corner buttons' tap path: on the iPhone, a real touch sequence (`@tap`, playwright.config.ts).
+test("mute and reduce flashes only toggle, paused or not, and persist; the M key mutes at the gate", {
+  tag: "@tap",
+}, async ({ page }) => {
+  await openGame(page);
+  expect(await readCorner(page)).toEqual({ muted: false, reduced: false, state: "title", paused: false });
+
+  // Sliding off the mute button before lifting does nothing: no mute, no advance.
   const centre = await muteCentre(page);
   const { square } = await readLayout(page);
 
   await slide(page, centre, { x: square.x + square.width / 2, y: square.y + square.height / 2 });
-  await page.waitForTimeout(200);
-  expect(await page.evaluate(() => window.debug.audio.muted)).toBe(false);
-  expect((await readGame(page)).state).toBe("title");
+  // Give a stray advance time to land: it would leave Title.
+  await waitFrames(page);
+  expect(await readCorner(page)).toEqual({ muted: false, reduced: false, state: "title", paused: false });
 
   await tapMute(page);
   await expect.poll(() => page.evaluate(() => window.debug.audio.muted), POLL).toBe(true);
-  // Give a stray advance time to land: it would leave Title.
-  await page.waitForTimeout(200);
-  expect((await readGame(page)).state).toBe("title");
 
+  // The reduce-flashes toggle, then twice while paused: it only toggles, and the game stays paused.
+  const flashes = await flashesCentre(page);
+
+  await tapAt(page, flashes.x, flashes.y);
+  await expect.poll(() => readCorner(page), POLL)
+    .toEqual({ muted: true, reduced: true, state: "title", paused: false });
+  await page.evaluate(() => window.debug.pause.pause());
+  await tapAt(page, flashes.x, flashes.y);
+  await expect.poll(() => readCorner(page), POLL)
+    .toEqual({ muted: true, reduced: false, state: "title", paused: true });
+  await tapAt(page, flashes.x, flashes.y);
+  await expect.poll(() => readCorner(page), POLL)
+    .toEqual({ muted: true, reduced: true, state: "title", paused: true });
+  await waitFrames(page);
+  expect(await readCorner(page)).toEqual({ muted: true, reduced: true, state: "title", paused: true });
+
+  // Both are stored.
   await page.reload();
   await waitForGateReady(page);
-  expect(await page.evaluate(() => window.debug.audio.muted)).toBe(true);
+  expect(await readCorner(page)).toMatchObject({ muted: true, reduced: true, state: "gate" });
 
   await page.keyboard.press("m");
   await expect.poll(() => page.evaluate(() => window.debug.audio.muted), POLL).toBe(false);
-  await page.waitForTimeout(200);
+  await waitFrames(page);
   expect(await readGatePhase(page)).toBe("ready");
   expect((await readGame(page)).state).toBe("gate");
 });

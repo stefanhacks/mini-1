@@ -12,6 +12,7 @@ import {
   drawStrike,
   FLASH_PEAK_EVENT,
   FLASH_REDUCED,
+  flashRule,
   type StrikeKind,
 } from "../lightning.ts";
 import type { Textures } from "./art-sprite.ts";
@@ -36,6 +37,8 @@ export interface LightningDeps {
   readonly revealLogo: () => void;
   /** Read at each strike. */
   readonly reducedMotion: () => boolean;
+  /** The "reduce flashes" toggle (reduce-flashes.ts), read at each strike like `reducedMotion`. */
+  readonly reduceFlashes: () => boolean;
 }
 
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
@@ -51,7 +54,7 @@ export const watchReducedMotion = (): (() => boolean) => {
 };
 
 export const createLightning = (deps: LightningDeps): LightningView => {
-  const { bolt, flash, textures, clips, revealLogo, reducedMotion } = deps;
+  const { bolt, flash, textures, clips, revealLogo, reducedMotion, reduceFlashes } = deps;
   let playing: ClipHandle[] = [];
   let revealPending = false;
 
@@ -94,7 +97,7 @@ export const createLightning = (deps: LightningDeps): LightningView => {
       placeOnArtGrid(bolt, x, BOLT_TOP);
       revealPending = kind === "title-reveal";
       play(bolt, CLIPS.raio);
-      play(flash, reducedMotion() ? FLASH_REDUCED : CLIPS.flash, (name) => {
+      play(flash, flashRule(reducedMotion(), reduceFlashes()).capped ? FLASH_REDUCED : CLIPS.flash, (name) => {
         if (name === FLASH_PEAK_EVENT) {
           reveal();
         }

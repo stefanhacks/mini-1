@@ -8,15 +8,19 @@ import type { PlayfieldDisplay } from "../core/display.ts";
 import type { Layers } from "../core/layers.ts";
 import type { StateMachine } from "../core/state-machine.ts";
 import type { DebugApi } from "../debug-api.ts";
-import type { AudioLifecycle } from "../game/audio-lifecycle.ts";
 import type { InputRouter } from "../game/input/dom-router.ts";
+import type { Pause } from "../game/pause.ts";
+import type { ReduceFlashes } from "../game/reduce-flashes.ts";
 import type { Scene } from "../game/scene.ts";
+import type { ContinuePromptScene } from "../game/scene/continue-prompt.ts";
+import type { ScreenTone } from "../game/screen-tone.ts";
 import { snapshotSession } from "../game/states/session.ts";
 import type { Game, GameStateId } from "../game/states/index.ts";
 import type { CueLog } from "./cue-log.ts";
 import type { ErrorSink } from "./halting-guard.ts";
 import type { LayoutBus } from "./layout-bus.ts";
 import type { Timescale } from "./launch-options.ts";
+import { textCacheSize } from "./text-cache.ts";
 
 export interface DebugWiring {
   readonly app: Application;
@@ -28,12 +32,15 @@ export interface DebugWiring {
   readonly router: InputRouter;
   readonly audio: AudioEngine;
   readonly cueLog: CueLog;
-  readonly lifecycle: AudioLifecycle;
   readonly game: Game;
   readonly timescale: Timescale;
   readonly loading: { readonly scene: Scene | null };
   readonly errors: ErrorSink;
   readonly clips: Pick<ClipPlayer, "active">;
+  readonly pause: Pause;
+  readonly continuePrompt: Pick<ContinuePromptScene, "visible">;
+  readonly reduceFlashes: Pick<ReduceFlashes, "on">;
+  readonly screenTone: Pick<ScreenTone, "grey">;
 }
 
 /**
@@ -42,8 +49,8 @@ export interface DebugWiring {
  */
 export const createDebugApi = (wiring: DebugWiring): DebugApi => {
   const {
-    app, clock, machine, layers, display, layouts, router, audio, cueLog, lifecycle, game, timescale, loading, errors,
-    clips,
+    app, clock, machine, layers, display, layouts, router, audio, cueLog, game, timescale, loading, errors, clips,
+    pause, continuePrompt, reduceFlashes, screenTone,
   } = wiring;
 
   return {
@@ -59,7 +66,11 @@ export const createDebugApi = (wiring: DebugWiring): DebugApi => {
       return cueLog.entries();
     },
     get continuePromptShown() {
-      return lifecycle.prompting;
+      return continuePrompt.visible;
+    },
+    pause,
+    get flashes() {
+      return { reduced: reduceFlashes.on, tone: screenTone.grey };
     },
     get gate() {
       return { phase: game.gate.phase, progress: game.gate.progress };
@@ -78,6 +89,10 @@ export const createDebugApi = (wiring: DebugWiring): DebugApi => {
         layoutListeners: layouts.listenerCount,
         tickerListeners: app.ticker.count,
       };
+    },
+    /** Pixi's canvas text cache (text-cache.ts), or null where its private field isn't there. */
+    get textCache() {
+      return textCacheSize(app.renderer);
     },
     /** The animation clips playing. */
     get anim() {

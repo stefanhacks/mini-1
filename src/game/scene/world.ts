@@ -1,22 +1,25 @@
 // The world layer: sea, sky, boat, backdrops and the kraken (WORLD_SPRITES), with their clips: the ambient loops
-// (sea, clouds, the boat's bob), the backdrops' and the kraken's fades, and the broken boat thrown up.
+// (sea, clouds, the boat's bob), the backdrops' and the kraken's fades, and the broken boat thrown up. The weather's
+// containers (scene/particles) are drawn in between, as WORLD_EFFECTS places them.
 // Written by Claude Code.
-import type { Sprite } from "pixi.js";
+import type { Container, Sprite } from "pixi.js";
 import { CLIPS, TARGETS } from "../../assets/anims.ts";
 import type { Clip } from "../../core/anim/clip.ts";
-import type { ClipPlayer } from "../../core/anim/player.ts";
+import type { ClipHandle, ClipPlayer } from "../../core/anim/player.ts";
 import { placeOnArtGrid, type Layers } from "../../core/layers.ts";
 import type { Point } from "../../core/layout.ts";
 import type { Backdrop, Boat, Fade } from "../states/types.ts";
 import { addArtSprite, type Textures } from "./art-sprite.ts";
 import { faded, type Fades } from "./fades.ts";
-import { WORLD_SPRITES, type WorldSpriteLabel } from "./positions.ts";
+import { WORLD_EFFECTS, WORLD_SPRITES, type WorldEffectLabel, type WorldSpriteLabel } from "./positions.ts";
 
 export interface WorldView {
   /** Every world sprite by label, for tests and the debug overlay. */
   readonly sprites: Readonly<Record<WorldSpriteLabel, Sprite>>;
   /** Starts the ambient loops, once (scene.ts, last in the build): they run for the page's life, replays included. */
   readonly startAmbient: () => void;
+  /** The ambient loops' speed, from their current pose on (reduced motion slows them, game/motion.ts). Default 1. */
+  readonly setAmbientSpeed: (speed: number) => void;
   readonly setBackdrop: (backdrop: Backdrop, visible: boolean, fade?: Fade) => void;
   readonly setBoat: (state: Boat) => void;
   readonly setKraken: (visible: boolean, fade?: Fade) => void;
@@ -56,12 +59,9 @@ const AMBIENT_LOOPS: readonly AmbientLoop[] = [
 
 type WorldSprites = Readonly<Record<WorldSpriteLabel, Sprite>>;
 
-/** Starts AMBIENT_LOOPS on `sprites`. */
-const playAmbientLoops = (clips: ClipPlayer, sprites: WorldSprites) => {
-  for (const { label, clip, origin } of AMBIENT_LOOPS) {
-    clips.play(clip, { node: sprites[label], origin });
-  }
-};
+/** Starts AMBIENT_LOOPS on `sprites`, at `speed`. */
+const playAmbientLoops = (clips: ClipPlayer, sprites: WorldSprites, speed: number) =>
+  AMBIENT_LOOPS.map(({ label, clip, origin }) => clips.play(clip, { node: sprites[label], origin }, { speed }));
 
 /**
  * The boat's states: the whole boat bobbing, the broken one at its spot or thrown up (its end pose stays), or none.
@@ -108,12 +108,27 @@ const createBoat = (sprites: WorldSprites, fades: Fades, placeHome: (label: Worl
   };
 };
 
-/** Appends WORLD_SPRITES to the world layer, in table order. Everything starts visible; the scene's `reset` hides. */
-export const createWorld = (layers: Layers, textures: Textures, clips: ClipPlayer, fades: Fades): WorldView => {
+/**
+ * Appends WORLD_SPRITES to the world layer, in table order, each after the `effects` drawn just behind it
+ * (WORLD_EFFECTS). Every sprite starts visible; the scene's `reset` hides.
+ */
+export const createWorld = (
+  layers: Layers,
+  textures: Textures,
+  clips: ClipPlayer,
+  fades: Fades,
+  effects: Readonly<Record<WorldEffectLabel, Container>>,
+): WorldView => {
   const sprites = {} as Record<WorldSpriteLabel, Sprite>;
   const homes = {} as Record<WorldSpriteLabel, Point>;
 
   for (const { label, key, at } of WORLD_SPRITES) {
+    for (const effect of WORLD_EFFECTS) {
+      if (effect.before === label) {
+        layers.world.addChild(effects[effect.label]);
+      }
+    }
+
     sprites[label] = addArtSprite(layers.world, textures, key, at, label);
     homes[label] = at;
   }
@@ -121,17 +136,19 @@ export const createWorld = (layers: Layers, textures: Textures, clips: ClipPlaye
   const body = sprites["kraken-body"];
   const tail = sprites["kraken-tail"];
   const bodyOrigin = TARGETS["Stage/Monster/Body"].parentOrigin;
-  let ambientStarted = false;
+  let ambient: ClipHandle[] | null = null;
+  let ambientSpeed = 1;
 
   const placeHome = (label: WorldSpriteLabel) => placeOnArtGrid(sprites[label], homes[label].x, homes[label].y);
 
   return {
     sprites,
     startAmbient: () => {
-      if (!ambientStarted) {
-        ambientStarted = true;
-        playAmbientLoops(clips, sprites);
-      }
+      ambient ??= playAmbientLoops(clips, sprites, ambientSpeed);
+    },
+    setAmbientSpeed: (speed) => {
+      ambientSpeed = speed;
+      ambient?.forEach((handle) => handle.setSpeed(speed));
     },
     setBackdrop: (backdrop, visible, fade) => {
       const sprite = sprites[backdrop];

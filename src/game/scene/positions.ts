@@ -4,7 +4,7 @@
 // Positions come from the original Main.unity (canvas centre origin, y up) converted to playfield px (top-left origin,
 // y down): playfield = (250 + x, 250 − y). The converted numbers are kept as they were. Draw order follows the
 // original's sortingOrder, back to front:
-// - world: WORLD_SPRITES, in table order.
+// - world: WORLD_SPRITES, in table order, with WORLD_EFFECTS (rain, splashes, bubbles, eyes) drawn in.
 // - fx: the lightning bolt `Raio` (−2), the black overlay `TelaPreta` and the vignette (−1), the white flash (0).
 // - top: the text box (0), cursors (0), arrows (1), the title logo (15).
 // - ui (CSS px): story text, the challenge prompt and its progress, the tap prompt and the credits.
@@ -46,6 +46,39 @@ export const WORLD_SPRITES = [
 ] as const satisfies readonly WorldSprite[];
 
 export type WorldSpriteLabel = (typeof WORLD_SPRITES)[number]["label"];
+
+export interface WorldEffect {
+  readonly label: string;
+  /** The WORLD_SPRITES row it is drawn just behind. */
+  readonly before: WorldSpriteLabel;
+  /**
+   * The original's sortingOrder, for reference only: nothing reads it to draw (`before` places it), and
+   * positions.test.ts checks it agrees with `before`.
+   */
+  readonly sortingOrder: number;
+}
+
+/**
+ * The particle systems and the eyes (scene/particles), each drawn just behind a WORLD_SPRITES row; rows sharing one
+ * keep this order (m5-particles-spec §5). The splashes (−10) sit behind the kraken's body and the front sea strip,
+ * which hides the lower half of each hop; the rain (−6) falls behind the front strip, so a drop's tail tucks under its
+ * surface; the bubbles and the eyes (−4) rise over it, under the broken boat.
+ */
+export const WORLD_EFFECTS = [
+  { label: "splash", before: "kraken-body", sortingOrder: -10 },
+  { label: "rain", before: "seaF", sortingOrder: -6 },
+  { label: "bubbles", before: "broken-boat", sortingOrder: -4 },
+  { label: "eye-small", before: "broken-boat", sortingOrder: -4 },
+  { label: "eye-large", before: "broken-boat", sortingOrder: -4 },
+] as const satisfies readonly WorldEffect[];
+
+export type WorldEffectLabel = (typeof WORLD_EFFECTS)[number]["label"];
+
+/** The world layer's children, back to front: WORLD_SPRITES with WORLD_EFFECTS drawn in. */
+export const WORLD_ORDER: readonly (WorldSpriteLabel | WorldEffectLabel)[] = WORLD_SPRITES.flatMap(({ label }) => [
+  ...WORLD_EFFECTS.filter((effect) => effect.before === label).map((effect) => effect.label),
+  label,
+]);
 
 /** The playfield's centre: where the vignette sits. */
 export const PLAYFIELD_CENTER: Point = { x: PLAYFIELD_SIZE / 2, y: PLAYFIELD_SIZE / 2 };
@@ -137,10 +170,12 @@ export const GATE_PROMPT: UiTextSpec = { ...TAP_PROMPT, label: "gate-prompt" };
 /** The load bar, in playfield px: centred under the warning. */
 export const GATE_BAR = { x: 170, y: 290, width: 160, height: 4 } as const;
 
-// "Tap to continue" (m3-plan, deliverable 5): white text at the playfield's centre.
+// "Tap to continue" (m3-plan, deliverable 5): white text centred across, where Title's and the ending's own tap prompt
+// shows (hidden under it), so on both its box sits clear of the logo and its waves, which reach down to about y 350,
+// and of the credits (y 473), with the font clamped up to 16 CSS px on a phone too (m5-plan decision 13).
 export const CONTINUE_PROMPT: UiTextSpec = {
   label: "continue-prompt",
-  at: { x: 250, y: 250 },
+  at: { x: 250, y: 405 },
   anchorY: 0.5,
   size: 16,
   min: 16,

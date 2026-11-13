@@ -61,12 +61,15 @@ export const ENDING_MS = {
   /** `endGameDelay` (3.5 s in Main.unity) after `FimFinal`: the logo and the credits fade in at ENDING_CARD_SPEED. */
   card: 13500,
   /**
-   * "Tap to play again" (new in this port) fades in once the card is in (2 s at ENDING_CARD_SPEED), as long after it
-   * as Title's prompt comes after its logo (7.25 − 5.5 = 1.75 s), at speed 1 (m4-plan, owner decision 6). The ending
-   * takes the replay tap only from here.
+   * "Tap to play again" (new in this port) fades in at speed 1 once the card is in (2 s at ENDING_CARD_SPEED), Title's
+   * logo-to-prompt gap (7.25 − 5.5 = 1.75 s) plus REPLAY_EXTRA_MS later (m4-plan, owner decision 6; m5-plan, owner
+   * decision 1). The ending takes the replay tap only from here.
    */
-  prompt: 17250,
+  replay: 22250,
 } as const;
+
+/** The owner's extra wait before "Tap to play again": unusually long, so it feels as if there is no way back. */
+export const REPLAY_EXTRA_MS = 5000;
 
 /** GameEnd sets the logo's and the credits' animators to speed 0.5, so the card's fades take 2 s. */
 export const ENDING_CARD_SPEED = 0.5;

@@ -5,6 +5,7 @@ import type { Clip } from "../../core/anim/clip.ts";
 import {
   ENDING_CARD_SPEED,
   ENDING_MS,
+  REPLAY_EXTRA_MS,
   TITLE_CUES,
   TITLE_EXIT_MS,
   TITLE_PROMPT_MS,
@@ -43,10 +44,10 @@ describe("timings against the clips' events", () => {
     assert.ok(ENDING_MS.seaLift > ENDING_MS.sea && ENDING_MS.seaLift - ENDING_MS.sea < 1000);
   });
 
-  it("fades the replay prompt in after the card, as long after it as Title's prompt after its logo", () => {
+  it("fades the replay prompt in after the card, Title's logo-to-prompt gap plus the owner's extra wait", () => {
     const logoAt = (TITLE_CUES.at(-1)?.at ?? 0) + TITLE_REVEAL_FLASH_MS;
     const cardIn = ENDING_MS.card + (CLIPS.fadeIn.length * 1000) / ENDING_CARD_SPEED;
 
-    assert.equal(ENDING_MS.prompt, cardIn + TITLE_PROMPT_MS - logoAt);
+    assert.equal(ENDING_MS.replay, cardIn + TITLE_PROMPT_MS - logoAt + REPLAY_EXTRA_MS);
   });
 });

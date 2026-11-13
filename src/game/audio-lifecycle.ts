@@ -12,8 +12,9 @@
 //   while its resume settles, and that window must not flash the prompt. A failed resume on becoming visible shows it
 //   either way ("needs-gesture" means an unlock happened; before the begin tap the status is "locked").
 // - Any activation (router.onActivate, inside the DOM gesture) calls `unlock()` while the engine needs a gesture
-//   (unlock is idempotent). That also rescues a begin tap whose unlock never took. main.ts calls it only once Gate is
-//   left: at the gate, the begin tap's unlock and its touchend retry are Gate's. The prompt hides on "running".
+//   (unlock is idempotent), and keeps the prompt up, or shows it, until audio runs (M5: the resume tap of a pause).
+//   That also rescues a begin tap whose unlock never took. main.ts calls it only once Gate is left: at the gate, the
+//   begin tap's unlock and its touchend retry are Gate's. The prompt hides on "running".
 // - The prompt's tap only continues: it must not also advance the game (a Story page, Title, the Ending's replay).
 //   `filter` runs over every drain and drops the "advance" events while the prompt is up, and in the first drain after
 //   a tap made it go away, since the tap's advance is queued before its unlock resumes the context. Only "advance" is
@@ -126,6 +127,15 @@ export const createAudioLifecycle = (
 
       if (audio.status === "needs-gesture") {
         audio.unlock();
+
+        // The unlock settles later, or never (a gesture the browser doesn't count): until audio runs the prompt stays
+        // up, or comes up, and this tap counts as its tap. That is the resume tap of a pause (pause.ts), whose prompt
+        // was the pause's alone: a hidden tab skips `visible` while paused. A normal unlock hides it again in a few ms,
+        // under the pause's prompt, so nothing flashes. Not before audio has run: the begin tap's unlock is Gate's.
+        if (ran && audio.status === "needs-gesture") {
+          show();
+          tapped = true;
+        }
       }
     },
     filter: (events) => {

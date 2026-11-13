@@ -26,7 +26,7 @@ export const AMBIENT_SALT = 0x7a11e7;
  * out (owner decision 5); Story 0 asks for part 0's overlay again.
  */
 export const createTitle = (deps: GameDeps, session: GameSession): GameState => {
-  const { input, pad, scene, nextSeed, tuning } = deps;
+  const { input, pad, scene, nextSeed, tuning, onTitle } = deps;
 
   /**
    * Ambient lightning after the intro's strikes, from its own RNG stream. Draws the first delay now, at the enter (the
@@ -67,6 +67,7 @@ export const createTitle = (deps: GameDeps, session: GameSession): GameState => 
   return {
     enter: (scope) => {
       input.beginEpoch();
+      onTitle?.();
       startNewGame(session, nextSeed(), tuning);
       session.phase = "title";
 
@@ -74,6 +75,7 @@ export const createTitle = (deps: GameDeps, session: GameSession): GameState => 
 
       hidePad(pad);
       view.reset();
+      view.startWeather(session.seed);
 
       const cues = createCuePlayer(deps, session, "title");
       const startAmbient = scheduleAmbient(scope, cues);

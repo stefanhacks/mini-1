@@ -7,6 +7,7 @@ import type { Layers } from "./core/layers.ts";
 import type { Layout } from "./core/layout.ts";
 import type { StateMachine } from "./core/state-machine.ts";
 import type { InputRouter } from "./game/input/dom-router.ts";
+import type { Pause } from "./game/pause.ts";
 import type { Scene } from "./game/scene.ts";
 import type { GatePhase } from "./game/states/gate.ts";
 import type { SessionSnapshot } from "./game/states/session.ts";
@@ -39,8 +40,14 @@ export interface DebugApi {
   readonly audio: AudioEngine;
   /** The last cues fired (at most 64), oldest first. */
   readonly cues: readonly CueLogEntry[];
-  /** Whether "Tap to continue" is up. */
+  /** Whether "Tap to continue" is up: the game is paused, or audio needs a tap. */
   readonly continuePromptShown: boolean;
+  /** The pause (pause.ts): `paused`, the pause input, and `pause()` as the pause button calls it. */
+  readonly pause: Pause;
+  /** The "reduce flashes" toggle (reduce-flashes.ts) and the screen tone's grey (screen-tone.ts, 0..1) now. */
+  readonly flashes: { readonly reduced: boolean; readonly tone: number };
+  /** Pixi's canvas text cache: its keys and how many are null; null where the private field isn't there. */
+  readonly textCache: { readonly keys: number; readonly nulls: number } | null;
   /** The start gate's phase and load progress (0..1). */
   readonly gate: { readonly phase: GatePhase; readonly progress: number };
   /** Subscribes to every new layout; returns the unsubscribe function. */
