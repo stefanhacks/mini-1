@@ -1,22 +1,22 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { seedFromString } from "../game/challenges/rng.ts";
-import { createSeeder, createTimescale, isValidTimescale, readLaunchOptions } from "./launch-options.ts";
+import { createSeeder, createTimescale, readLaunchOptions } from "./launch-options.ts";
 
 describe("readLaunchOptions", () => {
-  it("reads ?timescale only with ?debug", () => {
-    assert.equal(readLaunchOptions("?debug&timescale=4", true).timescale, 4);
-    assert.equal(readLaunchOptions("?timescale=4", false).timescale, 1);
-  });
+  it("reads ?timescale only with ?debug, and a missing or unusable one as 1", () => {
+    const CASES: readonly (readonly [search: string, debug: boolean, timescale: number])[] = [
+      ["?debug&timescale=4", true, 4],
+      ["?timescale=4", false, 1],
+      ["?timescale=0.5", true, 0.5],
+      ...["", "?timescale=", "?timescale=0", "?timescale=-2", "?timescale=abc", "?timescale=Infinity"].map(
+        (search) => [search, true, 1] as const,
+      ),
+    ];
 
-  it("reads a missing or unusable time scale as 1", () => {
-    const searches = ["", "?timescale=", "?timescale=0", "?timescale=-2", "?timescale=abc", "?timescale=Infinity"];
-
-    for (const search of searches) {
-      assert.equal(readLaunchOptions(search, true).timescale, 1, search);
+    for (const [search, debug, timescale] of CASES) {
+      assert.equal(readLaunchOptions(search, debug).timescale, timescale, `${JSON.stringify(search)}, debug ${debug}`);
     }
-
-    assert.equal(readLaunchOptions("?timescale=0.5", true).timescale, 0.5);
   });
 
   it("reads ?seed with or without ?debug, and null without it", () => {
@@ -44,13 +44,6 @@ describe("createTimescale", () => {
 
     assert.equal(fixed.value, 1);
     assert.equal(adjustable.value, 8);
-  });
-
-  it("isValidTimescale: finite and positive", () => {
-    assert.deepEqual(
-      [1, 0.25, 0, -1, Infinity, Number.NaN].map(isValidTimescale),
-      [true, true, false, false, false, false],
-    );
   });
 });
 

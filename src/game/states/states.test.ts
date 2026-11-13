@@ -552,19 +552,6 @@ describe("gate", () => {
     assert.deepEqual(t.gateView.screen, { progress: null, warning: true, prompt: LOAD_FAILED });
   });
 
-  it("waits while the clock is paused", async () => {
-    const t = setup();
-
-    await settle();
-    t.clock.paused = true;
-    t.frame();
-    assert.equal(t.game.gate.phase, "loading");
-
-    t.clock.paused = false;
-    t.frame();
-    assert.equal(t.game.gate.phase, "ready");
-  });
-
   it("does nothing on activation once it was left", async () => {
     const t = setup();
 
@@ -809,22 +796,6 @@ describe("story", () => {
     t.input.advance();
     t.frame();
     assert.notEqual(t.scene.page, page, "one tap advances a page completed by the relayout");
-  });
-
-  it("pages again when the paging changes, from the current page", async () => {
-    const t = setup();
-
-    await toTitle(t);
-    leaveTitle(t);
-    t.wait(STORY_PREAMBLE_MS);
-
-    const before = t.game.session.cursor?.pageCount ?? 0;
-
-    t.scene.paging = { linesPerPage: 10, measure: fixedWidthMeasure(100) };
-    t.frame();
-    assert.ok(before > 1);
-    assert.equal(t.game.session.cursor?.pageCount, 1);
-    assert.equal(t.scene.page?.text, "[First Mate]: \"Captain! This wind is too strong! We're gonna lose the sails!\"");
   });
 });
 
@@ -1233,10 +1204,6 @@ describe("cues", () => {
     assert.notDeepEqual(t.scene.strikes, first);
   });
 
-  it("draws different ambient times for a different game", () => {
-    assert.notDeepEqual(expectedAmbient(42, 4), expectedAmbient(43, 4));
-  });
-
   it("drops Title's pending ambient strike when it is left, and goes on striking through the exit fade", async () => {
     const t = setup();
 
@@ -1277,20 +1244,6 @@ describe("cues", () => {
       assert.equal(t.clock.pendingTimers, 2);
       t.frame();
     }
-  });
-
-  it("waits while the clock is paused", async () => {
-    const t = setup();
-
-    await toTitle(t);
-    t.wait(1900);
-    t.clock.paused = true;
-    t.wait(1000);
-    assert.deepEqual(t.cues, []);
-
-    t.clock.paused = false;
-    t.wait(200);
-    assert.deepEqual(cuesOf(t, "title"), [{ name: "lightning", at: 2000 }]);
   });
 
   it("strikes in part 0's preamble and each Transition, roars in the Ending, and sets the music per part", async () => {

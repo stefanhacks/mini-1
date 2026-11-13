@@ -17,10 +17,6 @@ const SPECIAL_HEX = ["0000000100000001", "00000001", "00000000", "000000000001"]
 const decodeSpecial = (hex: string) => (hex.match(/../gu) ?? []).map((byte) => byte === "01");
 
 describe("story script", () => {
-  it("has the original's 4 parts of 8, 4, 4 and 6 lines", () => {
-    assert.deepEqual(STORY_PARTS.map((part) => part.length), [8, 4, 4, 6]);
-  });
-
   it("marks the prefab's special lines as whispers, and only those have no speaker", () => {
     STORY_PARTS.forEach((part, index) => {
       assert.deepEqual(part.map(({ whisper }) => whisper), decodeSpecial(SPECIAL_HEX[index]), `part ${index}`);

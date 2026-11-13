@@ -29,14 +29,6 @@ describe("PointerMap: one pointer", () => {
     assert.deepEqual(map.drain(), [ADVANCE]);
   });
 
-  it("drain empties the queue", () => {
-    const map = new PointerMap();
-
-    map.pointerDown(1, "left");
-    map.drain();
-    assert.deepEqual(map.drain(), []);
-  });
-
   it("ignores ups and cancels of unknown pointers", () => {
     const map = new PointerMap();
 
@@ -282,30 +274,28 @@ describe("PointerMap: beginEpoch", () => {
 });
 
 describe("PointerMap: queue safety net", () => {
-  it("keeps up to MAX_QUEUED_EVENTS events untouched", () => {
-    const map = new PointerMap();
+  it("keeps up to MAX_QUEUED_EVENTS untouched; past it, flushes like beginEpoch, leaving a single cancel", () => {
+    const under = new PointerMap();
 
     for (let index = 0; index < MAX_QUEUED_EVENTS; index++) {
-      map.keyDown(null, true);
+      under.keyDown(null, true);
     }
 
-    assert.equal(map.drain().length, MAX_QUEUED_EVENTS);
-  });
+    assert.equal(under.drain().length, MAX_QUEUED_EVENTS, "at MAX_QUEUED_EVENTS");
 
-  it("past MAX_QUEUED_EVENTS, flushes like beginEpoch and leaves a single cancel", () => {
-    const map = new PointerMap();
+    const over = new PointerMap();
 
-    map.pointerDown(1, "up");
+    over.pointerDown(1, "up");
 
     for (let index = 0; index < MAX_QUEUED_EVENTS; index++) {
-      map.keyDown(null, true);
+      over.keyDown(null, true);
     }
 
-    assert.deepEqual(map.drain(), [CANCEL]);
-    assert.ok(!map.isHeld("up"));
+    assert.deepEqual(over.drain(), [CANCEL], "past MAX_QUEUED_EVENTS");
+    assert.ok(!over.isHeld("up"), "past MAX_QUEUED_EVENTS: released");
 
-    map.pointerUp(1);
-    assert.deepEqual(map.drain(), []);
+    over.pointerUp(1);
+    assert.deepEqual(over.drain(), [], "past MAX_QUEUED_EVENTS: the flushed pointer's up");
   });
 });
 

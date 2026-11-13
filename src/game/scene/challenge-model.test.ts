@@ -8,31 +8,40 @@ const hold = (fraction: number): ChallengeProgress => ({ kind: "hold", held: fra
 const many = (count: number): ChallengeProgress => ({ kind: "many", count, target: 5, windowRemainingMs: 0 });
 
 describe("directionsOf", () => {
-  it("shows no arrows without a challenge", () => {
-    assert.deepEqual(directionsOf(null), []);
-  });
-
-  it("shows a sequence's directions, in order", () => {
+  it("shows no arrows without a challenge, a sequence's directions in order, the one arrow of a hold or many", () => {
     const directions = ["up", "left", "down"] as const;
 
-    assert.equal(directionsOf({ kind: "sequence", directions }), directions);
-  });
+    assert.equal(directionsOf({ kind: "sequence", directions }), directions, "sequence");
 
-  it("shows the one arrow of a hold or many", () => {
-    assert.deepEqual(directionsOf({ kind: "hold", direction: "right" }), ["right"]);
-    assert.deepEqual(directionsOf({ kind: "many", direction: "down" }), ["down"]);
+    const CASES = [
+      ["no challenge", null, []],
+      ["hold", { kind: "hold", direction: "right" }, ["right"]],
+      ["many", { kind: "many", direction: "down" }, ["down"]],
+    ] as const;
+
+    for (const [name, spec, expected] of CASES) {
+      assert.deepEqual(directionsOf(spec), expected, name);
+    }
   });
 });
 
 describe("progressKey", () => {
-  it("is empty without progress", () => {
-    assert.equal(progressKey(null), "");
-  });
+  it("is empty without progress, changes with what is drawn, and tells the kinds apart", () => {
+    // What is drawn: the pointer, the count, the fraction to 3 decimals.
+    const CASES: readonly (readonly [name: string, progress: ChallengeProgress | null, key: string])[] = [
+      ["no progress", null, ""],
+      ["sequence", sequence(2), "s2"],
+      ["many", many(4), "m4"],
+      ["hold", hold(0.5), "h0.500"],
+    ];
 
-  it("changes with what is drawn: the pointer, the count, the fraction to 3 decimals", () => {
-    assert.equal(progressKey(sequence(2)), "s2");
-    assert.equal(progressKey(many(4)), "m4");
-    assert.equal(progressKey(hold(0.5)), "h0.500");
+    for (const [name, progress, key] of CASES) {
+      assert.equal(progressKey(progress), key, name);
+    }
+
+    const keys = [progressKey(sequence(0)), progressKey(hold(0)), progressKey(many(0))];
+
+    assert.equal(new Set(keys).size, 3, "the kinds at zero progress");
   });
 
   it("ignores what isn't drawn", () => {
@@ -42,12 +51,6 @@ describe("progressKey", () => {
       progressKey({ kind: "many", count: 1, target: 5, windowRemainingMs: 900 }),
     );
     assert.equal(progressKey({ kind: "sequence", pointer: 1, length: 3 }), progressKey(sequence(1)));
-  });
-
-  it("tells the kinds apart", () => {
-    const keys = [progressKey(sequence(0)), progressKey(hold(0)), progressKey(many(0))];
-
-    assert.equal(new Set(keys).size, 3);
   });
 });
 

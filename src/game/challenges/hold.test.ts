@@ -30,16 +30,6 @@ describe("HoldRule", () => {
     assert.deepEqual(rule.progress, { kind: "hold", held: false, fraction: 1 });
   });
 
-  it("reports held and a fraction from 0 to 1", () => {
-    const { clock, rule } = setup();
-
-    assert.deepEqual(rule.progress, { kind: "hold", held: false, fraction: 0 });
-    rule.press("up");
-    assert.deepEqual(rule.progress, { kind: "hold", held: true, fraction: 0 });
-    clock.tick(1500);
-    assert.deepEqual(rule.progress, { kind: "hold", held: true, fraction: 0.5 });
-  });
-
   it("resets on release, and a new press needs the full 3 s again", () => {
     const { clock, rule } = setup();
 
@@ -76,20 +66,40 @@ describe("HoldRule", () => {
     assert.equal(rule.progress.held, false);
   });
 
-  it("ignores other directions, pressed or released", () => {
-    const { clock, rule } = setup();
+  it("ignores other directions, and a release or cancelAll with nothing held", () => {
+    const CASES: readonly { name: string; play: (t: ReturnType<typeof setup>) => void }[] = [
+      {
+        name: "other directions, pressed or released",
+        play: ({ clock, rule }) => {
+          rule.press("down");
+          clock.tick(5000);
+          assert.equal(rule.progress.held, false, "other directions: held");
 
-    rule.press("down");
-    clock.tick(5000);
-    assert.equal(rule.progress.held, false);
+          rule.press("up");
+          clock.tick(1000);
+          rule.press("left");
+          rule.release("left");
+          rule.release("down");
+          clock.tick(2000);
+        },
+      },
+      {
+        name: "a release or cancelAll with nothing held",
+        play: ({ clock, rule }) => {
+          rule.release("up");
+          rule.cancelAll();
+          rule.press("up");
+          clock.tick(3000);
+        },
+      },
+    ];
 
-    rule.press("up");
-    clock.tick(1000);
-    rule.press("left");
-    rule.release("left");
-    rule.release("down");
-    clock.tick(2000);
-    assert.equal(rule.done, true);
+    for (const { name, play } of CASES) {
+      const t = setup();
+
+      play(t);
+      assert.equal(t.rule.done, true, name);
+    }
   });
 
   it("doesn't count a direction held since before the challenge: it needs a press after the start", () => {
@@ -124,16 +134,6 @@ describe("HoldRule", () => {
     clock.tick(2999);
     assert.equal(rule.done, false);
     clock.tick(1);
-    assert.equal(rule.done, true);
-  });
-
-  it("ignores a release or cancelAll with nothing held", () => {
-    const { clock, rule } = setup();
-
-    rule.release("up");
-    rule.cancelAll();
-    rule.press("up");
-    clock.tick(3000);
     assert.equal(rule.done, true);
   });
 

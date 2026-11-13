@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { computeLayout, PLAYFIELD_SIZE, type Rect, rectToScreen, ZERO_INSETS } from "../core/layout.ts";
+import { computeLayout, type Layout, PLAYFIELD_SIZE, type Rect, rectToScreen, ZERO_INSETS } from "../core/layout.ts";
 import {
   MIN_TEXT_FONT_SIZE,
   placeStoryText,
@@ -28,9 +28,17 @@ describe("text box geometry", () => {
     assert.deepEqual(TEXT_AREA, { x: 55, y: 370, width: 390, height: 80 });
   });
 
-  it("keeps the text rect inside the art, and the art inside the playfield", () => {
-    assert.ok(contains(TEXT_BOX_RECT, TEXT_AREA));
-    assert.ok(contains({ x: 0, y: 0, width: PLAYFIELD_SIZE, height: PLAYFIELD_SIZE }, TEXT_BOX_RECT));
+  it("nests the text rect in the art and the art in the playfield; a full page centred on y 410 fits the art", () => {
+    assert.ok(contains(TEXT_BOX_RECT, TEXT_AREA), "text rect in the art");
+    const playfield: Rect = { x: 0, y: 0, width: PLAYFIELD_SIZE, height: PLAYFIELD_SIZE };
+
+    assert.ok(contains(playfield, TEXT_BOX_RECT), "art in the playfield");
+
+    const centre = TEXT_AREA.y + TEXT_AREA.height / 2;
+
+    assert.equal(centre, TEXT_BOX_CENTER.y, "page centre");
+    assert.ok(centre - TEXT_PAGE_HEIGHT / 2 >= TEXT_BOX_RECT.y, "page top in the art");
+    assert.ok(centre + TEXT_PAGE_HEIGHT / 2 <= TEXT_BOX_RECT.y + TEXT_BOX_RECT.height, "page bottom in the art");
   });
 });
 
@@ -65,39 +73,36 @@ describe("storyLinesPerPage", () => {
   const layoutOf = (width: number, height: number, dpr = 1) =>
     computeLayout({ width, height, insets: ZERO_INSETS, dpr });
 
-  it("fills the 95 art px from the text top to the box bottom", () => {
-    assert.equal(TEXT_PAGE_HEIGHT, 95);
-  });
-
-  it("keeps a full page inside the box art when it is centred on y 410", () => {
-    const centre = TEXT_AREA.y + TEXT_AREA.height / 2;
-
-    assert.equal(centre, TEXT_BOX_CENTER.y);
-    assert.ok(centre - TEXT_PAGE_HEIGHT / 2 >= TEXT_BOX_RECT.y);
-    assert.ok(centre + TEXT_PAGE_HEIGHT / 2 <= TEXT_BOX_RECT.y + TEXT_BOX_RECT.height);
-  });
-
-  it("fits floor(95 × scale / line height) lines, never spilling out of the box", () => {
-    // 1280×720: a 720 px square, scale 1.44; font 28.8 px, line 36 px; 136.8 px of page.
-    assert.equal(storyLinesPerPage(layoutOf(1280, 720)), 3);
-    // 412×915 at 2.625: scale 0.824, font 16.5 px, line 20.6 px; 78.2 px of page.
-    assert.equal(storyLinesPerPage(layoutOf(412, 915, 2.625)), 3);
+  it("fits floor(95 × scale / line height) lines, at least 1, never spilling out of the box", () => {
     // 664×390 with 47 px side insets: a 170 px square, scale 0.34, so the 16 px floor applies; line 20 px; 32.3 px
     // of page.
     const insets = { top: 0, right: 47, bottom: 0, left: 47 };
     const small = computeLayout({ width: 664, height: 390, insets, dpr: 3 });
+    // `checkFit` checks the page fits the box; the 1-line minimum may overflow a tiny square.
+    const CASES: readonly (readonly [name: string, layout: Layout, lines: number | null, checkFit: boolean])[] = [
+      // A 720 px square, scale 1.44; font 28.8 px, line 36 px; 136.8 px of page.
+      ["1280×720", layoutOf(1280, 720), 3, true],
+      // Scale 0.824, font 16.5 px, line 20.6 px; 78.2 px of page.
+      ["412×915 at 2.625", layoutOf(412, 915, 2.625), 3, true],
+      ["915×412 at 2.625", layoutOf(915, 412, 2.625), null, true],
+      ["664×390 with side insets", small, 1, true],
+      // At least 1, even on an empty square.
+      ["0×0", layoutOf(0, 0), 1, false],
+      ["300×300", layoutOf(300, 300), 1, false],
+    ];
 
-    assert.equal(storyLinesPerPage(small), 1);
-
-    for (const layout of [layoutOf(1280, 720), layoutOf(412, 915, 2.625), layoutOf(915, 412, 2.625), small]) {
+    for (const [name, layout, expected, checkFit] of CASES) {
       const lines = storyLinesPerPage(layout);
 
-      assert.ok(lines * placeStoryText(layout).lineHeight <= TEXT_PAGE_HEIGHT * layout.scale + 1e-9);
-    }
-  });
+      if (expected !== null) {
+        assert.equal(lines, expected, name);
+      }
 
-  it("is at least 1, even on an empty square", () => {
-    assert.equal(storyLinesPerPage(layoutOf(0, 0)), 1);
-    assert.equal(storyLinesPerPage(layoutOf(300, 300)), 1);
+      if (checkFit) {
+        const height = lines * placeStoryText(layout).lineHeight;
+
+        assert.ok(height <= TEXT_PAGE_HEIGHT * layout.scale + 1e-9, `${name}: ${height} px spills out of the box`);
+      }
+    }
   });
 });

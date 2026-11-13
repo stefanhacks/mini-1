@@ -30,17 +30,15 @@ const blocked: FlashesStorage = {
 };
 
 describe("the stored reduce-flashes flag", () => {
-  it("is on only for \"1\"; anything else is the default, off", () => {
-    assert.equal(parseReduceFlashes("1"), true);
+  it("is on only for \"1\", anything else is the default, off, and round-trips", () => {
+    assert.equal(parseReduceFlashes("1"), true, "1");
 
     for (const raw of [null, "0", "", "true", "yes", "11"]) {
       assert.equal(parseReduceFlashes(raw), false, String(raw));
     }
-  });
 
-  it("round-trips", () => {
     for (const on of [false, true]) {
-      assert.equal(parseReduceFlashes(serializeReduceFlashes(on)), on);
+      assert.equal(parseReduceFlashes(serializeReduceFlashes(on)), on, `round-trip ${on}`);
     }
   });
 });

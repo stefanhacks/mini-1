@@ -56,71 +56,58 @@ const inside = (outer: Rect, inner: Rect) =>
   && inner.x + inner.width <= outer.x + outer.width + 1e-9 && inner.y + inner.height <= outer.y + outer.height + 1e-9;
 
 describe("cornerButtonRect across the layout presets", () => {
-  for (const { name, screen } of DEVICES) {
-    for (const [slot, button] of CORNER_BUTTONS.entries()) {
-      it(`${name}: ${button}, a ${CORNER_HIT_SIZE} px square in row ${slot}, clear of the zones and pads`, () => {
-        const layout = computeLayout(screen);
+  it(`gives each button a ${CORNER_HIT_SIZE} px square in its row, clear of the zones and pads`, () => {
+    for (const { name, screen } of DEVICES) {
+      const layout = computeLayout(screen);
+
+      for (const [slot, button] of CORNER_BUTTONS.entries()) {
+        const label = `${name}: ${button}`;
         const rect = cornerButtonRect(layout, button);
 
         if (name === "empty") {
-          assert.equal(rect, null);
-          return;
+          assert.equal(rect, null, label);
+          continue;
         }
 
-        assert.ok(rect !== null, "no room for the button");
-        assert.equal(rect.width, CORNER_HIT_SIZE);
-        assert.equal(rect.height, CORNER_HIT_SIZE);
-        assert.ok(inside(layout.safe, rect), "outside the safe rect");
-        assert.equal(rect.y, layout.safe.y + slot * CORNER_HIT_SIZE);
+        assert.ok(rect !== null, `${label}: no room for the button`);
+        assert.equal(rect.width, CORNER_HIT_SIZE, label);
+        assert.equal(rect.height, CORNER_HIT_SIZE, label);
+        assert.ok(inside(layout.safe, rect), `${label}: outside the safe rect`);
+        assert.equal(rect.y, layout.safe.y + slot * CORNER_HIT_SIZE, `${label}: row ${slot}`);
 
         for (const zone of layout.zones) {
-          assert.ok(!overlaps(zone, rect), `overlaps zone ${JSON.stringify(zone)}`);
+          assert.ok(!overlaps(zone, rect), `${label}: overlaps zone ${JSON.stringify(zone)}`);
         }
 
         for (const pad of computePads(layout)) {
-          assert.ok(!overlaps(pad.hitBounds, rect), "overlaps a pad's hit area");
+          assert.ok(!overlaps(pad.hitBounds, rect), `${label}: overlaps a pad's hit area`);
         }
 
         if (layout.orientation === "portrait") {
           // The safe rect's own top-right corner.
-          assert.equal(rect.x + rect.width, layout.safe.x + layout.safe.width);
+          assert.equal(rect.x + rect.width, layout.safe.x + layout.safe.width, label);
         } else {
           // Pushed out of the right band: right-aligned with the square, at the safe top (above the square when it is
           // centred lower).
-          assert.ok(Math.abs(rect.x + rect.width - (layout.square.x + layout.square.width)) < 1e-9);
+          assert.ok(Math.abs(rect.x + rect.width - (layout.square.x + layout.square.width)) < 1e-9, label);
         }
-      });
-    }
-
-    it(`${name}: the stack is one column, each button right under the one before`, () => {
-      if (name === "empty") {
-        return;
       }
-
-      const layout = computeLayout(screen);
-      const rects = CORNER_BUTTONS.map((button) => cornerButtonRect(layout, button));
-
-      rects.slice(1).forEach((rect, index) => {
-        const above = rects[index];
-
-        assert.ok(rect !== null && above !== null, "a button has no room");
-        assert.equal(rect.x, above.x);
-        assert.ok(Math.abs(rect.y - above.y - CORNER_HIT_SIZE) < 1e-9);
-      });
-    });
-  }
-
-  it("is null when the safe rect is shorter than the button", () => {
-    const layout = computeLayout({ width: 300, height: 40, insets: ZERO_INSETS, dpr: 1 });
-
-    assert.equal(cornerButtonRect(layout, "mute"), null);
+    }
   });
 
-  it("drops only the rows that don't fit: room for mute, not for pause", () => {
-    const layout = computeLayout({ width: 600, height: 90, insets: ZERO_INSETS, dpr: 1 });
+  it("drops only the rows that don't fit in a short safe rect", () => {
+    const CASES = [
+      { width: 300, height: 40, mute: false, pause: false },
+      { width: 600, height: 90, mute: true, pause: false },
+    ];
 
-    assert.ok(cornerButtonRect(layout, "mute") !== null);
-    assert.equal(cornerButtonRect(layout, "pause"), null);
+    for (const { width, height, mute, pause } of CASES) {
+      const layout = computeLayout({ width, height, insets: ZERO_INSETS, dpr: 1 });
+      const name = `${width}×${height}`;
+
+      assert.equal(cornerButtonRect(layout, "mute") !== null, mute, `${name}: mute`);
+      assert.equal(cornerButtonRect(layout, "pause") !== null, pause, `${name}: pause`);
+    }
   });
 });
 

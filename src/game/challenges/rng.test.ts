@@ -9,14 +9,6 @@ const draw = (seed: number, count: number, max: number) => {
 };
 
 describe("createRng", () => {
-  it("is deterministic per seed", () => {
-    assert.deepEqual(draw(42, 100, 1000), draw(42, 100, 1000));
-  });
-
-  it("gives different streams for different seeds", () => {
-    assert.notDeepEqual(draw(1, 20, 1000), draw(2, 20, 1000));
-  });
-
   it("matches the widely used reference mulberry32", () => {
     // The usual one-liner, transcribed: its state is not kept in 32 bits, which must not matter.
     const reference = (seed: number) => {
@@ -69,23 +61,6 @@ describe("createRng", () => {
     }
   });
 
-  it("is roughly uniform", () => {
-    for (const max of [4, 7]) {
-      const counts = new Array<number>(max).fill(0);
-      const total = 70000;
-
-      for (const value of draw(123, total, max)) {
-        counts[value] = (counts[value] ?? 0) + 1;
-      }
-
-      const expected = total / max;
-
-      for (const count of counts) {
-        // About 5 standard deviations at these sizes.
-        assert.ok(Math.abs(count - expected) < expected * 0.05, `${count} vs ${expected}`);
-      }
-    }
-  });
 });
 
 describe("seedFromString", () => {

@@ -9,24 +9,34 @@ const normalize = (text: string) => text.trim().split(/\s+/u).join(" ");
 const ALL_LINES = STORY_PARTS.flat().map(lineText);
 
 describe("isSentenceEnd", () => {
-  it("ends at . ! ? and … before closing quotes", () => {
-    const words = ["sails!\"", "Men!", "stopped.", "this?", "thing!?\"", "voice!?\"", "he-?!", "How...\"", "I..."];
+  it("ends at . ! ? and … before closing quotes, and at a reply of only marks that asks or exclaims", () => {
+    const CASES: readonly (readonly [word: string, ends: boolean])[] = [
+      // . ! ? and … before closing quotes.
+      ["sails!\"", true],
+      ["Men!", true],
+      ["stopped.", true],
+      ["this?", true],
+      ["thing!?\"", true],
+      ["voice!?\"", true],
+      ["he-?!", true],
+      ["How...\"", true],
+      ["I...", true],
+      // Not a leading ellipsis, a label, a comma or a dash.
+      ["\"...", false],
+      ["[Captain]:", false],
+      ["Cap'n,", false],
+      ["-", false],
+      ["with-\"", false],
+      ["Sir,", false],
+      // A reply made only of marks ends when it asks or exclaims.
+      ["\"...?\"", true],
+      ["\"...!\"", true],
+      ["...\"", false],
+    ];
 
-    for (const word of words) {
-      assert.ok(isSentenceEnd(word), word);
+    for (const [word, ends] of CASES) {
+      assert.equal(isSentenceEnd(word), ends, word);
     }
-  });
-
-  it("doesn't end at a leading ellipsis, a label, a comma or a dash", () => {
-    for (const word of ["\"...", "[Captain]:", "Cap'n,", "-", "with-\"", "Sir,"]) {
-      assert.ok(!isSentenceEnd(word), word);
-    }
-  });
-
-  it("ends at a reply made only of marks when it asks or exclaims", () => {
-    assert.ok(isSentenceEnd("\"...?\""));
-    assert.ok(isSentenceEnd("\"...!\""));
-    assert.ok(!isSentenceEnd("...\""));
   });
 });
 

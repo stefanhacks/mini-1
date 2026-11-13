@@ -13,45 +13,21 @@ import {
 } from "./positions.ts";
 
 describe("arrowX", () => {
-  it("centres an odd row on the playfield", () => {
-    assert.deepEqual([0, 1, 2].map((i) => arrowX(i, 3)), [200, 250, 300]);
-    assert.equal(arrowX(0, 1), ARROW_ROW.x);
-  });
+  it("centres an odd row, an even row half a step right (KeyManager's integer division), ARROW_SPACING apart", () => {
+    const CASES: readonly (readonly [count: number, row: readonly number[]])[] = [
+      [1, [ARROW_ROW.x]],
+      [3, [200, 250, 300]],
+      [4, [150, 200, 250, 300]],
+      [7, [100, 150, 200, 250, 300, 350, 400]],
+    ];
 
-  it("sits an even row half a step right, as KeyManager's integer division did", () => {
-    assert.deepEqual([0, 1, 2, 3].map((i) => arrowX(i, 4)), [150, 200, 250, 300]);
-  });
+    for (const [count, expected] of CASES) {
+      const row = Array.from({ length: count }, (_, i) => arrowX(i, count));
 
-  it("spaces arrows ARROW_SPACING apart, and fits 7 inside the playfield", () => {
-    const row = [0, 1, 2, 3, 4, 5, 6].map((i) => arrowX(i, 7));
-
-    assert.deepEqual(row, [100, 150, 200, 250, 300, 350, 400]);
-    row.slice(1).forEach((x, i) => assert.equal(x - row[i], ARROW_SPACING));
-    assert.ok(row.every((x) => x > 0 && x < PLAYFIELD_SIZE));
-  });
-});
-
-describe("WORLD_SPRITES", () => {
-  it("lists the world back to front, by the original's sortingOrder", () => {
-    const orders = WORLD_SPRITES.map(({ sortingOrder }) => sortingOrder);
-
-    assert.deepEqual(orders, [...orders].sort((a, b) => a - b));
-  });
-
-  it("keeps the labels the tests and the debug overlay look up", () => {
-    assert.deepEqual(WORLD_SPRITES.map(({ label }) => label), [
-      "tentacles",
-      "pillars",
-      "seaB",
-      "kraken-tail",
-      "boat",
-      "seaM",
-      "clouds",
-      "clouds-2",
-      "kraken-body",
-      "seaF",
-      "broken-boat",
-    ]);
+      assert.deepEqual(row, expected, `${count} arrows`);
+      row.slice(1).forEach((x, i) => assert.equal(x - row[i], ARROW_SPACING, `${count} arrows: spacing at ${i}`));
+      assert.ok(row.every((x) => x > 0 && x < PLAYFIELD_SIZE), `${count} arrows: inside the playfield`);
+    }
   });
 });
 

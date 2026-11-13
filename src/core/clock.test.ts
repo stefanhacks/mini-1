@@ -34,19 +34,17 @@ describe("GameClock", () => {
     scope.after(20, record("b"));
     clock.tick(100);
 
-    assert.deepEqual(log, ["a@10", "b@20", "c@30", "d@30"]);
+    assert.deepEqual(log, ["a@10", "b@20", "c@30", "d@30"], "one scope");
     assert.equal(clock.now, 100);
-  });
 
-  it("orders ties across scopes by scheduling order", () => {
-    const { clock, scope, log, record } = setup();
-    const other = clock.createScope();
+    const across = setup();
+    const other = across.clock.createScope();
 
-    other.after(10, record("first"));
-    scope.after(10, record("second"));
-    clock.tick(10);
+    other.after(10, across.record("first"));
+    across.scope.after(10, across.record("second"));
+    across.clock.tick(10);
 
-    assert.deepEqual(log, ["first@10", "second@10"]);
+    assert.deepEqual(across.log, ["first@10", "second@10"], "across scopes");
   });
 
   it("fires a timer exactly at its due time, not before", () => {
@@ -186,23 +184,23 @@ describe("TimerScope.every", () => {
     assert.ok(fired >= 17_999);
   });
 
-  it("rejects a period that is not a finite number of at least 1 ms", () => {
+  it("rejects an every period that is not a finite number of at least 1 ms, and a negative or NaN after delay", () => {
     const { scope } = setup();
     const noop = () => undefined;
 
-    assert.throws(() => scope.every(0, noop), RangeError);
-    assert.throws(() => scope.every(0.5, noop), RangeError);
-    assert.throws(() => scope.every(-1, noop), RangeError);
-    assert.throws(() => scope.every(NaN, noop), RangeError);
-    assert.throws(() => scope.every(Infinity, noop), RangeError);
-  });
+    const CASES: readonly (readonly [name: "every" | "after", ms: number])[] = [
+      ["every", 0],
+      ["every", 0.5],
+      ["every", -1],
+      ["every", NaN],
+      ["every", Infinity],
+      ["after", -1],
+      ["after", NaN],
+    ];
 
-  it("rejects a negative or NaN delay for after", () => {
-    const { scope } = setup();
-    const noop = () => undefined;
-
-    assert.throws(() => scope.after(-1, noop), RangeError);
-    assert.throws(() => scope.after(NaN, noop), RangeError);
+    for (const [name, ms] of CASES) {
+      assert.throws(() => scope[name](ms, noop), RangeError, `${name}(${ms})`);
+    }
   });
 });
 

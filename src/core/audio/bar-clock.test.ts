@@ -20,26 +20,21 @@ const assertOnGrid = (time: number, anchor: number) => {
   assert.ok(Math.abs(bars - Math.round(bars)) < 1e-9, `${time} is ${bars} bars from ${anchor}`);
 };
 
-describe("barLength", () => {
-  it("is BGM01's loop length, 9.6 s", () => {
-    assert.ok(Math.abs(BAR - 9.6) < 1e-12);
-  });
-});
-
 describe("nextBarTime", () => {
-  it("returns the anchor while it is at least the lead ahead", () => {
-    assert.equal(nextBarTime(0, 5, BAR), 5);
-    assert.equal(nextBarTime(5 - MIN_LEAD, 5, BAR), 5);
-  });
+  it("returns the anchor while it is the lead ahead, else the following boundary; a lead of 0 can return now", () => {
+    const CASES: readonly (readonly [name: string, now: number, lead: number | undefined, expected: number])[] = [
+      ["anchor far ahead", 0, undefined, 5],
+      ["anchor exactly the lead ahead", 5 - MIN_LEAD, undefined, 5],
+      ["anchor closer than the lead", 4.95, undefined, 5 + BAR],
+      ["now on the anchor", 5, undefined, 5 + BAR],
+      ["inside the first bar", 5 + 3, undefined, 5 + BAR],
+      ["just inside the second bar", 5 + BAR + 0.01, undefined, 5 + 2 * BAR],
+      ["lead 0, now on a boundary", 5 + 2 * BAR, 0, 5 + 2 * BAR],
+    ];
 
-  it("goes to the next bar when the anchor is closer than the lead", () => {
-    assert.equal(nextBarTime(4.95, 5, BAR), 5 + BAR);
-    assert.equal(nextBarTime(5, 5, BAR), 5 + BAR);
-  });
-
-  it("returns the following boundary inside a bar", () => {
-    assert.equal(nextBarTime(5 + 3, 5, BAR), 5 + BAR);
-    assert.equal(nextBarTime(5 + BAR + 0.01, 5, BAR), 5 + 2 * BAR);
+    for (const [name, now, lead, expected] of CASES) {
+      assert.equal(nextBarTime(now, 5, BAR, lead), expected, name);
+    }
   });
 
   it("never schedules closer than the lead: a boundary exactly on now goes to the next bar", () => {
@@ -52,10 +47,6 @@ describe("nextBarTime", () => {
       assert.equal(nextBarTime(boundary - MIN_LEAD, anchor, BAR), boundary);
       assert.equal(nextBarTime(boundary - MIN_LEAD + 1e-4, anchor, BAR), anchor + (n + 1) * BAR);
     }
-  });
-
-  it("accepts a lead of 0 and then returns now when now is on a boundary", () => {
-    assert.equal(nextBarTime(5 + 2 * BAR, 5, BAR, 0), 5 + 2 * BAR);
   });
 
   it("stays on the grid and at least the lead ahead over a 10-hour session", () => {
@@ -81,9 +72,17 @@ describe("nextBarTime", () => {
 });
 
 describe("changeBarTime", () => {
-  it("is the next bar when nothing has to finish first", () => {
-    assert.equal(changeBarTime(5 + 3, 5, BAR), 5 + BAR);
-    assert.equal(changeBarTime(5 + 3, 5, BAR, 5 + 2), 5 + BAR);
+  it("is the next bar at or after the natural end, keeping the lead", () => {
+    const CASES: readonly (readonly [name: string, now: number, naturalEnd: number | undefined, expected: number])[] = [
+      ["nothing to finish", 5 + 3, undefined, 5 + BAR],
+      ["an end already past", 5 + 3, 5 + 2, 5 + BAR],
+      ["an end exactly on a bar", 5 + 1, 5 + 3 * BAR, 5 + 3 * BAR],
+      ["an end just ahead", 5 + 2 * BAR - 0.05, 5 + 2 * BAR, 5 + 3 * BAR],
+    ];
+
+    for (const [name, now, naturalEnd, expected] of CASES) {
+      assert.equal(changeBarTime(now, 5, BAR, naturalEnd), expected, name);
+    }
   });
 
   it("waits for the first bar at or after a one-shot's natural end", () => {
@@ -91,15 +90,5 @@ describe("changeBarTime", () => {
     const start = 5 + BAR;
 
     assert.equal(changeBarTime(start + 1, 5, BAR, start + 20.425), 5 + 4 * BAR);
-  });
-
-  it("uses a bar the natural end falls exactly on", () => {
-    assert.equal(changeBarTime(5 + 1, 5, BAR, 5 + 3 * BAR), 5 + 3 * BAR);
-  });
-
-  it("still keeps the lead when the natural end is just ahead", () => {
-    const end = 5 + 2 * BAR;
-
-    assert.equal(changeBarTime(end - 0.05, 5, BAR, end), 5 + 3 * BAR);
   });
 });

@@ -24,42 +24,39 @@ describe("keyToDirection", () => {
 });
 
 describe("readKeyDown", () => {
-  it("presses and advances on an arrow", () => {
-    assert.deepEqual(readKeyDown(key("ArrowLeft")), { dir: "left", advance: true });
-  });
+  it("presses and advances on an arrow, and advances on any other key, F13 and other F-named keys included", () => {
+    const CASES: readonly (readonly [name: string, dir: "left" | null])[] = [
+      ["ArrowLeft", "left"],
+      [" ", null],
+      ["Enter", null],
+      ["F13", null],
+      ["f", null],
+    ];
 
-  it("advances on any other key", () => {
-    assert.deepEqual(readKeyDown(key(" ")), { dir: null, advance: true });
-    assert.deepEqual(readKeyDown(key("Enter")), { dir: null, advance: true });
-  });
-
-  it("ignores auto-repeats", () => {
-    assert.equal(readKeyDown(key("ArrowUp", { repeat: true })), null);
-    assert.equal(readKeyDown(key("Enter", { repeat: true })), null);
-  });
-
-  it("ignores shortcuts and lone modifiers", () => {
-    assert.equal(readKeyDown(key("ArrowLeft", { altKey: true })), null);
-    assert.equal(readKeyDown(key("r", { ctrlKey: true })), null);
-    assert.equal(readKeyDown(key("r", { metaKey: true })), null);
-    assert.equal(readKeyDown(key("Shift")), null);
-    assert.equal(readKeyDown(key("Control", { ctrlKey: true })), null);
-  });
-
-  it("does not advance on Escape, Tab, F1–F12, Dead, Process or Unidentified", () => {
-    for (const name of ["Escape", "Tab", "F1", "F5", "F10", "F12", "Dead", "Process", "Unidentified"]) {
-      assert.equal(readKeyDown(key(name)), null, name);
+    for (const [name, dir] of CASES) {
+      assert.deepEqual(readKeyDown(key(name)), { dir, advance: true }, JSON.stringify(name));
     }
   });
 
-  it("still advances on F13 and other F-named keys", () => {
-    assert.deepEqual(readKeyDown(key("F13")), { dir: null, advance: true });
-    assert.deepEqual(readKeyDown(key("f")), { dir: null, advance: true });
-  });
+  it("ignores repeats, shortcuts, lone modifiers, compositions, Escape, Tab, F1–F12, Dead, Process", () => {
+    const CASES: readonly (readonly [name: string, extra: Partial<KeyInput>])[] = [
+      ["ArrowUp", { repeat: true }],
+      ["Enter", { repeat: true }],
+      ["ArrowLeft", { altKey: true }],
+      ["r", { ctrlKey: true }],
+      ["r", { metaKey: true }],
+      ["Shift", {}],
+      ["Control", { ctrlKey: true }],
+      ...["Escape", "Tab", "F1", "F5", "F10", "F12", "Dead", "Process", "Unidentified"].map(
+        (name) => [name, {}] as const,
+      ),
+      ["a", { isComposing: true }],
+      ["ArrowUp", { isComposing: true }],
+    ];
 
-  it("ignores keys during an input method composition", () => {
-    assert.equal(readKeyDown(key("a", { isComposing: true })), null);
-    assert.equal(readKeyDown(key("ArrowUp", { isComposing: true })), null);
+    for (const [name, extra] of CASES) {
+      assert.equal(readKeyDown(key(name, extra)), null, `${name} ${JSON.stringify(extra)}`);
+    }
   });
 });
 

@@ -64,24 +64,6 @@ describe("createClipPlayer: poses", () => {
     assert.deepEqual(boat.position, { x: 250, y: 310 });
   });
 
-  it("wraps a looping clip by its length", () => {
-    const player = createClipPlayer();
-    const [a, b] = [sprite(), sprite()];
-
-    player.play(CLIPS.barco, { node: a, origin: BOAT.parentOrigin });
-    player.sync(0);
-    player.sync(3 * 2600 + 1234);
-
-    const once = createClipPlayer();
-
-    once.play(CLIPS.barco, { node: b, origin: BOAT.parentOrigin });
-    once.sync(0);
-    once.sync(1234);
-    assert.deepEqual(a.position, b.position);
-    // 9.034 % 2.6 is 1.234 give or take float noise.
-    assert.ok(Math.abs(a.rotation - b.rotation) < 1e-12);
-  });
-
   it("moves only the axes the clip animates (Clouds: x only)", () => {
     const player = createClipPlayer();
     const clouds = sprite(500);

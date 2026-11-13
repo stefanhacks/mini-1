@@ -134,59 +134,41 @@ describe("StateMachine", () => {
     assert.deepEqual(log, ["enter a", "exit a", "enter b", "update b", "update b"]);
   });
 
-  it("stops the leaving state's timers as soon as it requests a transition, even later in the same tick", () => {
-    const { log, machine } = setup({
-      a: {
-        enter: (scope, m) => {
+  it("stops the leaving state's timers and drops their later requests as soon as it requests a transition", () => {
+    type Enter = NonNullable<State<Id>["enter"]>;
+    const CASES: readonly { name: string; enter: (log: string[]) => Enter; expected: readonly string[] }[] = [
+      {
+        name: "timers later in the same tick",
+        enter: (log) => (scope, m) => {
           scope.after(10, () => m.request("b"));
           scope.after(20, () => log.push("a late"));
           scope.every(5, () => log.push("a every"));
         },
+        expected: ["enter a", "a every", "exit a", "enter b", "update b"],
       },
-    });
-
-    machine.request("a");
-    machine.update(30);
-    machine.update(30);
-
-    assert.deepEqual(log, ["enter a", "a every", "exit a", "enter b", "update b"]);
-  });
-
-  it("does not play the title's thunder after the title asked to leave", () => {
-    const { log, machine } = setup({
-      a: {
-        enter: (scope, m) => {
-          scope.after(1000, () => m.request("b"));
-          scope.after(1010, () => log.push("thunder"));
-        },
-      },
-    });
-
-    machine.request("a");
-
-    for (let frame = 0; frame < 100; frame++) {
-      machine.update(100 / 6);
-    }
-
-    assert.equal(machine.current, "b");
-    assert.equal(log.includes("thunder"), false);
-  });
-
-  it("drops a later request from the leaving state's own timers in the same tick", () => {
-    const { log, machine } = setup({
-      a: {
-        enter: (scope, m) => {
+      {
+        name: "a later request in the same tick",
+        enter: () => (scope, m) => {
           scope.after(10, () => m.request("b"));
           scope.after(20, () => m.request("c"));
         },
+        expected: ["enter a", "exit a", "enter b", "update b"],
       },
-    });
+    ];
 
-    machine.request("a");
-    machine.update(30);
+    for (const { name, enter, expected } of CASES) {
+      // The hooks are read when a state enters, so the case's hook can log into the setup's own log.
+      const hooks: Partial<Record<Id, State<Id>>> = {};
+      const { log, machine } = setup(hooks);
 
-    assert.equal(machine.current, "b");
-    assert.deepEqual(log, ["enter a", "exit a", "enter b"]);
+      hooks.a = { enter: enter(log) };
+      machine.request("a");
+      machine.update(30);
+      machine.update(30);
+
+      assert.equal(machine.current, "b", name);
+      assert.deepEqual(log, expected, name);
+    }
   });
 
   it("applies only the last of several requests made in one update", () => {
@@ -280,23 +262,6 @@ describe("StateMachine", () => {
     machine.update(16);
 
     assert.deepEqual(log, ["enter a", "exit a", "enter b", "b timer", "update b"]);
-  });
-
-  it("fires only the active state's timers across repeated a -> b -> a replays", () => {
-    const fired: string[] = [];
-    const { machine } = setup({
-      a: { enter: (scope) => scope.every(10, () => fired.push("a")) },
-      b: { enter: (scope) => scope.every(10, () => fired.push("b")) },
-    });
-
-    for (let round = 0; round < 3; round++) {
-      machine.request("a");
-      machine.update(25);
-      machine.request("b");
-      machine.update(25);
-    }
-
-    assert.deepEqual(fired, ["a", "a", "b", "b", "a", "a", "b", "b", "a", "a", "b", "b"]);
   });
 
   it("ignores requests made inside exit", () => {

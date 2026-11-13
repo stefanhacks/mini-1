@@ -362,11 +362,18 @@ describe("audio engine (fake AudioContext)", () => {
       assert.equal(sourceNamed("silence").length, 3, "no silent buffer once running");
     });
 
-    it("resume() settles false when the context's resume never settles", async () => {
-      const engine = createAudioEngine();
+    it("resume() is true once the context runs again, and settles false when its resume never settles", async () => {
+      const { engine } = await running();
 
-      engine.unlock();
       await engine.suspend();
+      assert.equal(engine.status, "needs-gesture", "runs again: suspended");
+      assert.equal(await engine.resume(), true, "runs again");
+      assert.equal(engine.status, "running", "runs again: status");
+
+      const hung = createAudioEngine();
+
+      hung.unlock();
+      await hung.suspend();
       world.resumeMode = "hang";
 
       const started = Date.now();
@@ -374,21 +381,12 @@ describe("audio engine (fake AudioContext)", () => {
       const keepAlive = setInterval(() => undefined, 50);
 
       try {
-        assert.equal(await engine.resume(), false);
+        assert.equal(await hung.resume(), false, "never settles");
       } finally {
         clearInterval(keepAlive);
       }
 
-      assert.ok(Date.now() - started < 2000);
-    });
-
-    it("resume() is true once the context runs again", async () => {
-      const { engine } = await running();
-
-      await engine.suspend();
-      assert.equal(engine.status, "needs-gesture");
-      assert.equal(await engine.resume(), true);
-      assert.equal(engine.status, "running");
+      assert.ok(Date.now() - started < 2000, "never settles: gives up in time");
     });
   });
 
