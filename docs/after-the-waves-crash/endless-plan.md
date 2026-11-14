@@ -1,6 +1,6 @@
 # Endless mode plan
 
-A loopable mode next to the story: each challenge gets a time limit, the limit tightens and the challenges grow as the run goes on, and the first timeout ends the run with the kraken. Written by Claude Code from the owner's brief. The owner's answers are under **Owner decisions**.
+A loopable mode next to the story: each challenge gets a time limit, the limit tightens and the challenges grow as the run goes on, and the first timeout ends the run with the kraken. Written by Claude Code from the owner's brief. The owner's answers are under **Owner decisions**. **Status:** built in waves 1–4; where the build differs from the design, **As built** below says so.
 
 ## The brief
 
@@ -45,9 +45,8 @@ A loopable mode next to the story: each challenge gets a time limit, the limit t
 New state `endless`, with phases `flee` → `play` → `caught`. It is entered from Title's `prompt` phase or the Ending's `replay` phase through the new icon.
 
 1. **Start:**
-   - The game resets like Title does: `startNewGame`, `scene.reset`, `startWeather`.
-   - It also resets the endless level, so the state can be entered from both screens.
-   - From Title, the logo and prompt fade out first (Title's `leaving` phase), and then the `endless` state starts instead of Story 0.
+   - From Title, the logo and prompt fade out first (Title's `leaving` phase), and then the `endless` state starts instead of Story 0. Title has already started a new game on its enter.
+   - From the Ending's replay prompt, the card and the prompt fade out (1 s), then a new game starts as Title's does (`startFreshGame`: `startNewGame`, `scene.reset`, `startWeather`), in endless mode.
 2. **`flee`:**
    - The text box shows the whisper `"... flee ..."`, typed at whisper speed through the existing typewriter and story view.
    - A tap continues, with the same debounce as the story.
@@ -60,7 +59,7 @@ New state `endless`, with phases `flee` → `play` → `caught`. It is entered f
    - Input is dropped, and the challenge and the pad hide.
    - Black fades in, then the whisper `"... eat ..."` is typed over it.
    - After a short hold, the Ending runs in an **endless variant**: the same `Fim` timeline (broken boat, throw, kraken and roar, fade to black, empty sea).
-   - Once the sea is back (`ENDING_MS.seaLift`), the variant goes to Title, which resets everything.
+   - Once black has faded out to the empty sea (`ENDLESS_TITLE_MS`, 11.25 s), the variant goes to Title, which resets everything.
    - The variant skips the card and the 22 s replay wait (owner decision 5).
 
 `GameSession` gains `mode: "story" | "endless"` and `level`. Ending reads `mode` to choose its tail. Title sets `mode = "story"` and `level = 0` on every enter, which gives "resetting the difficulty levels".
@@ -97,7 +96,7 @@ Every challenge kind is timed (owner decision 1). `ENDLESS_TUNING` goes in `chal
 - **Unchanged rules:** Sequence's 1 s gap between presses still applies inside the time limit.
 - **Story hooks** (owner decision 6):
   - The music overlay and the bubbles step up through parts 1–3 at levels 5, 10 and 15.
-  - The pillars and then the tentacles fade in at the same levels.
+  - The pillars fade in at level 5 and the tentacles at level 10, as after the story's first two rounds. Part 3 has no backdrop.
   - This reuses `setStoryPart`, `setUndersea` and `setBackdrop` as they are.
 
 ### The icon
@@ -108,18 +107,17 @@ Every challenge kind is timed (owner decision 1). `ENDLESS_TUNING` goes in `chal
 - **When it works:**
   - It is shown from the first visit to Title, with no unlock (owner decision 4).
   - It is enabled only on Title's `prompt` phase and the Ending's `replay` phase, and hidden everywhere else.
-  - It is a new listener in `router-core.ts`, enabled the same way pause is.
-  - Key fallback: **E**, for desktop and for layouts where the 4th slot doesn't fit (see Risks).
+  - The states turn it on and off (`GameDeps.endlessIcon`); the router takes its taps only then, and not while paused.
+  - A tap queues an `{ kind: "endless" }` input event for the states to drain (see As built).
+  - Key fallback: **E**, under the same conditions.
 - **Highlight at the end of the story:**
   - In the Ending's `replay` phase, the icon pulses with the prompt's `TMPIdle` clip.
   - It is held at full alpha under reduced motion.
-- **Prompt:** only the Ending's replay prompt changes; Title keeps "Tap to begin" (owner decision 8). `TAP_TO_PLAY_AGAIN` becomes `"Tap to start. Endless mode in the top right."`.
-  - This needs a check that the prompt fits on one line at the smallest portrait width.
-  - If it doesn't, it wraps to two lines, with the existing `ui-text` wrapping. *(uncertain: ui-text's wrap not checked yet)*
+- **Prompt:** only the Ending's replay prompt changes; Title keeps "Tap to begin" (owner decision 8). `TAP_TO_PLAY_AGAIN` becomes `"Tap to start.\nEndless mode in the top right."`, on two lines (see As built).
 
 ### Debug and tests
 
-- **Debug:** `window.debug` session snapshot gains `mode`, `level`, `limitMs` and `remainingMs`.
+- **Debug:** `window.debug.game` gains `mode`, `level` and `timer` (`limitMs`, `remainingMs`). In endless mode `challenge` shows the timed challenge, its `index` the level and `count` 0, so the e2e driver answers it as a round's.
 - **Unit tests:**
   - The curve and the generator: determinism by seed, caps, and the mix of challenge kinds.
   - `TimedChallenge`: deadline exclusive for input, as the rules' boundaries are; pause; reset.
@@ -138,13 +136,22 @@ Every challenge kind is timed (owner decision 1). `ENDLESS_TUNING` goes in `chal
 | 3 | UI: corner slot, icon and highlight, router hook and E key, timer bar, new replay prompt | M |
 | 4 | Debug snapshot, e2e, docs (README table, this plan's decisions) | S |
 
-Each wave ends with `npm run check` and a push. The PR preview is checked on a phone after wave 3.
+Each wave ends with `npm run check` and a push. All four waves are done; the PR preview still needs a check on a real phone.
+
+## As built
+
+Where the build differs from the design above, or settles something it left open:
+
+- **The icon is an input event, not a listener.** Its tap and E queue `{ kind: "endless" }` in the same queue as taps and presses (`PointerMap.queueEndless`). So the states' input epochs drop a stale one like any tap, and Title and the Ending read it in `update` (`drainTaps`). The router only decides when it takes the tap (`setEndlessInput`, off while paused). Its listener (`onEndless`) only lets audio resume, as mute's does.
+- **Shared state helpers:** `applyChallengeInput` (from `round.ts`) and `startFreshGame` (from `title.ts`) moved to `states/common.ts` so the endless state and the Ending reuse them.
+- **Deadline ties:** a Hold that completes in the tick its limit is reached counts as in time; the deadline expires after the other timers due at that moment. A press drained in that frame is late, as for the rules' own deadlines.
+- **"... eat ..." can't be skipped:** taps are dropped from the timeout on. The Ending starts `CAUGHT_HOLD_MS` (1.5 s) after it is typed.
+- **Two-line replay prompt:** ui texts don't wrap, and on one line the prompt is about 350 px at its 16 px floor, wider than a 320 px square. The line break after "Tap to start." keeps the owner's wording.
+- **Draw order:** the ui layer gains `endless-button` after `flashes-button` and `timer-bar` after `challenge-prompt` (`e2e/guards.spec.ts` pins it).
 
 ## Risks
 
-- **4th corner slot:**
-  - In landscape the stack shifts left of the right band and grows 48 px taller, which may not fit on short phones.
-  - When it doesn't fit, the icon has no hit area. The E key covers desktop only, so a touch-only short landscape screen would lose the mode. A side-by-side fallback may be needed. *(uncertain, needs a device check)*
+- **4th corner slot:** checked. The stack needs 192 px of safe height; the layout math places it at 568×320, 640×360, 667×375 and 844×390 landscape, and the e2e stack test passes on iPhone 13 and Pixel 7 in both orientations. Unusual safe-area insets still need a real-device look.
 - **Fairness at high levels:**
   - With 9 arrows at 350 ms per arrow plus 1 s, the limit is 4.15 s.
   - Sequence's 1 s gap rule still resets on a slip, so a late slip can't be recovered.
@@ -152,7 +159,7 @@ Each wave ends with `npm run check` and a push. The PR preview is checked on a p
 - **The Ending is shared:**
   - The variant must not change the story ending's times (the `lifecycle` and `playthrough` e2e tests pin them).
   - The variant only cuts its tail.
-- **Prompt length:** the new prompt is about 2.5× longer than "Tap to play again", so it may need wrapping (see The icon).
+- **Prompt length:** resolved with a line break (see As built); checked at 320×568.
 
 ## Owner decisions
 
@@ -160,7 +167,7 @@ Each wave ends with `npm run check` and a push. The PR preview is checked on a p
 2. **Variety:** more directions in play (2 → 4) and more Hold/Many mixed in, as the curve says.
 3. **"... flee ..." uses the current whisper grey** (`VOICE_GREY`, `#767676`).
 4. **The icon shows from the start**, with no unlock and nothing stored.
-5. **The endless failure goes straight to Title** at the empty sea (about 10.25 s), with no card or replay wait.
+5. **The endless failure goes straight to Title** once black has faded out to the empty sea (11.25 s into the Ending), with no card or replay wait.
 6. **The story hooks step up with the level:** the music overlay, the bubbles and the backdrops at levels 5, 10 and 15.
 7. **Score: later.** Not in this PR.
 8. **Only the Ending's replay prompt changes.** Title keeps "Tap to begin".

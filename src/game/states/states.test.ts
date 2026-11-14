@@ -1489,6 +1489,23 @@ describe("endless", () => {
     assert.deepEqual([t.game.session.mode, t.game.session.level], ["story", 0]);
   });
 
+  it("snapshots the mode, the level, the challenge and its timer for window.debug", async () => {
+    const t = await toEndless();
+
+    flee(t);
+    clear(t);
+
+    const snapshot = snapshotSession(t.game.session);
+
+    assert.deepEqual([snapshot.mode, snapshot.level, snapshot.challenge?.index, snapshot.challenge?.count], [
+      "endless", 1, 1, 0,
+    ]);
+    assert.equal(snapshot.challenge?.spec, t.scene.challenge);
+    assert.equal(snapshot.timer?.limitMs, t.game.session.timed?.limitMs);
+    t.wait(snapshot.timer?.limitMs ?? 0);
+    assert.deepEqual([snapshotSession(t.game.session).challenge, snapshotSession(t.game.session).timer], [null, null]);
+  });
+
   it("restarts the limit with the challenge on the pause's resume", async () => {
     const t = await toEndless();
 

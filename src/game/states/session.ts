@@ -101,17 +101,24 @@ export const startNewGame = (session: GameSession, seed: number, tuning: Tuning)
 };
 
 export interface SessionSnapshot {
+  readonly mode: GameMode;
+  readonly level: number;
   readonly seed: number;
   readonly games: number;
   readonly part: number;
   readonly phase: SessionPhase;
-  /** The current challenge's index in the round, its spec and progress, while a round runs. */
+  /**
+   * The current challenge's index in the round, its spec and progress, while a round runs. In endless mode, while a
+   * timed challenge is up: its index is the level, and `count` is 0 (a run has no end).
+   */
   readonly challenge: {
     readonly index: number;
     readonly count: number;
     readonly spec: ChallengeSpec;
     readonly progress: ChallengeProgress;
   } | null;
+  /** The time limit of endless mode's challenge and what is left of it, in ms of game time, while one is up. */
+  readonly timer: { readonly limitMs: number; readonly remainingMs: number } | null;
   /** The story page shown, while reading. */
   readonly page: {
     readonly line: number;
@@ -128,17 +135,25 @@ export interface SessionSnapshot {
 /** Plain data, safe to hand to `page.evaluate` in e2e. */
 export const snapshotSession = (session: GameSession): SessionSnapshot => {
   const rule = session.round?.current;
+  const { timed } = session;
   const page = session.cursor?.page ?? null;
   const typewriter = session.typewriter;
+  const roundChallenge = session.round && rule
+    ? { index: session.round.index, count: session.round.specs.length, spec: rule.spec, progress: rule.progress }
+    : null;
+  const timedChallenge = timed === null || timed.done || timed.timedOut
+    ? null
+    : { index: session.level, count: 0, spec: timed.spec, progress: timed.progress };
 
   return {
+    mode: session.mode,
+    level: session.level,
     seed: session.seed,
     games: session.games,
     part: session.part,
     phase: session.phase,
-    challenge: session.round && rule
-      ? { index: session.round.index, count: session.round.specs.length, spec: rule.spec, progress: rule.progress }
-      : null,
+    challenge: roundChallenge ?? timedChallenge,
+    timer: timed === null ? null : { limitMs: timed.limitMs, remainingMs: timed.remainingMs },
     page: session.cursor && page
       ? {
         line: session.cursor.lineIndex,
