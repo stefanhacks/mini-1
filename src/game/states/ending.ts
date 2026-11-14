@@ -6,7 +6,11 @@ import type { EndingPhase, GameSession } from "./session.ts";
 import { CARD_FADE, ENDING_CUES, ENDING_MS, ENDLESS_TITLE_MS, FADE, TITLE_EXIT_MS } from "./timings.ts";
 import type { GameDeps, GameState, GameStateId, SceneView } from "./types.ts";
 
-export const TAP_TO_PLAY_AGAIN = "Tap to play again";
+/**
+ * The replay prompt, pointing to the endless-mode icon (endless-plan.md, owner decision 8). On two lines: ui texts
+ * don't wrap, and on one line it is wider than a small phone's square at the prompt's 16 px floor.
+ */
+export const TAP_TO_PLAY_AGAIN = "Tap to start.\nEndless mode in the top right.";
 
 /**
  * Ending: the original's `Fim` timeline and GameEnd, on the clock (ENDING_MS):
@@ -25,7 +29,7 @@ export const TAP_TO_PLAY_AGAIN = "Tap to play again";
  * ENDLESS_TITLE_MS, with no card or prompt (owner decision 5); Title resets the difficulty.
  */
 export const createEnding = (deps: GameDeps, session: GameSession): GameState => {
-  const { input, pad, scene } = deps;
+  const { input, pad, scene, endlessIcon } = deps;
 
   /** The endless-mode icon's tap on the prompt: the card and the prompt fade out, then a new game in endless mode. */
   const leaveForEndless = (scope: TimerScope, machine: StateMachine<GameStateId>) => {
@@ -33,6 +37,7 @@ export const createEnding = (deps: GameDeps, session: GameSession): GameState =>
 
     session.phase = "leaving";
     input.beginEpoch();
+    endlessIcon.setAvailable(false, false);
     view.setTitle(false, FADE);
     view.setPrompt(null, FADE);
     scope.after(TITLE_EXIT_MS, () => {
@@ -90,8 +95,13 @@ export const createEnding = (deps: GameDeps, session: GameSession): GameState =>
       }
 
       enterPhaseAt(scope, "card", ENDING_MS.card, () => view.setTitle(true, CARD_FADE));
-      enterPhaseAt(scope, "replay", ENDING_MS.replay, () => view.setPrompt(TAP_TO_PLAY_AGAIN, FADE));
+      enterPhaseAt(scope, "replay", ENDING_MS.replay, () => {
+        view.setPrompt(TAP_TO_PLAY_AGAIN, FADE);
+        // The end of the story's highlight: the icon pulses with the prompt.
+        endlessIcon.setAvailable(true, true);
+      });
     },
+    exit: () => endlessIcon.setAvailable(false, false),
     update: (_deltaMS, machine, scope) => {
       const { advanced, endless } = drainTaps(input);
 

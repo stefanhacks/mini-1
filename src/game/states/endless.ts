@@ -111,6 +111,7 @@ export const createEndless = (deps: GameDeps, session: GameSession): GameState =
   /** Hides the challenge and its hint, the pad dimmed (`cleared`) or gone (`caught`). */
   const clearChallenge = () => {
     scene().setChallenge(null);
+    scene().setTimeLeft(null);
     pad.setHint(null);
     session.timed = null;
   };
@@ -138,6 +139,7 @@ export const createEndless = (deps: GameDeps, session: GameSession): GameState =
 
     session.timed = new TimedChallenge(spec, context, limitMs, () => caught(scope));
     showChallenge();
+    scene().setTimeLeft(1);
   };
 
   const cleared = (scope: TimerScope, machine: StateMachine<GameStateId>) => {
@@ -192,7 +194,10 @@ export const createEndless = (deps: GameDeps, session: GameSession): GameState =
           applyChallengeInput(session.timed, event);
         }
 
-        scene().setProgress(session.timed?.progress ?? null);
+        const timed = session.timed;
+
+        scene().setProgress(timed?.progress ?? null);
+        scene().setTimeLeft(timed === null ? null : timed.remainingMs / timed.limitMs);
         break;
       }
       case "caught":
@@ -210,6 +215,7 @@ export const createEndless = (deps: GameDeps, session: GameSession): GameState =
     },
     exit: () => {
       scene().setChallenge(null);
+      scene().setTimeLeft(null);
       pad.setHint(null);
       session.timed = null;
       session.cursor = null;

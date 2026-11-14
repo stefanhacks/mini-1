@@ -78,12 +78,22 @@ export const isPauseKey = (event: KeyInput) =>
   !event.repeat && !event.isComposing && !isShortcut(event)
   && (event.key === "Escape" || event.key === "p" || event.key === "P");
 
+/**
+ * Whether a keydown is the endless-mode shortcut: E (either case), with the same filters as `isMuteKey`. When the
+ * router takes it (endless input on), it queues an "endless" event and neither presses nor advances. Written by Claude
+ * Code.
+ */
+export const isEndlessKey = (event: KeyInput) =>
+  !event.repeat && !event.isComposing && !isShortcut(event) && (event.key === "e" || event.key === "E");
+
 export interface KeyboardOptions {
   readonly target?: Window;
   /** Called on the mute key; returns true if it handled it (then the key does nothing else). */
   readonly onMuteKey?: () => boolean;
   /** Called on a pause key; returns true if it handled it (then the key does nothing else). */
   readonly onPauseKey?: () => boolean;
+  /** Called on the endless key; returns true if it handled it (then the key does nothing else). */
+  readonly onEndlessKey?: () => boolean;
 }
 
 /**
@@ -92,13 +102,20 @@ export interface KeyboardOptions {
  * lifted with a modifier held still releases. The Meta keyup releases every arrow: macOS sends no keyup for keys
  * released while Meta is held. Returns a function that removes the listeners.
  */
-export const attachKeyboard = (map: PointerMap, { target = window, onMuteKey, onPauseKey }: KeyboardOptions = {}) => {
+export const attachKeyboard = (
+  map: PointerMap,
+  { target = window, onMuteKey, onPauseKey, onEndlessKey }: KeyboardOptions = {},
+) => {
   const onKeyDown = (event: KeyboardEvent) => {
     if (isMuteKey(event) && onMuteKey?.() === true) {
       return;
     }
 
     if (isPauseKey(event) && onPauseKey?.() === true) {
+      return;
+    }
+
+    if (isEndlessKey(event) && onEndlessKey?.() === true) {
       return;
     }
 

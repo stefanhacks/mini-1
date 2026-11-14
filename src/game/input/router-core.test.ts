@@ -147,12 +147,70 @@ describe("router core: the reduce-flashes toggle", () => {
   });
 });
 
+/** The setup above with an endless listener, the pause input set to `input`, and the icon's centre. */
+const setupEndless = (input: PauseInput) => {
+  const { core, log } = setupPause(input);
+
+  core.onEndless(() => log.push(`endless(${core.map.drain().map((event) => event.kind).join(",")})`));
+
+  const rect = core.endlessRect;
+
+  if (rect === null) {
+    throw new Error("no endless-mode icon");
+  }
+
+  return { core, log, endlessCentre: { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 } };
+};
+
+describe("router core: the endless-mode icon", () => {
+  it("sits under the reduce-flashes toggle", () => {
+    const { core } = setupEndless("ready");
+
+    assert.equal(core.endlessRect?.y, (core.flashesRect?.y ?? NaN) + (core.flashesRect?.height ?? NaN));
+    assert.equal(core.endlessRect?.x, core.flashesRect?.x);
+  });
+
+  it("queues an \"endless\" event on a tap or E while its input is on, with no advance or activation", () => {
+    const { core, log, endlessCentre } = setupEndless("ready");
+
+    core.setEndlessInput(true);
+    core.pointerDown(1, endlessCentre.x, endlessCentre.y);
+    core.pointerUp(1, endlessCentre.x, endlessCentre.y, true);
+    core.touchEnd();
+    assert.equal(core.endlessKey(), true);
+    assert.deepEqual(log, ["endless(endless)", "endless(endless)"]);
+  });
+
+  it("is ordinary input while its input is off, or while paused", () => {
+    for (const [input, on] of [["ready", false], ["paused", true]] as const) {
+      const { core, log, endlessCentre } = setupEndless(input);
+
+      core.setEndlessInput(on);
+      core.pointerDown(1, endlessCentre.x, endlessCentre.y);
+      core.pointerUp(1, endlessCentre.x, endlessCentre.y);
+      assert.equal(core.endlessKey(), false);
+      assert.deepEqual(log, ["activate(advance)"], `pause input ${input}, endless input ${on}`);
+    }
+  });
+});
+
 describe("router core: every corner button", () => {
   it("does nothing when the pointer slides off before lifting, or is cancelled", () => {
     const CASES = [
       { name: "mute", start: () => setup(), rectOf: (core: Core) => core.muteRect },
       { name: "pause", start: () => setupPause("ready"), rectOf: (core: Core) => core.pauseRect },
       { name: "reduce flashes", start: () => setupFlashes("ready"), rectOf: (core: Core) => core.flashesRect },
+      {
+        name: "endless",
+        start: () => {
+          const started = setupEndless("ready");
+
+          started.core.setEndlessInput(true);
+
+          return started;
+        },
+        rectOf: (core: Core) => core.endlessRect,
+      },
     ];
 
     for (const { name, start, rectOf } of CASES) {

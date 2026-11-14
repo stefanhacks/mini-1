@@ -22,6 +22,7 @@ import { createWeather, type Weather, type WeatherOptions } from "./scene/partic
 import { createWeatherEffects } from "./scene/particles/weather-effects.ts";
 import { createStoryView } from "./scene/story-view.ts";
 import { TITLE_UNDERSEA } from "./scene/particles/undersea.ts";
+import { createTimerBar } from "./scene/timer-bar.ts";
 import { createTitleCard } from "./scene/title-card.ts";
 import { createWorld } from "./scene/world.ts";
 
@@ -46,6 +47,7 @@ export interface Scene extends SceneView {
     readonly storyText: Container;
     readonly challengePrompt: Text;
     readonly progress: Graphics;
+    readonly timerBar: Graphics;
     readonly tapPrompt: Text;
     readonly credits: Text;
     readonly logo: Sprite;
@@ -76,6 +78,7 @@ const buildParts = (
   const fx = createFx(layers, textures, fades);
   const story = createStoryView(layers, textures, initial);
   const challenge = createChallengeView(layers, textures, initial, clips);
+  const timerBar = createTimerBar(layers.ui, initial);
   const title = createTitleCard(layers, textures, fades);
   const lightning = createLightning({
     bolt: fx.bolt,
@@ -87,7 +90,7 @@ const buildParts = (
     reduceFlashes,
   });
 
-  return { world, weather, fx, story, challenge, title, lightning };
+  return { world, weather, fx, story, challenge, timerBar, title, lightning };
 };
 
 type Parts = ReturnType<typeof buildParts>;
@@ -100,11 +103,12 @@ const applyMotion = ({ world, title, challenge, weather }: Parts, policy: Motion
   weather.motion.rainRate = policy.rainRate;
 };
 
-const labelledParts = ({ story, challenge, title, fx }: Parts): Scene["parts"] => ({
+const labelledParts = ({ story, challenge, timerBar, title, fx }: Parts): Scene["parts"] => ({
   textBox: story.textBox,
   storyText: story.storyText,
   challengePrompt: challenge.prompt,
   progress: challenge.progress,
+  timerBar: timerBar.graphics,
   tapPrompt: title.tapPrompt,
   credits: title.credits,
   logo: title.logo,
@@ -130,7 +134,7 @@ export const createScene = (
   reduceFlashes: () => boolean = () => false,
 ): Scene => {
   const built = buildParts(layers, textures, initial, clips, { reducedMotion, weatherOptions, reduceFlashes });
-  const { world, weather, fx, story, challenge, title, lightning } = built;
+  const { world, weather, fx, story, challenge, timerBar, title, lightning } = built;
   const syncMotion = followMotion(reducedMotion, (policy) => applyMotion(built, policy));
 
   const scene: Scene = {
@@ -142,6 +146,7 @@ export const createScene = (
       scene.setPrompt(null);
       scene.setStoryPage(null);
       scene.setChallenge(null);
+      scene.setTimeLeft(null);
       scene.setBackdrop("pillars", false);
       scene.setBackdrop("tentacles", false);
       scene.setBoat("whole");
@@ -164,6 +169,7 @@ export const createScene = (
     setStoryPage: (page, revealed) => story.setPage(page, revealed),
     setChallenge: (spec) => challenge.setChallenge(spec),
     setProgress: (progress) => challenge.setProgress(progress),
+    setTimeLeft: (fraction) => timerBar.setFraction(fraction),
     setBackdrop: (backdrop, visible, fade) => world.setBackdrop(backdrop, visible, fade),
     setBoat: (state) => world.setBoat(state),
     setKraken: (visible, fade) => world.setKraken(visible, fade),
@@ -177,6 +183,7 @@ export const createScene = (
     relayout: (next) => {
       story.relayout(next);
       challenge.relayout(next);
+      timerBar.relayout(next);
       title.relayout(next);
     },
     syncMotion,

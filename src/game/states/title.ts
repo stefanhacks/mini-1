@@ -26,7 +26,7 @@ export const AMBIENT_SALT = 0x7a11e7;
  * out (owner decision 5); Story 0 asks for part 0's overlay again.
  */
 export const createTitle = (deps: GameDeps, session: GameSession): GameState => {
-  const { input, scene } = deps;
+  const { input, scene, endlessIcon } = deps;
 
   /**
    * Ambient lightning after the intro's strikes, from its own RNG stream. Draws the first delay now, at the enter (the
@@ -51,6 +51,8 @@ export const createTitle = (deps: GameDeps, session: GameSession): GameState => 
     input.beginEpoch();
     view.setCredits(true, FADE);
     view.setPrompt(TAP_TO_BEGIN, FADE);
+    // The endless-mode icon is offered from the first Title on (owner decision 4), not highlighted.
+    endlessIcon.setAvailable(true, false);
   };
 
   /** `Inicio`: everything fades out, and the story (or endless mode) starts at its end (`FimInicio`). */
@@ -59,6 +61,7 @@ export const createTitle = (deps: GameDeps, session: GameSession): GameState => 
 
     session.phase = "leaving";
     input.beginEpoch();
+    endlessIcon.setAvailable(false, false);
     view.setTitle(false, FADE);
     view.setPrompt(null, FADE);
     scope.after(TITLE_EXIT_MS, () => machine.request(next));
@@ -67,6 +70,7 @@ export const createTitle = (deps: GameDeps, session: GameSession): GameState => 
   return {
     enter: (scope) => {
       input.beginEpoch();
+      endlessIcon.setAvailable(false, false);
       startFreshGame(deps, session);
       session.phase = "title";
 
@@ -100,6 +104,7 @@ export const createTitle = (deps: GameDeps, session: GameSession): GameState => 
     exit: () => {
       const view = scene();
 
+      endlessIcon.setAvailable(false, false);
       view.setTitle(false);
       view.setPrompt(null);
     },

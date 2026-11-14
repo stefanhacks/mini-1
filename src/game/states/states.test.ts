@@ -76,6 +76,7 @@ class FakeScene implements SceneView {
   revealed = Infinity;
   challenge: ChallengeSpec | null = null;
   progress: ChallengeProgress | null = null;
+  timeLeft: number | null = null;
   backdrops = new Set<Backdrop>();
   boat: Boat = "whole";
   kraken = false;
@@ -111,6 +112,7 @@ class FakeScene implements SceneView {
     this.revealed = Infinity;
     this.challenge = null;
     this.progress = null;
+    this.timeLeft = null;
     this.backdrops.clear();
     this.boat = "whole";
     this.kraken = false;
@@ -159,6 +161,10 @@ class FakeScene implements SceneView {
 
   setProgress(progress: ChallengeProgress | null) {
     this.progress = progress;
+  }
+
+  setTimeLeft(fraction: number | null) {
+    this.timeLeft = fraction;
   }
 
   setBackdrop(backdrop: Backdrop, visible: boolean, fade?: Fade) {
@@ -295,6 +301,16 @@ class FakeInput {
   }
 }
 
+class FakeEndlessIcon {
+  available = false;
+  highlighted = false;
+
+  setAvailable(available: boolean, highlighted: boolean) {
+    this.available = available;
+    this.highlighted = highlighted;
+  }
+}
+
 class FakePad {
   visible = false;
   dimmed = false;
@@ -323,6 +339,7 @@ const setup = ({ auto = true } = {}) => {
   const scene = new FakeScene(clock);
   const input = new FakeInput();
   const pad = new FakePad();
+  const endlessIcon = new FakeEndlessIcon();
   let seed = 41;
   // Every cue with the clock's time, as main.ts logs them.
   const cues: (CueEvent & { time: number })[] = [];
@@ -338,6 +355,7 @@ const setup = ({ auto = true } = {}) => {
     nextSeed: () => ++seed,
     tuning: TUNING,
     endless: ENDLESS_TUNING,
+    endlessIcon,
   };
   const game = createGame(deps);
   const machine = new StateMachine<GameStateId>(clock, game.states);
@@ -351,7 +369,7 @@ const setup = ({ auto = true } = {}) => {
     }
   };
 
-  return { clock, scene, input, pad, game, machine, frame, wait, loader, gateView, audio, cues };
+  return { clock, scene, input, pad, game, machine, frame, wait, loader, gateView, audio, cues, endlessIcon };
 };
 
 type Setup = ReturnType<typeof setup>;
@@ -1349,6 +1367,50 @@ describe("endless", () => {
     assert.deepEqual([t.pad.visible, t.pad.dimmed], [true, false]);
     assert.ok(spec?.kind === "sequence" && spec.directions.length === 3);
     assert.equal(t.game.session.timed?.limitMs, 3700);
+  });
+
+  it("offers the icon on Title's prompt only, and highlights it on the Ending's replay prompt", async () => {
+    const t = setup();
+
+    await toTitle(t);
+    assert.equal(t.endlessIcon.available, false);
+    t.wait(TITLE_PROMPT_MS);
+    assert.deepEqual([t.endlessIcon.available, t.endlessIcon.highlighted], [true, false]);
+    leaveTitle(t);
+    assert.equal(t.endlessIcon.available, false);
+    t.wait(STORY_PREAMBLE_MS);
+
+    for (let part = 0; part < STORY_PARTS.length; part++) {
+      readPart(t);
+
+      if (part < STORY_PARTS.length - 1) {
+        playRound(t);
+      }
+    }
+
+    t.wait(ENDING_MS.replay - FRAME_MS);
+    assert.equal(t.endlessIcon.available, false);
+    t.wait(FRAME_MS * 2);
+    assert.deepEqual([t.endlessIcon.available, t.endlessIcon.highlighted], [true, true]);
+    assert.equal(t.scene.prompt, TAP_TO_PLAY_AGAIN);
+    t.input.advance();
+    t.frame();
+    assert.equal(t.machine.current, "title");
+    assert.equal(t.endlessIcon.available, false);
+  });
+
+  it("shows the time left under the challenge, and none once it is cleared", async () => {
+    const t = await toEndless();
+
+    assert.equal(t.scene.timeLeft, null);
+    flee(t);
+    t.wait(1000);
+
+    const limit = t.game.session.timed?.limitMs ?? NaN;
+
+    assert.ok(Math.abs((t.scene.timeLeft ?? NaN) - (limit - 1008) / limit) < 0.01, `${t.scene.timeLeft}`);
+    answer(t);
+    assert.equal(t.scene.timeLeft, null);
   });
 
   it("ignores the icon's tap before Title's prompt, and a story tap afterwards plays the story", async () => {

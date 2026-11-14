@@ -149,6 +149,14 @@ export class PointerMap {
     this.queue = [];
   }
 
+  /**
+   * Queues the endless-mode icon's tap or key (router-core.ts): an "endless" event, with no activation. Written by
+   * Claude Code.
+   */
+  queueEndless(): void {
+    this.enqueue({ kind: "endless" });
+  }
+
   /** Returns the queued events, oldest first, and empties the queue. */
   drain(): InputEvent[] {
     const events = this.queue;
