@@ -27,7 +27,14 @@ export type SessionPhase =
 /** The Ending's phases, in order (ending.ts). `replay` takes the tap, as Title's `prompt` does. */
 export type EndingPhase = "boat" | "thrown" | "kraken" | "black" | "sea" | "card" | "replay";
 
+/** The story, or endless mode (endless-plan.md). */
+export type GameMode = "story" | "endless";
+
 export interface GameSession {
+  /** Which mode this game plays. Every new game starts as the story; endless mode switches it. */
+  mode: GameMode;
+  /** Endless mode's level: challenges cleared in the run. 0 in the story, and on every new game. */
+  level: number;
   /** The current game's seed. */
   seed: number;
   /** Games started, this one included: 1 for the first, 2 after one replay. */
@@ -49,6 +56,8 @@ export interface GameSession {
 }
 
 export const createSession = (): GameSession => ({
+  mode: "story",
+  level: 0,
   seed: 0,
   games: 0,
   rounds: [],
@@ -62,9 +71,12 @@ export const createSession = (): GameSession => ({
 
 /**
  * Starts a new game on `session` (Title, on every enter): its seed, the game count, every round generated from the
- * seed and the lightning stream, from story part 0 with no round or story running. The phase is the caller's.
+ * seed and the lightning stream, from story part 0 with no round or story running, in story mode at level 0 (so the
+ * difficulty resets on Title). The phase is the caller's.
  */
 export const startNewGame = (session: GameSession, seed: number, tuning: Tuning) => {
+  session.mode = "story";
+  session.level = 0;
   session.seed = seed;
   session.games += 1;
   session.rounds = generateRounds(createRng(seed), tuning);
