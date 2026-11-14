@@ -12,7 +12,7 @@ export const createCornerPresses = (
   enabled: (button: CornerButton) => boolean,
   onTap: (button: CornerButton) => void,
 ) => {
-  const rects: Record<CornerButton, Rect | null> = { mute: null, pause: null, flashes: null };
+  const rects: Record<CornerButton, Rect | null> = { mute: null, pause: null, flashes: null, endless: null };
   // Pointers that went down on a corner button, and which.
   const pressed = new Map<number, CornerButton>();
 

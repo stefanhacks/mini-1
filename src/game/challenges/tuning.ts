@@ -35,3 +35,55 @@ export const TUNING: Tuning = {
     { challenges: 7, length: 7, holds: 1, manys: 1 },
   ],
 };
+
+/**
+ * Endless mode (endless-plan.md): how the challenges grow and the time limits shrink with the level (challenges cleared
+ * in the run). Starting values for playtests. Written by Claude Code.
+ */
+export interface EndlessTuning {
+  /** Arrows in a Sequence at level 0. */
+  readonly startLength: number;
+  /** Most arrows in a Sequence: what the arrow row fits (9 × ARROW_SPACING on the 500 px playfield). */
+  readonly maxLength: number;
+  /** Levels per step: a step adds an arrow and `specialShareStep` of Holds and Manys. */
+  readonly levelsPerStep: number;
+  /** Directions a Sequence draws from at level 0. */
+  readonly startDirections: number;
+  /** The levels at which a Sequence draws from one more direction (up to all 4). */
+  readonly directionLevels: readonly number[];
+  /** The share of Holds and Manys added per step. */
+  readonly specialShareStep: number;
+  readonly maxSpecialShare: number;
+  /** A Sequence's limit: this plus its length × the per-arrow time. */
+  readonly sequenceBaseMs: number;
+  /** The per-arrow time at level 0, multiplied by `decay` per level, down to `minPerArrowMs`. */
+  readonly perArrowMs: number;
+  readonly minPerArrowMs: number;
+  /** A Hold's or Many's limit: its own time (`holdMs`, `manyWindowMs`) plus this slack, decaying to `minSlackMs`. */
+  readonly slackMs: number;
+  readonly minSlackMs: number;
+  /** Per level, on the per-arrow time and the slack. */
+  readonly decay: number;
+  /** The pause between a cleared challenge and the next, the pad dimmed. */
+  readonly betweenMs: number;
+  /** The levels at which the music overlay, the bubbles and the backdrops step up to story parts 1, 2 and 3. */
+  readonly storyLevels: readonly number[];
+}
+
+export const ENDLESS_TUNING: EndlessTuning = {
+  startLength: 3,
+  maxLength: 9,
+  levelsPerStep: 3,
+  startDirections: 2,
+  directionLevels: [3, 6],
+  specialShareStep: 0.1,
+  maxSpecialShare: 0.4,
+  sequenceBaseMs: 1000,
+  perArrowMs: 900,
+  minPerArrowMs: 350,
+  slackMs: 2000,
+  minSlackMs: 600,
+  decay: 0.94,
+  betweenMs: 300,
+  storyLevels: [5, 10, 15],
+};

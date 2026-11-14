@@ -8,6 +8,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { GameSnapshot } from "../src/debug-api.ts";
 import { REDUCED_MOTION } from "../src/game/motion.ts";
+import { TAP_TO_PLAY_AGAIN } from "../src/game/states/ending.ts";
 import { AFTER_ROUND_MS, ENDING_MS, TITLE_EXIT_MS, TITLE_PROMPT_MS } from "../src/game/states/timings.ts";
 import { openToTitle, screenshot, setFrameRendering } from "./game.ts";
 
@@ -619,14 +620,18 @@ test("the ending throws the boat, raises the kraken, goes black at 8.5 s, then s
 
   await page.evaluate(() => window.debug.pause.pause());
   await step(page, 1);
-  expect(await readReplayPrompt()).toEqual({ text: "Tap to play again", renderable: false, paused: true });
+  expect(await readReplayPrompt()).toEqual({
+    text: TAP_TO_PLAY_AGAIN,
+    renderable: false,
+    paused: true,
+  });
   // The key that continues doesn't replay: the prompt is drawn again, still on the ending.
   await press(page, "Space");
   await expect.poll(async () => {
     await step(page, 1);
 
     return readReplayPrompt();
-  }).toEqual({ text: "Tap to play again", renderable: true, paused: false });
+  }).toEqual({ text: TAP_TO_PLAY_AGAIN, renderable: true, paused: false });
   expect((await readGame(page)).state).toBe("ending");
 
   // The replay tap: Title's opening frame, with only the ambient loops playing.

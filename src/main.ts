@@ -1,8 +1,8 @@
 // The bootstrap, in startup order: each step is a module in src/app/. Several of these orders are contracts
 // (m4-refactor.md, rules 1–2): the ui layer's children (debug overlay, pad, mute button, pause button, reduce-flashes
-// button, Tap to continue, the gate's view, then the scene's texts), the router's `visibilitychange` listener before
-// the page lifecycle's, Gate's activation hook before the lifecycle's, and the ticker's game logic → audio tick →
-// screen tone → render pass.
+// button, endless-mode button, Tap to continue, the gate's view, then the scene's texts), the router's
+// `visibilitychange` listener before the page lifecycle's, Gate's activation hook before the lifecycle's, and the
+// ticker's game logic → audio tick → screen tone → render pass.
 import "./style.css";
 import { wireAudio, wireGestures } from "./app/audio-wiring.ts";
 import { createCueLog } from "./app/cue-log.ts";
@@ -20,7 +20,7 @@ import { pruneTextCache } from "./app/text-cache.ts";
 import { createClipPlayer } from "./core/anim/player.ts";
 import { GameClock } from "./core/clock.ts";
 import { StateMachine } from "./core/state-machine.ts";
-import { TUNING } from "./game/challenges/tuning.ts";
+import { ENDLESS_TUNING, TUNING } from "./game/challenges/tuning.ts";
 import { createReduceFlashes } from "./game/reduce-flashes.ts";
 import { createScreenTone } from "./game/screen-tone.ts";
 import { createFrameStepper } from "./game/frame-step.ts";
@@ -47,7 +47,7 @@ const clock = new GameClock();
 const clips = createClipPlayer(clock);
 // The "reduce flashes" toggle, as stored: the strikes and the screen tone read it.
 const reduceFlashes = createReduceFlashes();
-const { audio, lifecycle, muteButton, pauseButton, flashesButton, continuePrompt } = wireAudio(
+const { audio, lifecycle, muteButton, pauseButton, flashesButton, endlessButton, continuePrompt } = wireAudio(
   layers, layouts, reduceFlashes,
 );
 const cueLog = createCueLog(() => clock.now);
@@ -76,6 +76,14 @@ const game = createGame({
   scene: loading.requireScene,
   nextSeed,
   tuning: TUNING,
+  endless: ENDLESS_TUNING,
+  // The states offer endless mode: the icon shows (and pulses at the end of the story), its square and E take input.
+  endlessIcon: {
+    setAvailable: (available, highlighted) => {
+      router.setEndlessInput(available);
+      endlessButton.setAvailable(available, highlighted);
+    },
+  },
   // Pixi keeps a null key per text it let go (text-cache.ts); a new game starts without them.
   onTitle: () => pruneTextCache(app.renderer),
 });
@@ -123,6 +131,7 @@ startFrameLoop({
   clock,
   clips,
   weather,
+  endlessButton,
   screenTone,
   errors,
   renderPlayfield,

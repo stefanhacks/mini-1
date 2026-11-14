@@ -33,7 +33,9 @@ import { type Direction, DIRECTIONS } from "../direction.ts";
 
 export type InputEvent =
   | { readonly kind: "press" | "release"; readonly dir: Direction }
-  | { readonly kind: "advance" | "cancel" };
+  | { readonly kind: "advance" | "cancel" }
+  // The endless-mode icon's tap or key (endless-plan.md): Title's prompt and the Ending's replay take it.
+  | { readonly kind: "endless" };
 
 /**
  * A safety net, not a limit states should reach: past this many undrained events the queue is flushed as by
@@ -145,6 +147,14 @@ export class PointerMap {
   beginEpoch(): void {
     this.makeAllStale();
     this.queue = [];
+  }
+
+  /**
+   * Queues the endless-mode icon's tap or key (router-core.ts): an "endless" event, with no activation. Written by
+   * Claude Code.
+   */
+  queueEndless(): void {
+    this.enqueue({ kind: "endless" });
   }
 
   /** Returns the queued events, oldest first, and empties the queue. */

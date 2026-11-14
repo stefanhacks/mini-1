@@ -6,7 +6,7 @@ import type { GameClock } from "../../core/clock.ts";
 import type { State } from "../../core/state-machine.ts";
 import type { Rng } from "../challenges/rng.ts";
 import type { ChallengeProgress, ChallengeSpec } from "../challenges/rule.ts";
-import type { Tuning } from "../challenges/tuning.ts";
+import type { EndlessTuning, Tuning } from "../challenges/tuning.ts";
 import type { Direction } from "../direction.ts";
 import type { InputEvent } from "../input/pointer-map.ts";
 import type { StrikeKind } from "../lightning.ts";
@@ -14,7 +14,7 @@ import type { StoryPage } from "../story/cursor.ts";
 import type { Measure } from "../story/paging.ts";
 import type { CueName } from "./timings.ts";
 
-export type GameStateId = "gate" | "title" | "story" | "transition" | "round" | "ending";
+export type GameStateId = "gate" | "title" | "story" | "transition" | "round" | "endless" | "ending";
 
 export type GameState = State<GameStateId>;
 
@@ -113,6 +113,11 @@ export interface SceneView {
   setChallenge(spec: ChallengeSpec | null): void;
   /** The cursors and the hold ring / press pips for the shown challenge. Cheap to call every frame. */
   setProgress(progress: ChallengeProgress | null): void;
+  /**
+   * Endless mode's time bar under the arrows: the share of the time left (0..1), or null for none. Cheap to call every
+   * frame. `reset` hides it.
+   */
+  setTimeLeft(fraction: number | null): void;
   /** A backdrop (`FadeIn`/`FadeOut`). */
   setBackdrop(backdrop: Backdrop, visible: boolean, fade?: Fade): void;
   setBoat(boat: Boat): void;
@@ -131,6 +136,15 @@ export interface SceneView {
    */
   setUndersea(undersea: Undersea | null): void;
   readonly paging: Paging;
+}
+
+/**
+ * The endless-mode icon as the states see it (endless-plan.md): main.ts turns its hit area and the E key on with it
+ * (the router's endless input) and shows the icon.
+ */
+export interface EndlessIcon {
+  /** Offered or not; `highlighted` pulses it (the Ending's replay prompt). Idempotent. */
+  setAvailable(available: boolean, highlighted: boolean): void;
 }
 
 /** What the start gate loads (app/game-loader.ts: sprites, font and audio, then the scene is built). */
@@ -208,6 +222,12 @@ export interface GameDeps {
   /** The seed of each new game: `?seed=` based in tests and bug reports, random otherwise. */
   readonly nextSeed: () => number;
   readonly tuning: Tuning;
-  /** Called on every Title enter, before the new game starts: the app's housekeeping (app/text-cache.ts). */
+  /** Endless mode's difficulty curve (endless-plan.md). */
+  readonly endless: EndlessTuning;
+  readonly endlessIcon: EndlessIcon;
+  /**
+   * Called on every new game (Title's enter, and the Ending's way into endless mode), before it starts: the app's
+   * housekeeping (app/text-cache.ts).
+   */
   readonly onTitle?: () => void;
 }

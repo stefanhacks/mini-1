@@ -2,7 +2,7 @@
 // It uses DOM events, not Pixi's federated events: Pixi never delivers pointercancel (04, correction 1), and the
 // playfield is a render texture outside the hit-test tree. DOM handlers only queue events; the active state drains them
 // in `update`, so input runs under the state machine's error guard and in game time.
-// The decisions (corner buttons first, pads, the activation, mute, pause and reduce-flashes hooks) live in
+// The decisions (corner buttons first, pads, the activation, mute, pause, reduce-flashes and endless hooks) live in
 // router-core.ts, with their contract.
 
 import type { Direction } from "../direction.ts";
@@ -48,6 +48,15 @@ export interface InputRouter {
    * activation, paused or not. While no listener is registered it is ordinary input. Returns the unsubscribe.
    */
   onFlashes(listener: () => void): () => void;
+  /** The endless-mode icon's hit square in the current layout (corner-geometry.ts), or null. */
+  readonly endlessRect: Rect | null;
+  /**
+   * The endless-mode icon's tap and the E key, while the endless input is on: they queue an "endless" event, then call
+   * `listener`. Returns the unsubscribe.
+   */
+  onEndless(listener: () => void): () => void;
+  /** Whether the endless-mode icon and the E key take input from now on (router-core.ts has the contract). */
+  setEndlessInput(on: boolean): void;
   /** What the pause button and keys do from now on: "off", "ready" or "paused" (see router-core.ts). */
   setPauseInput(input: PauseInput): void;
   /** Whether `dir` is held by any pointer or key, for the pad view. */
@@ -125,7 +134,11 @@ export const createInputRouter = (canvas: HTMLElement, frame: HTMLElement = getG
   document.addEventListener("visibilitychange", onVisibilityChange, { signal });
 
   // keydown, keyup and blur.
-  const detachKeyboard = attachKeyboard(core.map, { onMuteKey: core.muteKey, onPauseKey: core.pauseKey });
+  const detachKeyboard = attachKeyboard(core.map, {
+    onMuteKey: core.muteKey,
+    onPauseKey: core.pauseKey,
+    onEndlessKey: core.endlessKey,
+  });
 
   return {
     drain: () => core.map.drain(),
@@ -144,6 +157,11 @@ export const createInputRouter = (canvas: HTMLElement, frame: HTMLElement = getG
     onMute: (listener) => core.onMute(listener),
     onPause: (listener) => core.onPause(listener),
     onFlashes: (listener) => core.onFlashes(listener),
+    get endlessRect() {
+      return core.endlessRect;
+    },
+    onEndless: (listener) => core.onEndless(listener),
+    setEndlessInput: (on) => core.setEndlessInput(on),
     setPauseInput: (input) => core.setPauseInput(input),
     isHeld: (dir) => core.isHeld(dir),
     destroy: () => {

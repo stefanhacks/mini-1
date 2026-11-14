@@ -25,6 +25,10 @@
 //   clears it and runs the activation listeners once more, with no second "advance". Some WebKit versions only accept
 //   `touchend` as the gesture that may resume audio. Listeners must therefore be idempotent (Gate.activate and the
 //   audio engine's unlock/startMusic are). Any pointerdown clears a flag whose touchend never came.
+// - The endless-mode icon (endless-plan.md) takes taps while the endless input is on (`setEndlessInput`, driven by the
+//   states: Title's prompt and the Ending's replay prompt) and the pause input isn't "paused". Its tap, and the E key
+//   (keyboard.ts `isEndlessKey`) under the same conditions, queue an "endless" event (no activation), then call the
+//   endless listeners. Otherwise the square and the key are ordinary input.
 // - A listener that throws is reported (reportError) and the others still
 //   run; the event stays queued.
 
@@ -73,7 +77,12 @@ const subscribe = (listeners: Set<Listener>, listener: Listener) => {
 
 export const createRouterCore = () => {
   const activateListeners = new Set<Listener>();
-  const listeners: Record<CornerButton, Set<Listener>> = { mute: new Set(), pause: new Set(), flashes: new Set() };
+  const listeners: Record<CornerButton, Set<Listener>> = {
+    mute: new Set(),
+    pause: new Set(),
+    flashes: new Set(),
+    endless: new Set(),
+  };
   let activated = false;
   let touchActivation = false;
   const map = new PointerMap(() => {
@@ -82,9 +91,24 @@ export const createRouterCore = () => {
   });
   let pads: readonly Pad[] = [];
   let pauseInput: PauseInput = "off";
+  let endlessInput = false;
+  const endlessOn = () => endlessInput && pauseInput !== "paused";
+  const tapEndless = () => {
+    map.queueEndless();
+    callAll(listeners.endless);
+  };
   const corners = createCornerPresses(
-    (button) => listeners[button].size > 0 && (button !== "pause" || pauseInput === "ready"),
-    (button) => callAll(listeners[button]),
+    (button) => {
+      switch (button) {
+      case "endless":
+        return endlessOn();
+      case "pause":
+        return listeners.pause.size > 0 && pauseInput === "ready";
+      default:
+        return listeners[button].size > 0;
+      }
+    },
+    (button) => (button === "endless" ? tapEndless() : callAll(listeners[button])),
   );
 
   return {
@@ -104,6 +128,14 @@ export const createRouterCore = () => {
     /** The "reduce flashes" toggle's hit square in the current layout, or null. */
     get flashesRect() {
       return corners.rects.flashes;
+    },
+    /** The endless-mode icon's hit square in the current layout, or null. */
+    get endlessRect() {
+      return corners.rects.endless;
+    },
+    /** Whether the endless-mode icon and the E key take input from now on (the states drive it). */
+    setEndlessInput: (on: boolean) => {
+      endlessInput = on;
     },
     /** What the pause button and keys do from now on (pause.ts drives it). */
     setPauseInput: (input: PauseInput) => {
@@ -161,6 +193,16 @@ export const createRouterCore = () => {
 
       return true;
     },
+    /** The E key: true if it queued an "endless" event (then the key does nothing else). */
+    endlessKey: () => {
+      if (!endlessOn()) {
+        return false;
+      }
+
+      tapEndless();
+
+      return true;
+    },
     cancelAll: () => {
       corners.clear();
       map.cancelAll();
@@ -172,6 +214,8 @@ export const createRouterCore = () => {
     onPause: (listener: Listener) => subscribe(listeners.pause, listener),
     /** The "reduce flashes" toggle's tap calls `listener`. Returns the unsubscribe. */
     onFlashes: (listener: Listener) => subscribe(listeners.flashes, listener),
+    /** The endless-mode icon's tap and the E key call `listener`, after queueing their event. Returns unsubscribe. */
+    onEndless: (listener: Listener) => subscribe(listeners.endless, listener),
   };
 };
 

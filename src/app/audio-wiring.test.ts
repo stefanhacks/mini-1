@@ -29,6 +29,7 @@ const setUp = (state: string, { paused = false } = {}) => {
   const muteListeners: (() => void)[] = [];
   const pauseListeners: (() => void)[] = [];
   const flashesListeners: (() => void)[] = [];
+  const endlessListeners: (() => void)[] = [];
   const router = {
     onActivate: (listener: () => void) => {
       activateListeners.push(listener);
@@ -47,6 +48,11 @@ const setUp = (state: string, { paused = false } = {}) => {
     },
     onFlashes: (listener: () => void) => {
       flashesListeners.push(listener);
+
+      return () => undefined;
+    },
+    onEndless: (listener: () => void) => {
+      endlessListeners.push(listener);
 
       return () => undefined;
     },
@@ -90,7 +96,7 @@ const setUp = (state: string, { paused = false } = {}) => {
     router, audio, muteButton, lifecycle, machine: { current: state }, gate, pause, reduceFlashes, flashesButton,
   });
 
-  return { calls, activateListeners, muteListeners, pauseListeners, flashesListeners };
+  return { calls, activateListeners, muteListeners, pauseListeners, flashesListeners, endlessListeners };
 };
 
 describe("wireGestures", () => {
@@ -155,5 +161,13 @@ describe("wireGestures", () => {
         "flashesButton.setReduced:false",
       ]);
     }
+  });
+
+  it("the endless-mode icon's tap only lets audio resume, as a gesture: its event is already queued", () => {
+    const { calls, endlessListeners } = setUp("title");
+
+    assert.equal(endlessListeners.length, 1);
+    endlessListeners[0]?.();
+    assert.deepEqual(calls, ["lifecycle.activate"]);
   });
 });

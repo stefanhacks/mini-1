@@ -162,7 +162,7 @@ test("Escape, P and the pause button pause and resume, never advancing; off at t
   expect(await pageKey(page)).toBe(shown);
 });
 
-test("the pause button and the reduce-flashes toggle stack under mute, in the safe area, clear of zones and pads", {
+test("pause, reduce flashes and endless mode stack under mute, in the safe area, clear of zones and pads", {
   tag: "@device",
 }, async ({ page }) => {
   // The router has its layout as soon as `window.debug` exists: nothing needs to load.
@@ -182,17 +182,18 @@ test("the pause button and the reduce-flashes toggle stack under mute, in the sa
       .toBe(size.width > size.height ? "landscape" : "portrait");
 
     const layout = await readLayout(page);
-    const { muteRect, pauseRect, flashesRect } = await page.evaluate(() => ({
+    const { muteRect, pauseRect, flashesRect, endlessRect } = await page.evaluate(() => ({
       muteRect: window.debug.router.muteRect,
       pauseRect: window.debug.router.pauseRect,
       flashesRect: window.debug.router.flashesRect,
+      endlessRect: window.debug.router.endlessRect,
     }));
 
-    if (muteRect === null || pauseRect === null || flashesRect === null) {
+    if (muteRect === null || pauseRect === null || flashesRect === null || endlessRect === null) {
       throw new Error(`no room for the corner buttons at ${size.width}×${size.height}`);
     }
 
-    for (const [above, rect] of [[muteRect, pauseRect], [pauseRect, flashesRect]]) {
+    for (const [above, rect] of [[muteRect, pauseRect], [pauseRect, flashesRect], [flashesRect, endlessRect]]) {
       expect(rect.x).toBe(above.x);
       expect(rect.y).toBeCloseTo(above.y + above.height, 9);
       expect(rect.x).toBeGreaterThanOrEqual(layout.safe.x);

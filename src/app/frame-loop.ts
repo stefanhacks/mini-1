@@ -20,6 +20,8 @@ export interface FrameLoopDeps {
   readonly clips: { sync(now: number): void };
   /** The scene's weather once it is built (scene/particles), synced like the clips. */
   readonly weather: { sync(now: number): void };
+  /** The endless-mode icon's pulse (game/endless-button.ts), on the game clock, after the clips. */
+  readonly endlessButton: { sync(now: number): void };
   /** The renderer's clear colour from the flash (game/screen-tone.ts), once the clips have synced. */
   readonly screenTone: { sync(): void };
   readonly errors: ErrorSink;
@@ -29,7 +31,8 @@ export interface FrameLoopDeps {
 
 /** Every call goes through its object (`audio.tick()`, not a destructured `tick`): e2e replaces them. */
 export const startFrameLoop = ({
-  ticker, stepper, pause, padView, router, audio, timescale, clock, clips, weather, screenTone, errors, renderPlayfield,
+  ticker, stepper, pause, padView, router, audio, timescale, clock, clips, weather, endlessButton, screenTone, errors,
+  renderPlayfield,
 }: FrameLoopDeps) => {
   // The only thing that ticks the clock. Its first error halts the game logic: it is reported as an uncaught error and
   // kept in `debug.error` unless an earlier one is there, and the last frame keeps rendering. The pad view follows the
@@ -45,6 +48,7 @@ export const startFrameLoop = ({
     stepper.step(frame.deltaMS * timescale.value);
     clips.sync(clock.now);
     weather.sync(clock.now);
+    endlessButton.sync(clock.now);
     padView.update((dir) => router.isHeld(dir));
   }, (error) => {
     errors.report(error);

@@ -68,6 +68,19 @@ export const ENDING_MS = {
   replay: 22250,
 } as const;
 
+/**
+ * Endless mode's end (endless-plan.md; written by Claude Code), from the timeout: black fades in (`FADE`, 1 s), then
+ * "... eat ..." is typed over it from CAUGHT_EAT_MS, held CAUGHT_HOLD_MS once typed, then the Ending runs.
+ */
+export const CAUGHT_EAT_MS = 1000;
+export const CAUGHT_HOLD_MS = 1500;
+
+/**
+ * Endless mode's Ending goes back to Title once black has faded out to the empty sea (ENDING_MS.seaLift, plus its
+ * 1 s fade), skipping the card and the replay prompt (owner decision 5).
+ */
+export const ENDLESS_TITLE_MS = ENDING_MS.seaLift + 1000;
+
 /** The owner's extra wait before "Tap to play again": unusually long, so it feels as if there is no way back. */
 export const REPLAY_EXTRA_MS = 5000;
 

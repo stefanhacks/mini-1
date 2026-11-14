@@ -2,7 +2,7 @@ import type { TimerScope } from "../../core/clock.ts";
 import type { StateMachine } from "../../core/state-machine.ts";
 import { Round } from "../challenges/round.ts";
 import { ruleContext } from "../challenges/rule.ts";
-import type { InputEvent } from "../input/pointer-map.ts";
+import { applyChallengeInput } from "./common.ts";
 import type { GameSession } from "./session.ts";
 import { AFTER_ROUND_MS, FADE } from "./timings.ts";
 import type { Backdrop, GameDeps, GameState, GameStateId } from "./types.ts";
@@ -13,8 +13,8 @@ const BACKDROPS: readonly (Backdrop | null)[] = ["pillars", "tentacles", null];
 /**
  * Round `session.part`: its challenges one after another (challenges/round.ts), on this state's clock and scope.
  *
- * Every update drains the input queue and feeds the round through an explicit switch: press, release and cancel go to
- * the challenge, advance is dropped (challenges/ must not import input/). Once the last challenge is done the arrows
+ * Every update drains the input queue and feeds the round through `applyChallengeInput`: press, release and cancel go
+ * to the challenge, the taps are dropped. Once the last challenge is done the arrows
  * go, the pad dims, the round's backdrop starts its 1 s fade-in on the win (the original triggers its `FadeIn` there)
  * and AFTER_ROUND_MS later the next story part starts. Events after that are dropped.
  */
@@ -55,23 +55,6 @@ export const createRound = (deps: GameDeps, session: GameSession): GameState => 
     });
   };
 
-  /** Feeds one input event to the round (m2-plan: an explicit switch, as challenges/ must not import input/). */
-  const applyEvent = (round: Round, event: InputEvent) => {
-    switch (event.kind) {
-    case "press":
-      round.press(event.dir);
-      break;
-    case "release":
-      round.release(event.dir);
-      break;
-    case "cancel":
-      round.cancelAll();
-      break;
-    case "advance":
-      break;
-    }
-  };
-
   return {
     enter: (scope, machine) => {
       input.beginEpoch();
@@ -101,7 +84,7 @@ export const createRound = (deps: GameDeps, session: GameSession): GameState => 
           break;
         }
 
-        applyEvent(round, event);
+        applyChallengeInput(round, event);
       }
 
       scene().setProgress(round?.current?.progress ?? null);
