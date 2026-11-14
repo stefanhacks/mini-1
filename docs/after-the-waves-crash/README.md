@@ -16,7 +16,7 @@ A knowledge base for porting [After the Waves Crash](https://github.com/stefanha
 | [m4-refactor.md](m4-refactor.md) | M4 wave 0: the readability refactor proposal for the scene, main and the states. |
 | [m5-plan.md](m5-plan.md) | M5 effects and lifecycle plan, with the screen-tone flash options. |
 | [m5-particles-spec.md](m5-particles-spec.md) | The original's rain, splash and bubble particle systems, converted to playfield units. |
-| [endless-plan.md](endless-plan.md) | Endless mode plan: timed challenges, difficulty curve, the corner icon, owner questions. |
+| [endless-plan.md](endless-plan.md) | Endless mode plan: timed challenges, difficulty curve, the corner icon, owner decisions. |
 
 ## How it was produced
 

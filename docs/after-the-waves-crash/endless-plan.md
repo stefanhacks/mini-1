@@ -1,6 +1,6 @@
 # Endless mode plan
 
-A loopable mode next to the story: each challenge gets a time limit, the limit tightens and the challenges grow as the run goes on, and the first timeout ends the run with the kraken. Written by Claude Code from the owner's brief. Items under **Owner questions** must be settled before wave 1.
+A loopable mode next to the story: each challenge gets a time limit, the limit tightens and the challenges grow as the run goes on, and the first timeout ends the run with the kraken. Written by Claude Code from the owner's brief. The owner's answers are under **Owner decisions**.
 
 ## The brief
 
@@ -61,7 +61,7 @@ New state `endless`, with phases `flee` → `play` → `caught`. It is entered f
    - Black fades in, then the whisper `"... eat ..."` is typed over it.
    - After a short hold, the Ending runs in an **endless variant**: the same `Fim` timeline (broken boat, throw, kraken and roar, fade to black, empty sea).
    - Once the sea is back (`ENDING_MS.seaLift`), the variant goes to Title, which resets everything.
-   - The variant skips the card and the 22 s replay wait. See owner question 5.
+   - The variant skips the card and the 22 s replay wait (owner decision 5).
 
 `GameSession` gains `mode: "story" | "endless"` and `level`. Ending reads `mode` to choose its tail. Title sets `mode = "story"` and `level = 0` on every enter, which gives "resetting the difficulty levels".
 
@@ -81,7 +81,7 @@ New state `endless`, with phases `flee` → `play` → `caught`. It is entered f
 
 ### Difficulty curve
 
-`ENDLESS_TUNING` goes in `challenges/tuning.ts`, a pure function of `level` (challenges cleared). All the numbers are starting values for playtests:
+Every challenge kind is timed (owner decision 1). `ENDLESS_TUNING` goes in `challenges/tuning.ts`, a pure function of `level` (challenges cleared). All the numbers are starting values for playtests:
 
 | Knob | Level 0 | Growth | Cap |
 |---|---|---|---|
@@ -95,7 +95,7 @@ New state `endless`, with phases `flee` → `play` → `caught`. It is entered f
   - A `generateEndless(rng, level)` builds one spec at a time from the session's seed, so `?seed=` replays a run.
   - It shares `randomDirection` and the spec shapes with `generateRounds`.
 - **Unchanged rules:** Sequence's 1 s gap between presses still applies inside the time limit.
-- **Story hooks** (optional, owner question 6):
+- **Story hooks** (owner decision 6):
   - The music overlay and the bubbles step up through parts 1–3 at levels 5, 10 and 15.
   - The pillars and then the tentacles fade in at the same levels.
   - This reuses `setStoryPart`, `setUndersea` and `setBackdrop` as they are.
@@ -106,13 +106,14 @@ New state `endless`, with phases `flee` → `play` → `caught`. It is entered f
   - It is a 4th slot in `CORNER_BUTTONS`, `"endless"`, under "reduce flashes".
   - The art is an infinity loop on the 24-unit icon grid in `ICON_COLOR`, drawn in a new `endless-button.ts` alongside `flashes-button.ts`.
 - **When it works:**
+  - It is shown from the first visit to Title, with no unlock (owner decision 4).
   - It is enabled only on Title's `prompt` phase and the Ending's `replay` phase, and hidden everywhere else.
   - It is a new listener in `router-core.ts`, enabled the same way pause is.
   - Key fallback: **E**, for desktop and for layouts where the 4th slot doesn't fit (see Risks).
 - **Highlight at the end of the story:**
   - In the Ending's `replay` phase, the icon pulses with the prompt's `TMPIdle` clip.
   - It is held at full alpha under reduced motion.
-- **Prompt:** the Ending's `TAP_TO_PLAY_AGAIN` becomes `"Tap to start. Endless mode in the top right."`.
+- **Prompt:** only the Ending's replay prompt changes; Title keeps "Tap to begin" (owner decision 8). `TAP_TO_PLAY_AGAIN` becomes `"Tap to start. Endless mode in the top right."`.
   - This needs a check that the prompt fits on one line at the smallest portrait width.
   - If it doesn't, it wraps to two lines, with the existing `ui-text` wrapping. *(uncertain: ui-text's wrap not checked yet)*
 
@@ -153,28 +154,13 @@ Each wave ends with `npm run check` and a push. The PR preview is checked on a p
   - The variant only cuts its tail.
 - **Prompt length:** the new prompt is about 2.5× longer than "Tap to play again", so it may need wrapping (see The icon).
 
-## Owner questions
+## Owner decisions
 
-1. **What counts as a "sequence"?**
-   - Recommended: every challenge (Sequence, Hold and Many) gets a time limit.
-   - The alternative is that only "... follow ..." Sequences are timed, with Hold and Many untimed in between.
-2. **What does "sentence variety" mean?**
-   - Recommended: both more directions in play (2 → 4) and more Hold/Many mixed in, as the curve above does.
-   - Or did you mean something else, such as varied prompt texts?
-3. **"Dark gray" for "... flee ...":**
-   - Recommended: the whisper style as it is (`VOICE_GREY`, `#767676`), the same as "... follow ...".
-   - The original `#464646` was rejected in M2 as unreadable.
-4. **When is the icon available?**
-   - Recommended: from the first visit to Title, so the end-of-story highlight is the reminder.
-   - The alternative is to unlock it only after the story has been finished once, stored in `localStorage` like "reduce flashes".
-5. **After the kraken, should the endless failure go straight to Title?**
-   - Recommended: yes, at the empty sea (about 10.25 s), skipping the card and the 22 s replay wait.
-   - The alternative is to show the card and the new replay prompt, as the story ending does.
-6. **Should the story hooks step up with the level?**
-   - Recommended: yes. The music overlay, the bubbles and the backdrops step up at levels 5, 10 and 15.
-   - It costs little and makes progress felt.
-7. **Should a score show?**
-   - The level reached isn't in the brief. Showing it on the "eat" page or the Title return is optional. Recommended: skip it for now.
-8. **Title's own prompt:**
-   - Recommended: only the Ending's replay prompt changes.
-   - Should Title's "Tap to begin" mention the icon too?
+1. **Every challenge is timed:** Sequence, Hold and Many.
+2. **Variety:** more directions in play (2 → 4) and more Hold/Many mixed in, as the curve says.
+3. **"... flee ..." uses the current whisper grey** (`VOICE_GREY`, `#767676`).
+4. **The icon shows from the start**, with no unlock and nothing stored.
+5. **The endless failure goes straight to Title** at the empty sea (about 10.25 s), with no card or replay wait.
+6. **The story hooks step up with the level:** the music overlay, the bubbles and the backdrops at levels 5, 10 and 15.
+7. **Score: later.** Not in this PR.
+8. **Only the Ending's replay prompt changes.** Title keeps "Tap to begin".
