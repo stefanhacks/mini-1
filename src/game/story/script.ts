@@ -82,6 +82,15 @@ export const STORY_PARTS: readonly (readonly StoryLine[])[] = [
   ],
 ];
 
+/**
+ * Endless mode's whispers (endless-plan.md): `flee` opens a run, `eat` ends it, over black, before the kraken. The
+ * voice's style, as "... follow ...": VOICE_GREY, centred, at whisper speed (owner decision 3). Written by Claude Code.
+ */
+export const ENDLESS_LINES = {
+  flee: [voice("\"... flee ...\"")],
+  eat: [voice("\"... eat ...\"")],
+} as const satisfies Record<string, readonly StoryLine[]>;
+
 /** The label typed before a speaker's sentence, exactly the original's talker string (trailing space included). */
 export const speakerLabel = (speaker: Speaker) => `[${speaker}]: `;
 

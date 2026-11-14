@@ -3,6 +3,7 @@ import { generateRounds, type RoundSpec } from "../challenges/generate.ts";
 import { createRng, type Rng } from "../challenges/rng.ts";
 import type { Round } from "../challenges/round.ts";
 import type { ChallengeProgress, ChallengeSpec } from "../challenges/rule.ts";
+import type { TimedChallenge } from "../challenges/timed.ts";
 import type { Tuning } from "../challenges/tuning.ts";
 import { LIGHTNING_SALT } from "../lightning.ts";
 import type { StoryCursor } from "../story/cursor.ts";
@@ -22,10 +23,18 @@ export type SessionPhase =
   | "transition"
   | "play"
   | "won"
+  | EndlessPhase
   | EndingPhase;
+
+/**
+ * Endless mode's phases (states/endless.ts): `flee` (the opening whisper; a tap goes on), `play` (a timed challenge
+ * up), `cleared` (the pause before the next) and `caught` (the timeout: black, then "... eat ...").
+ */
+export type EndlessPhase = "flee" | "cleared" | "caught";
 
 /** The Ending's phases, in order (ending.ts). `replay` takes the tap, as Title's `prompt` does. */
 export type EndingPhase = "boat" | "thrown" | "kraken" | "black" | "sea" | "card" | "replay";
+// The Ending also uses Title's `leaving`: the card fading out before endless mode.
 
 /** The story, or endless mode (endless-plan.md). */
 export type GameMode = "story" | "endless";
@@ -49,6 +58,8 @@ export interface GameSession {
   phase: SessionPhase;
   /** The running round, while in Round. */
   round: Round | null;
+  /** The timed challenge up, while endless mode plays. */
+  timed: TimedChallenge | null;
   /** The story cursor, while in Story. */
   cursor: StoryCursor | null;
   /** The typing of the shown story page, while in Story. */
@@ -65,6 +76,7 @@ export const createSession = (): GameSession => ({
   part: 0,
   phase: "",
   round: null,
+  timed: null,
   cursor: null,
   typewriter: null,
 });
@@ -83,6 +95,7 @@ export const startNewGame = (session: GameSession, seed: number, tuning: Tuning)
   session.lightning = createRng((seed ^ LIGHTNING_SALT) >>> 0);
   session.part = 0;
   session.round = null;
+  session.timed = null;
   session.cursor = null;
   session.typewriter = null;
 };

@@ -20,7 +20,7 @@ import { pruneTextCache } from "./app/text-cache.ts";
 import { createClipPlayer } from "./core/anim/player.ts";
 import { GameClock } from "./core/clock.ts";
 import { StateMachine } from "./core/state-machine.ts";
-import { TUNING } from "./game/challenges/tuning.ts";
+import { ENDLESS_TUNING, TUNING } from "./game/challenges/tuning.ts";
 import { createReduceFlashes } from "./game/reduce-flashes.ts";
 import { createScreenTone } from "./game/screen-tone.ts";
 import { createFrameStepper } from "./game/frame-step.ts";
@@ -76,6 +76,7 @@ const game = createGame({
   scene: loading.requireScene,
   nextSeed,
   tuning: TUNING,
+  endless: ENDLESS_TUNING,
   // Pixi keeps a null key per text it let go (text-cache.ts); a new game starts without them.
   onTitle: () => pruneTextCache(app.renderer),
 });

@@ -1,9 +1,10 @@
 import type { TimerScope } from "../../core/clock.ts";
-import { drainAdvanced, hidePad } from "./common.ts";
+import type { StateMachine } from "../../core/state-machine.ts";
+import { drainTaps, hidePad, startFreshGame } from "./common.ts";
 import { createCuePlayer } from "./cues.ts";
 import type { EndingPhase, GameSession } from "./session.ts";
-import { CARD_FADE, ENDING_CUES, ENDING_MS, FADE } from "./timings.ts";
-import type { GameDeps, GameState, SceneView } from "./types.ts";
+import { CARD_FADE, ENDING_CUES, ENDING_MS, ENDLESS_TITLE_MS, FADE, TITLE_EXIT_MS } from "./timings.ts";
+import type { GameDeps, GameState, GameStateId, SceneView } from "./types.ts";
 
 export const TAP_TO_PLAY_AGAIN = "Tap to play again";
 
@@ -17,10 +18,29 @@ export const TAP_TO_PLAY_AGAIN = "Tap to play again";
  * - 13.5 s: the logo and the credits fade in at half speed;
  * - 22.25 s: new in this port, "Tap to play again" fades in and pulses (m4-plan decision 6, m5-plan decision 1).
  * Each phase begins an input epoch, and only a tap from the last one, the prompt, counts: it goes to Title, which
- * starts a new game.
+ * starts a new game. The endless-mode icon's tap there (an "endless" event) fades the card and the prompt out
+ * (`leaving`, TITLE_EXIT_MS, as Title's exit), then starts a new game in endless mode (endless-plan.md).
+ *
+ * After endless mode (`session.mode`), the same timeline runs up to the empty sea, then goes straight back to Title at
+ * ENDLESS_TITLE_MS, with no card or prompt (owner decision 5); Title resets the difficulty.
  */
 export const createEnding = (deps: GameDeps, session: GameSession): GameState => {
   const { input, pad, scene } = deps;
+
+  /** The endless-mode icon's tap on the prompt: the card and the prompt fade out, then a new game in endless mode. */
+  const leaveForEndless = (scope: TimerScope, machine: StateMachine<GameStateId>) => {
+    const view = scene();
+
+    session.phase = "leaving";
+    input.beginEpoch();
+    view.setTitle(false, FADE);
+    view.setPrompt(null, FADE);
+    scope.after(TITLE_EXIT_MS, () => {
+      startFreshGame(deps, session);
+      session.mode = "endless";
+      machine.request("endless");
+    });
+  };
 
   /** At `ms` from the enter: the phase changes, begins an input epoch, and `cut` shows it. */
   const enterPhaseAt = (scope: TimerScope, name: EndingPhase, ms: number, cut: () => void) => {
@@ -40,7 +60,7 @@ export const createEnding = (deps: GameDeps, session: GameSession): GameState =>
   };
 
   return {
-    enter: (scope) => {
+    enter: (scope, machine) => {
       input.beginEpoch();
 
       const view = scene();
@@ -63,15 +83,27 @@ export const createEnding = (deps: GameDeps, session: GameSession): GameState =>
       enterPhaseAt(scope, "black", ENDING_MS.black, () => view.setBlack(true, FADE));
       enterPhaseAt(scope, "sea", ENDING_MS.sea, () => clearToSea(view));
       scope.after(ENDING_MS.seaLift, () => view.setBlack(false, FADE));
+
+      if (session.mode === "endless") {
+        scope.after(ENDLESS_TITLE_MS, () => machine.request("title"));
+        return;
+      }
+
       enterPhaseAt(scope, "card", ENDING_MS.card, () => view.setTitle(true, CARD_FADE));
       enterPhaseAt(scope, "replay", ENDING_MS.replay, () => view.setPrompt(TAP_TO_PLAY_AGAIN, FADE));
     },
-    update: (_deltaMS, machine) => {
-      const advanced = drainAdvanced(input);
+    update: (_deltaMS, machine, scope) => {
+      const { advanced, endless } = drainTaps(input);
 
       // Only once the prompt is up, as on Title: earlier taps were dropped by each phase's epoch, and this drops the
-      // rest.
-      if (session.phase === "replay" && advanced) {
+      // rest. The icon's tap wins over an advance drained with it.
+      if (session.phase !== "replay") {
+        return;
+      }
+
+      if (endless) {
+        leaveForEndless(scope, machine);
+      } else if (advanced) {
         machine.request("title");
       }
     },

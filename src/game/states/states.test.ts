@@ -3,20 +3,23 @@ import { describe, it } from "node:test";
 import { GameClock } from "../../core/clock.ts";
 import { StateMachine } from "../../core/state-machine.ts";
 import type { ChallengeProgress, ChallengeSpec } from "../challenges/rule.ts";
-import { TUNING } from "../challenges/tuning.ts";
+import { ENDLESS_TUNING, TUNING } from "../challenges/tuning.ts";
 import type { Direction } from "../direction.ts";
 import { createFrameStepper } from "../frame-step.ts";
 import type { WorldSfxKey } from "../../core/audio/audio-engine.ts";
 import type { InputEvent } from "../input/pointer-map.ts";
 import type { StoryPage } from "../story/cursor.ts";
 import { fixedWidthMeasure } from "../story/fake-measure.ts";
-import { STORY_PARTS } from "../story/script.ts";
+import { ENDLESS_LINES, STORY_PARTS } from "../story/script.ts";
 import { TAP_TO_PLAY_AGAIN } from "./ending.ts";
 import { createGame, type GameDeps, type GameStateId } from "./index.ts";
 import { snapshotSession } from "./session.ts";
 import {
   AFTER_ROUND_MS,
+  CAUGHT_EAT_MS,
+  CAUGHT_HOLD_MS,
   ENDING_CARD_SPEED,
+  ENDLESS_TITLE_MS,
   ENDING_MS,
   STORY_DEBOUNCE_MS,
   STORY_PREAMBLE_MS,
@@ -286,6 +289,10 @@ class FakeInput {
   release(dir: Direction) {
     this.queue.push({ kind: "release", dir });
   }
+
+  endless() {
+    this.queue.push({ kind: "endless" });
+  }
 }
 
 class FakePad {
@@ -330,6 +337,7 @@ const setup = ({ auto = true } = {}) => {
     scene: () => scene,
     nextSeed: () => ++seed,
     tuning: TUNING,
+    endless: ENDLESS_TUNING,
   };
   const game = createGame(deps);
   const machine = new StateMachine<GameStateId>(clock, game.states);
@@ -1283,5 +1291,197 @@ describe("cues", () => {
     }
 
     assert.deepEqual(t.audio.parts, [0, 1, 2, 3, 0, 1, 2, 3], "Title and the Ending leave the music alone");
+  });
+});
+
+describe("endless", () => {
+  const FLEE = ENDLESS_LINES.flee[0].text;
+  const EAT = ENDLESS_LINES.eat[0].text;
+
+  /** From Title's prompt, the icon's tap and the exit fade: endless mode's `flee`. */
+  const toEndless = async () => {
+    const t = setup();
+
+    await toTitle(t);
+    t.wait(TITLE_PROMPT_MS);
+    t.input.endless();
+    t.frame();
+    assert.equal(t.game.session.phase, "leaving");
+    t.wait(TITLE_EXIT_MS);
+    assert.equal(t.machine.current, "endless");
+
+    return t;
+  };
+
+  /** Reads "... flee ...": a tap completes it, a tap after the debounce plays. */
+  const flee = (t: Setup) => {
+    t.input.advance();
+    t.frame();
+    t.wait(STORY_DEBOUNCE_MS);
+    t.input.advance();
+    t.frame();
+    assert.equal(t.game.session.phase, "play");
+  };
+
+  /** Answers the challenge up, then waits out the pause before the next. */
+  const clear = (t: Setup) => {
+    const level = t.game.session.level;
+
+    answer(t);
+    assert.equal(t.game.session.level, level + 1);
+    t.wait(ENDLESS_TUNING.betweenMs);
+    assert.equal(t.game.session.phase, "play");
+  };
+
+  it("opens from Title's icon with \"... flee ...\" in the voice's style, then a timed Sequence", async () => {
+    const t = await toEndless();
+
+    assert.deepEqual([t.game.session.mode, t.game.session.phase, t.game.session.level], ["endless", "flee", 0]);
+    assert.equal(t.scene.page?.text, FLEE);
+    assert.equal(t.scene.page?.whisper, true);
+    assert.equal(t.pad.visible, false);
+
+    flee(t);
+
+    const spec = t.scene.challenge;
+
+    assert.equal(t.scene.page, null);
+    assert.deepEqual([t.pad.visible, t.pad.dimmed], [true, false]);
+    assert.ok(spec?.kind === "sequence" && spec.directions.length === 3);
+    assert.equal(t.game.session.timed?.limitMs, 3700);
+  });
+
+  it("ignores the icon's tap before Title's prompt, and a story tap afterwards plays the story", async () => {
+    const t = setup();
+
+    await toTitle(t);
+    t.input.endless();
+    t.frame();
+    assert.equal(t.game.session.phase, "title");
+    leaveTitle(t);
+    assert.equal(t.game.session.mode, "story");
+  });
+
+  it("gives a new challenge and a fresh limit after each one cleared, and the level rises", async () => {
+    const t = await toEndless();
+
+    flee(t);
+    clear(t);
+    assert.deepEqual([t.pad.dimmed, t.game.session.level], [false, 1]);
+
+    const timed = t.game.session.timed;
+
+    // The new challenge came within the last frame of the pause.
+    assert.ok(timed !== null && timed.remainingMs > timed.limitMs - FRAME_MS);
+    clear(t);
+    assert.equal(t.game.session.level, 2);
+  });
+
+  it("steps the music, the bubbles and the backdrops up at levels 5, 10 and 15", async () => {
+    const t = await toEndless();
+
+    flee(t);
+
+    while (t.game.session.level < 15) {
+      clear(t);
+    }
+
+    assert.deepEqual(t.audio.parts.slice(-4), [0, 1, 2, 3]);
+    assert.deepEqual([...t.scene.backdrops].sort(), ["pillars", "tentacles"]);
+    assert.equal(t.game.session.part, 3);
+  });
+
+  it("on a timeout: black, \"... eat ...\", the kraken, then straight back to Title at level 0", async () => {
+    const t = await toEndless();
+
+    flee(t);
+    clear(t);
+
+    const limit = t.game.session.timed?.limitMs ?? 0;
+
+    t.wait(limit);
+    assert.equal(t.game.session.phase, "caught");
+    assert.deepEqual([t.pad.visible, t.scene.challenge, t.scene.black], [false, null, true]);
+    t.input.advance();
+    t.wait(CAUGHT_EAT_MS);
+    assert.equal(t.scene.page?.text, EAT);
+
+    const typedBy = t.clock.now + EAT.length * WHISPER_MS_PER_CHAR + CAUGHT_HOLD_MS + FRAME_MS * 2;
+
+    while (t.machine.current === "endless") {
+      assert.ok(t.clock.now <= typedBy, "the Ending never came");
+      t.frame();
+    }
+
+    assert.equal(t.machine.current, "ending");
+
+    const enteredAt = t.clock.now;
+
+    t.wait(ENDLESS_TITLE_MS - FRAME_MS);
+    assert.equal(t.machine.current, "ending");
+    assert.ok(t.cues.some(({ name, state }) => name === "kraken" && state === "ending"));
+    // No card and no prompt.
+    assert.ok(!t.scene.callsSince(enteredAt).some((call) => /^(title true|prompt)/.test(call)));
+    t.wait(FRAME_MS * 2);
+    assert.equal(t.machine.current, "title");
+    assert.deepEqual([t.game.session.mode, t.game.session.level], ["story", 0]);
+  });
+
+  it("restarts the limit with the challenge on the pause's resume", async () => {
+    const t = await toEndless();
+
+    flee(t);
+    t.wait(1000);
+    t.game.resetChallenge();
+    assert.equal(t.game.session.timed?.remainingMs, t.game.session.timed?.limitMs);
+  });
+
+  it("starts from the Ending's replay prompt as a new game, after the card fades out", async () => {
+    const t = setup();
+
+    await toTitle(t);
+    leaveTitle(t);
+    t.wait(STORY_PREAMBLE_MS);
+
+    for (let part = 0; part < STORY_PARTS.length; part++) {
+      readPart(t);
+
+      if (part < STORY_PARTS.length - 1) {
+        playRound(t);
+      }
+    }
+
+    t.wait(ENDING_MS.replay);
+    assert.equal(t.game.session.phase, "replay");
+
+    const games = t.game.session.games;
+
+    t.input.endless();
+    t.frame();
+    assert.equal(t.game.session.phase, "leaving");
+    assert.deepEqual([t.scene.logo, t.scene.prompt], [false, null]);
+    t.wait(TITLE_EXIT_MS);
+    assert.equal(t.machine.current, "endless");
+    assert.deepEqual([t.game.session.mode, t.game.session.games, t.game.session.level], ["endless", games + 1, 0]);
+    assert.equal(t.scene.boat, "whole");
+    assert.equal(t.scene.page?.text, FLEE);
+  });
+
+  it("replays the same challenges from the same seed", async () => {
+    const run = async () => {
+      const t = await toEndless();
+      const specs = [];
+
+      flee(t);
+
+      for (let i = 0; i < 6; i++) {
+        specs.push(t.scene.challenge);
+        clear(t);
+      }
+
+      return specs;
+    };
+
+    assert.deepEqual(await run(), await run());
   });
 });
